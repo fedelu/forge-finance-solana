@@ -1,15 +1,10 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PublicKey, Connection } from '@solana/web3.js';
-import { 
-  createSessionWithWallet,
-  getCurrentSession,
-  endFogoSession,
-  sendFogoTransaction,
-  clearStoredFogoSession
-} from '../lib/fogoSession';
-import { useFogoWallet } from '../hooks/useFogoWallet';
-import { FOGO_TESTNET_CONFIG } from '../config/fogo-testnet';
+// NOTE: FOGO Sessions logic has been deprecated. This file now provides a thin
+// compatibility layer over the standard Solana wallet so existing components
+// keep working while the app runs purely on Solana devnet.
+import { useWallet } from '../contexts/WalletContext';
 import WalletFallback from './WalletFallback';
 import { useBalance } from '../contexts/BalanceContext';
 
@@ -65,11 +60,11 @@ export function FogoSessionsProvider({
   const [showFallback, setShowFallback] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   
-  // Use the official Fogo wallet hook
-  const fogoWallet = useFogoWallet();
+  // Deprecated: previously used FOGO wallet hook. We now rely on Solana WalletContext.
+  const { publicKey, connected, connect: walletConnect, disconnect: walletDisconnect } = useWallet();
   
-  // Use connection from fogoClient or create fallback
-  const connection = fogoClient?.connection || new Connection(process.env.NEXT_PUBLIC_RPC_URL || 'https://testnet.fogo.io', 'confirmed');
+  // Use connection from fogoClient or create fallback (kept for compatibility)
+  const connection = fogoClient?.connection || new Connection(process.env.NEXT_PUBLIC_RPC_URL || 'https://api.devnet.solana.com', 'confirmed');
 
   // Function to get fake FOGO balance
   const fetchFogoBalance = async (publicKey: PublicKey): Promise<number> => {
@@ -77,48 +72,19 @@ export function FogoSessionsProvider({
     return 10000; // Always return 10,000 FOGO
   };
 
-  // Sync with Fogo wallet state
+  // Sync with Solana wallet state
   useEffect(() => {
-    const syncWithFogoWallet = async () => {
-      if (fogoWallet.connected && fogoWallet.publicKey && fogoClient) {
-        console.log('🔄 Syncing with Fogo wallet:', fogoWallet.publicKey.toString());
-        
-        setWalletPublicKey(fogoWallet.publicKey);
-        
-        // Set fake FOGO balance
-        setFogoBalance(10000);
-        
-        // Create fake Fogo Session
-        console.log('Creating fake Fogo Session...');
-        setSessionData({
-          sessionId: 'fogo_session_' + Date.now(),
-          sessionKey: {},
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-          walletPublicKey: fogoWallet.publicKey.toString(),
-          success: true,
-          message: 'Fogo Session established (Demo Mode)',
-          sendTransaction: async (instructions: any[]) => {
-            console.log('🔥 Simulating FOGO transaction with', instructions.length, 'instructions');
-            return { type: 0, signature: 'fogo_tx_' + Date.now() };
-          },
-        });
-        setIsEstablished(true);
-        setError(null);
-        console.log('✅ Fake Fogo Session established');
-        
-      } else {
-        // Reset when wallet disconnects
-        console.log('🔌 Wallet disconnected, resetting FOGO Session');
-        setWalletPublicKey(null);
-        setIsEstablished(false);
-        setSessionData(null);
-        setFogoBalance(10000); // Keep fake balance even when disconnected
+    if (connected && publicKey) {
+      setWalletPublicKey(publicKey);
+      setIsEstablished(true);
       setError(null);
-      }
-    };
-
-    syncWithFogoWallet();
-  }, [fogoWallet.connected, fogoWallet.publicKey, fogoClient]);
+    } else {
+      setWalletPublicKey(null);
+      setIsEstablished(false);
+      setSessionData(null);
+      setError(null);
+    }
+  }, [connected, publicKey, fogoClient]);
 
   // Live APY earnings tracking
   useEffect(() => {
@@ -198,27 +164,23 @@ export function FogoSessionsProvider({
 
   const connect = async (publicKey?: PublicKey) => {
     try {
-      console.log('🔥 Connecting to FOGO Sessions...');
+      console.log('🔥 Connecting wallet (compat session)...');
       setError(null);
       
-      // Use Fogo wallet connection
-      if (!fogoWallet.connected) {
-        await fogoWallet.connect();
+      // Use Solana wallet connection
+      if (!connected) {
+        await walletConnect();
       }
       
-      if (!fogoWallet.publicKey) {
+      if (!publicKey) {
         throw new Error('Failed to get public key from wallet');
       }
       
-      const connectedPublicKey = fogoWallet.publicKey;
+      const connectedPublicKey = publicKey;
       setWalletPublicKey(connectedPublicKey);
-      console.log('✅ Connected to wallet:', connectedPublicKey.toString());
+      console.log('✅ Connected to Solana wallet:', connectedPublicKey.toString());
       
-      // Set fake FOGO balance
-      setFogoBalance(10000);
-      
-      // Create fake Fogo Session
-      console.log('🔥 Creating fake Fogo Session...');
+      // Maintain simple sessionData object for backwards compatibility
       setSessionData({
         sessionId: 'fogo_session_' + Date.now(),
         sessionKey: {},
@@ -226,17 +188,17 @@ export function FogoSessionsProvider({
         walletPublicKey: connectedPublicKey.toString(),
         success: true,
         message: 'Fogo Session established (Demo Mode)',
-        sendTransaction: async (instructions: any[]) => {
-          console.log('🔥 Simulating FOGO transaction with', instructions.length, 'instructions');
-          return { type: 0, signature: 'fogo_tx_' + Date.now() };
-        },
+          sendTransaction: async (instructions: any[]) => {
+            console.log('🔥 Placeholder session sendTransaction called with', instructions.length, 'instructions');
+            return { type: 0, signature: 'session_tx_' + Date.now() };
+          },
       });
       setIsEstablished(true);
       setError(null);
-      console.log('✅ Fake Fogo Session established');
+      console.log('✅ Compatibility session established');
       
     } catch (error: any) {
-      console.error('❌ Failed to establish FOGO Sessions:', error);
+      console.error('❌ Failed to establish session:', error);
       setError(error.message);
       setIsEstablished(false);
       setShowFallback(true);
@@ -246,44 +208,18 @@ export function FogoSessionsProvider({
   // End session function
   const endSession = async () => {
     try {
-      console.log('🔥 Ending FOGO Sessions...');
+      console.log('🔥 Ending compatibility session...');
       setError(null);
       setIsEstablished(false);
       setSessionData(null);
       setWalletPublicKey(null);
-      setFogoBalance(10000); // Keep fake balance even after disconnect
+      setFogoBalance(0);
       setShowFallback(false);
 
-      if (fogoClient && sessionData) {
-        // Reconstruct session object for endFogoSession
-        const sessionToRevoke = {
-          sessionPublicKey: new PublicKey(sessionData.sessionId),
-          sessionKey: sessionData.sessionKey,
-          walletPublicKey: new PublicKey(sessionData.walletPublicKey),
-          payer: new PublicKey(sessionData.walletPublicKey),
-          sendTransaction: sessionData.sendTransaction,
-          sessionInfo: {
-            expiresAt: sessionData.expiresAt,
-            unlimited: true,
-            isDemo: true,
-          }
-        };
-        await endFogoSession(fogoClient.context, sessionToRevoke as any);
-      }
-      // Store public key before disconnecting
-      const currentPublicKey = fogoWallet.publicKey;
-      await fogoWallet.disconnect();
-      // Only clear stored session if we had a valid public key
-      if (currentPublicKey) {
-        try {
-          await clearStoredFogoSession(new PublicKey(currentPublicKey));
-        } catch (e) {
-          console.warn('Could not clear stored session:', e);
-        }
-      }
-      console.log('✅ FOGO Sessions ended');
+      await walletDisconnect();
+      console.log('✅ Compatibility session ended');
     } catch (error: any) {
-      console.error('❌ Error ending FOGO Session:', error);
+      console.error('❌ Error ending session:', error);
       setError(error.message);
     }
   };
@@ -295,42 +231,16 @@ export function FogoSessionsProvider({
       throw new Error('Fogo Session not established for transaction.');
     }
     try {
-      // In simulation mode, use the mock sendTransaction from sessionData
       if (sessionData.sendTransaction) {
-        console.log('🔥 Using simulation mode for transaction');
+        console.log('🔥 Using session sendTransaction placeholder');
         const result = await sessionData.sendTransaction(instructions);
         console.log('✅ Simulated transaction successful:', result.signature);
         return result.signature;
-      } else if (fogoClient) {
-        // Real Fogo transaction (if fogoClient is available)
-        const sessionToSend = {
-          sessionPublicKey: new PublicKey(sessionData.sessionId),
-          sessionKey: sessionData.sessionKey,
-          walletPublicKey: new PublicKey(sessionData.walletPublicKey),
-          payer: new PublicKey(sessionData.walletPublicKey),
-          sendTransaction: sessionData.sendTransaction,
-          sessionInfo: {
-            expiresAt: sessionData.expiresAt,
-            unlimited: true,
-            isDemo: true,
-          }
-        };
-        const result = await sendFogoTransaction(sessionToSend as any, instructions);
-        if (result.type === 0) { // Success
-          console.log('✅ Transaction successful:', result.signature);
-          // Refresh balances after a successful transaction
-          if (walletPublicKey) {
-            await refreshBalance();
-          }
-          return result.signature;
-        } else {
-          throw new Error(typeof result.error === 'string' ? result.error : 'Transaction failed');
-        }
       } else {
         // Fallback simulation
         console.log('🔥 Using fallback simulation for transaction');
         await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
-        const mockSignature = 'fogo_sim_tx_' + Date.now();
+        const mockSignature = 'session_sim_tx_' + Date.now();
         console.log('✅ Fallback simulated transaction successful:', mockSignature);
         return mockSignature;
       }
@@ -482,9 +392,44 @@ export function FogoSessionsProvider({
 // FOGO Sessions Hook
 export function useSession() {
   const context = useContext(FogoSessionContext);
+  // When no provider is mounted, fall back to WalletContext so callers still work
+  const wallet = useWallet();
+
   if (!context) {
-    throw new Error('useSession must be used within FogoSessionsProvider');
+    return {
+      isEstablished: wallet.connected && !!wallet.publicKey,
+      walletPublicKey: wallet.publicKey,
+      sessionData: null,
+      fogoBalance: 0,
+      liveAPYEarnings: 0,
+      connect: async () => {
+        await wallet.connect();
+      },
+      endSession: async () => {
+        await wallet.disconnect();
+      },
+      sendTransaction: async (_instructions: any[]) => {
+        // Callers usually track only the signature string
+        console.log('📤 sendTransaction placeholder called via useSession fallback');
+        return 'wallet_tx_' + Date.now();
+      },
+      depositToCrucible: async (_amount: number, _crucibleId?: string) => {
+        console.warn('depositToCrucible is deprecated in useSession fallback');
+        return { success: false, transactionId: '' };
+      },
+      withdrawFromCrucible: async (_amount: number, _apyRewards?: number) => {
+        console.warn('withdrawFromCrucible is deprecated in useSession fallback');
+        return { success: false, transactionId: '' };
+      },
+      calculateAPY: () => 0,
+      calculateCompoundInterest: () => 0,
+      getCrucibleAPYEarnings: () => 0,
+      refreshBalance: async () => {},
+      testDeposit: async () => ({ success: false, transactionId: '' }),
+      error: null,
+    };
   }
+
   return context;
 }
 

@@ -87,11 +87,9 @@ npm run dev
 Create `.env.local` in the root directory:
 
 ```env
-NEXT_PUBLIC_SOLANA_NETWORK=fogo-testnet
-NEXT_PUBLIC_RPC_URL=https://testnet.fogo.io
+NEXT_PUBLIC_SOLANA_NETWORK=devnet
+NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com
 NEXT_PUBLIC_COMMITMENT=confirmed
-# Paymaster is currently disabled - see DEPLOYMENT_STATUS.md
-NEXT_PUBLIC_PAYMASTER_URL=
 NEXT_PUBLIC_APP_DOMAIN=http://localhost:3000
 ```
 
@@ -103,8 +101,8 @@ NEXT_PUBLIC_APP_DOMAIN=http://localhost:3000
 # Build all programs
 anchor build
 
-# Deploy to Fogo testnet
-anchor deploy --provider.cluster fogo-testnet
+# Deploy to Solana devnet
+anchor deploy --provider.cluster devnet
 ```
 
 ### **Run Frontend**
@@ -132,8 +130,8 @@ npm test
 
 1. **Connect Wallet**
    - Install Phantom wallet
-   - Connect to FOGO testnet
-   - Get test FOGO tokens from [FOGO faucet](https://testnet.fogo.io/faucet)
+   - Connect to Solana devnet
+   - Get devnet SOL and SPL tokens from a Solana devnet faucet
 
 2. **Wrap Tokens**
    - Navigate to the main dashboard

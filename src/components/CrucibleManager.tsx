@@ -8,10 +8,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useWallet } from '../contexts/WalletContext'
 import { useCrucible } from '../hooks/useCrucible'
-import { useSession } from './FogoSessions'
 import { useBalance } from '../contexts/BalanceContext'
-import { FogoDepositModal } from './FogoDepositModal'
-import { FogoWithdrawModal } from './FogoWithdrawModal'
 import CTokenDepositModal from './CTokenDepositModal'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
 import ClosePositionModal from './ClosePositionModal'
@@ -57,11 +54,8 @@ interface CrucibleManagerProps {
 export default function CrucibleManager({ className = '', onDeposit, onWithdraw, isConnected = false }: CrucibleManagerProps) {
   const { connected } = useWallet()
   const { crucibles, loading, error } = useCrucible()
-  const { isEstablished, getCrucibleAPYEarnings } = useSession()
   const [activeMode, setActiveMode] = useState<'wrap' | 'lp' | 'leveraged'>('wrap')
   const [selectedCrucible, setSelectedCrucible] = useState<string | null>(null)
-  const [showFogoDepositModal, setShowFogoDepositModal] = useState(false)
-  const [showFogoWithdrawModal, setShowFogoWithdrawModal] = useState(false)
   const [showCTokenDepositModal, setShowCTokenDepositModal] = useState(false)
   const [showCTokenWithdrawModal, setShowCTokenWithdrawModal] = useState(false)
   const [showClosePositionModal, setShowClosePositionModal] = useState(false)
@@ -89,28 +83,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
       case 'paused': return 'bg-fogo-gray-800 text-fogo-gray-300 border border-fogo-gray-600'
       case 'maintenance': return 'bg-fogo-gray-800 text-fogo-gray-400 border border-fogo-gray-600'
       default: return 'bg-fogo-gray-800 text-fogo-gray-300 border border-fogo-gray-600'
-    }
-  }
-
-  const handleAction = (action: string, crucibleId: string) => {
-    if (!isEstablished) {
-      alert('⚠️ Please connect your FOGO wallet first!\n\nClick "Sign in with FOGO" to start using the protocol.')
-      return
-    }
-
-    if (action === 'deposit') {
-      setSelectedCrucible(crucibleId);
-      // All deposits now use FOGO through Phantom wallet
-      setShowFogoDepositModal(true);
-    } else if (action === 'withdraw') {
-      const crucible = crucibles.find(c => c.id === crucibleId);
-      if (crucible && crucible.userPtokenBalance === BigInt(0)) {
-        alert('⚠️ No open position to close!\n\nYou need to open a position first before you can close it.')
-        return
-      }
-      setSelectedCrucible(crucibleId);
-      // All withdrawals now use FOGO through Phantom wallet
-      setShowFogoWithdrawModal(true);
     }
   }
 
@@ -361,16 +333,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
         
         return (
           <>
-            <FogoDepositModal
-              isOpen={showFogoDepositModal}
-              onClose={() => setShowFogoDepositModal(false)}
-              crucibleId={selectedCrucible}
-            />
-            <FogoWithdrawModal
-              isOpen={showFogoWithdrawModal}
-              onClose={() => setShowFogoWithdrawModal(false)}
-              crucibleId={selectedCrucible}
-            />
             <CTokenDepositModal
               isOpen={showCTokenDepositModal}
               onClose={() => {

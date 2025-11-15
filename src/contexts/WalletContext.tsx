@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
 import { Connection, PublicKey, Transaction, VersionedTransaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet';
-import { FOGO_TESTNET_CONFIG } from '../config/fogo-testnet';
 
 // Phantom wallet types
 interface PhantomWallet {
@@ -27,10 +26,10 @@ interface WalletContextType {
   publicKey: PublicKey | null;
   connected: boolean;
   connecting: boolean;
-  network: 'solana-testnet' | 'fogo-testnet';
+  network: 'devnet';
   connect: (publicKey?: PublicKey) => Promise<void>;
   disconnect: () => Promise<void>;
-  switchNetwork: (network: 'solana-testnet' | 'fogo-testnet') => void;
+  switchNetwork: (network: 'devnet') => void;
   signTransaction: (transaction: Transaction) => Promise<Transaction>;
   signAllTransactions: (transactions: Transaction[]) => Promise<Transaction[]>;
   sendTransaction: (transaction: Transaction | VersionedTransaction) => Promise<string>;
@@ -56,8 +55,10 @@ interface WalletProviderProps {
 }
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
-  const [network, setNetwork] = useState<'solana-testnet' | 'fogo-testnet'>('fogo-testnet');
-  const [connection, setConnection] = useState(() => new Connection(FOGO_TESTNET_CONFIG.RPC_URL, FOGO_TESTNET_CONFIG.COMMITMENT as any));
+  const [network, setNetwork] = useState<'devnet'>('devnet');
+  const [connection, setConnection] = useState(
+    () => new Connection(SOLANA_TESTNET_CONFIG.RPC_URL, SOLANA_TESTNET_CONFIG.COMMITMENT as any)
+  );
   const [publicKey, setPublicKey] = useState<PublicKey | null>(null);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -111,11 +112,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         error: undefined
       });
       
-      console.log('✅ Wallet connected successfully');
-      
-      // Force switch to FOGO testnet after connection
-      console.log('Forcing switch to FOGO testnet...');
-      await switchNetwork('fogo-testnet');
+      console.log('✅ Wallet connected successfully to Solana testnet');
     } catch (error: any) {
       console.error('❌ Wallet connection failed:', error);
       setWalletStatus(prev => ({
@@ -146,10 +143,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   }, [wallet, connected]);
 
-  const switchNetwork = useCallback((newNetwork: 'solana-testnet' | 'fogo-testnet') => {
+  const switchNetwork = useCallback((newNetwork: 'devnet') => {
+    // Single-network app in this project: always Solana devnet
     setNetwork(newNetwork);
-    const config = newNetwork === 'fogo-testnet' ? FOGO_TESTNET_CONFIG : SOLANA_TESTNET_CONFIG;
-    setConnection(new Connection(config.RPC_URL, FOGO_TESTNET_CONFIG.COMMITMENT as any));
+    setConnection(new Connection(SOLANA_TESTNET_CONFIG.RPC_URL, SOLANA_TESTNET_CONFIG.COMMITMENT as any));
   }, []);
 
   const getBalance = useCallback(async (): Promise<number | null> => {

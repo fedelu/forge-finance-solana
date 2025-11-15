@@ -12,12 +12,20 @@ lending = "LenD1ng111111111111111111111111111111111111"
 lending_pool = "LenD1ng111111111111111111111111111111111111"
 lvf = "LvF1111111111111111111111111111111111111111"
 
+[programs.devnet]
+forge_core = "DWkDGw5Pvqgh3DN6HZwssn31AUAkuWLtjDnjyEUdgRHU"
+forge_crucibles = "Ab84n2rkgEnDnQmJKfMsr88jbJqYPcgBW7irwoYWwCL2"
+lending = "LenD1ng111111111111111111111111111111111111"
+lending_pool = "LenD1ng111111111111111111111111111111111111"
+lvf = "LvF1111111111111111111111111111111111111111"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "https://testnet.fogo.io"
-wallet = "/Users/federicodelucchi/.config/solana/fogo-testnet-keypair.json"
+# Solana public devnet provider for this project
+cluster = "devnet"
+wallet = "/Users/federicodelucchi/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

@@ -1,6 +1,6 @@
 # 🔥 Forge Finance - Deployment Status
 
-**Network**: FOGO Testnet  
+**Network**: Solana Devnet  
 **Status**: Development / Testing Phase
 
 ---
@@ -20,68 +20,33 @@
 ### 📝 Notes
 
 - **Program IDs**: Currently using placeholder/mock program IDs in configuration files
-- **Deployment**: Smart contracts are configured but not yet deployed to FOGO testnet
+- **Deployment**: Smart contracts are configured for Solana devnet (update `Anchor.toml` and redeploy as needed)
 - **Anchor Configuration**: See `Anchor.toml` for program configuration
 
 ### 🔧 Configuration Files
 
-- **Frontend Config**: `src/config/fogo-testnet.ts`
+- **Frontend Config**: `src/config/solana-testnet.ts`
 - **Anchor Config**: `Anchor.toml`
 - **Program IDs**: Defined in both config files
 
 ---
 
-## 🔥 FOGO Sessions Status
+## 🔥 Wallet & Session Status
 
 ### ✅ Implementation Status
 
-**Status**: ✅ **Implemented** (with limitations)
+**Status**: ✅ **Phantom + Solana Devnet** (FOGO Sessions removed)
 
 ### Current Implementation
 
-- ✅ FOGO Sessions SDK integrated (`@fogo/sessions-sdk`)
-- ✅ Session creation and management implemented
-- ✅ Wallet integration with Phantom wallet
-- ✅ Session storage and retrieval
-- ✅ Mock session support for development
+- ✅ Direct Phantom wallet integration on Solana devnet
+- ✅ Standard transaction signing via `@solana/web3.js`
+- ✅ Sessionless model (no external paymaster)
 
-### 📁 Implementation Files
+### 📁 Relevant Files
 
-- `src/lib/fogoSession.ts` - Main FOGO Sessions client
-- `src/components/FogoSessions.tsx` - FOGO Sessions provider
-- `src/hooks/useFogoSession.ts` - FOGO Sessions hook
-- `src/utils/fogoSession.ts` - FOGO Session utilities
-
-### ⚠️ Limitations
-
-1. **Paymaster Disabled**: Paymaster is currently disabled due to domain not being registered with FOGO team
-2. **Mock Mode**: Currently running in mock mode for development
-3. **Gasless Transactions**: Not available until paymaster is enabled
-
-### 🔴 Missing: Paymaster Integration
-
-**Status**: ❌ **Not Available**
-
-**Reason**: Domain not registered with FOGO team
-
-**Current Code**:
-```typescript
-// src/lib/fogoSession.ts
-// Temporarily disable paymaster until domain is registered with Fogo team
-// TODO: Re-enable paymaster once domain is registered
-const finalPaymasterUrl = undefined;
-```
-
-**Impact**:
-- ❌ Gasless transactions are not available
-- ❌ Users must pay transaction fees
-- ❌ Session-based transactions require wallet balance
-
-**Next Steps**:
-1. Contact FOGO team to register domain for paymaster access
-2. Update `NEXT_PUBLIC_PAYMASTER_URL` environment variable
-3. Re-enable paymaster in `src/lib/fogoSession.ts`
-4. Test paymaster integration with real transactions
+- `src/contexts/WalletContext.tsx` - Solana devnet wallet context
+- `src/config/solana-testnet.ts` - Program IDs and token config for devnet
 
 ---
 
@@ -145,9 +110,8 @@ const finalPaymasterUrl = undefined;
 - **Wallet**: Phantom Wallet
 
 ### Blockchain
-- **Network**: FOGO Testnet
-- **RPC URL**: `https://testnet.fogo.io`
-- **SDK**: FOGO Sessions SDK (`@fogo/sessions-sdk`)
+- **Network**: Solana Devnet
+- **RPC URL**: `https://api.devnet.solana.com`
 - **Web3 Library**: `@solana/web3.js`
 
 ### Smart Contracts
