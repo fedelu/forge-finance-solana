@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { XMarkIcon, BoltIcon } from '@heroicons/react/24/outline'
 import { useLVFPosition } from '../hooks/useLVFPosition'
-import { useSession } from './FogoSessions'
+import { useWallet } from '../contexts/WalletContext'
 import { lendingPool } from '../contracts/lendingPool'
 import { useBalance } from '../contexts/BalanceContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
@@ -12,7 +12,7 @@ interface LVFPositionModalProps {
   isOpen: boolean
   onClose: () => void
   crucibleAddress: string
-  baseTokenSymbol: 'FOGO' | 'FORGE'
+  baseTokenSymbol: 'SOL' | 'FORGE'
   baseAPY: number
 }
 
@@ -29,15 +29,15 @@ export default function LVFPositionModal({
     crucibleAddress,
     baseTokenSymbol,
   })
-  const { isEstablished, walletPublicKey } = useSession()
+  const { connected, publicKey } = useWallet()
   const { subtractFromBalance, addToBalance, getBalance } = useBalance()
   const { addTransaction } = useAnalytics()
   const { getCrucible } = useCrucible()
 
   const handleOpenPosition = async () => {
     // Check wallet connection first
-    if (!isEstablished || !walletPublicKey) {
-      alert('⚠️ Wallet not connected!\n\nPlease connect your wallet first using "Sign in with FOGO".')
+    if (!connected || !publicKey) {
+      alert('⚠️ Wallet not connected!\n\nPlease connect your Phantom wallet first.')
       return
     }
 
@@ -48,7 +48,7 @@ export default function LVFPositionModal({
 
     try {
       const collateralAmount = parseFloat(amount)
-      const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+      const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
       const collateralValue = collateralAmount * baseTokenPrice
       const borrowedUSDC = collateralValue * (leverage - 1)
 
@@ -132,7 +132,7 @@ export default function LVFPositionModal({
     }
   }
 
-  const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
   const collateralValue = amount ? parseFloat(amount) * baseTokenPrice : 0
   const borrowedUSDC = collateralValue * (leverage - 1)
   const health = amount && borrowedUSDC > 0

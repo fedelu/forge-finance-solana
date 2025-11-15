@@ -33,15 +33,14 @@ interface BalanceProviderProps {
 
 export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) => {
   const [balances, setBalances] = useState<TokenBalance[]>([
-    { symbol: 'FOGO', amount: 10000, usdValue: 5000 }, // Start with 10,000 FOGO ($5,000 at $0.50 each)
+    { symbol: 'SOL', amount: 25, usdValue: 5000 }, // Start with 25 SOL ($5,000 at $200 each)
     { symbol: 'FORGE', amount: 5000, usdValue: 10 }, // Start with 5,000 FORGE ($10 at $0.002 each)
-    { symbol: 'cFOGO', amount: 0, usdValue: 0 }, // Start with 0 cFOGO (worth $0.5224 each)
+    { symbol: 'cSOL', amount: 0, usdValue: 0 }, // Start with 0 cSOL
     { symbol: 'cFORGE', amount: 0, usdValue: 0 }, // Start with 0 cFORGE (worth $0.0025 each)
-    { symbol: 'SOL', amount: 0, usdValue: 0 }, // Start with 0 SOL
     { symbol: 'USDC', amount: 10000, usdValue: 10000 }, // Start with 10,000 USDC
     { symbol: 'ETH', amount: 0, usdValue: 0 }, // Start with 0 ETH
     { symbol: 'BTC', amount: 0, usdValue: 0 }, // Start with 0 BTC
-    { symbol: 'cFOGO/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
+    { symbol: 'cSOL/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
     { symbol: 'cFORGE/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
   ]);
   
@@ -49,17 +48,16 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
 
   const getTokenPrice = useCallback((symbol: string): number => {
     const prices: { [key: string]: number } = {
-      'FOGO': 0.5,
-      'FORGE': 0.002,
-      'cFOGO': 0.5224,  // cFOGO is worth more than FOGO due to accumulated value
-      'cFORGE': 0.0025, // cFORGE is worth more than FORGE due to accumulated value
       'SOL': 200,
+      'FORGE': 0.002,
+      'cSOL': 209,  // cSOL is worth more than SOL due to accumulated value (SOL price * 1.045)
+      'cFORGE': 0.0025, // cFORGE is worth more than FORGE due to accumulated value
       'USDC': 1,
       'ETH': 4000,
       'BTC': 110000,
       'SPARK': 0.1,
       'HEAT': 0.05,
-      'cFOGO/USDC LP': 1.0, // LP token price (calculated from underlying assets)
+      'cSOL/USDC LP': 1.0, // LP token price (calculated from underlying assets)
       'cFORGE/USDC LP': 1.0, // LP token price (calculated from underlying assets)
     };
     return prices[symbol] || 0;

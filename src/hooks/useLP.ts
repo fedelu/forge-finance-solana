@@ -20,7 +20,7 @@ export interface LPPosition {
 
 interface UseLPProps {
   crucibleAddress: string
-  baseTokenSymbol: 'FOGO' | 'FORGE'
+  baseTokenSymbol: 'SOL' | 'FORGE'
   baseAPY: number // Base APY for calculating LP APY (3x)
 }
 

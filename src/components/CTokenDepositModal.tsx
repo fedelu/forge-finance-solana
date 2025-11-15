@@ -5,7 +5,7 @@ import { useCToken } from '../hooks/useCToken'
 import { useLP } from '../hooks/useLP'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import { useSession } from './FogoSessions'
+import { useWallet } from '../contexts/WalletContext'
 import { useBalance } from '../contexts/BalanceContext'
 import { lendingPool } from '../contracts/lendingPool'
 import { useCrucible } from '../hooks/useCrucible'
@@ -38,52 +38,30 @@ export default function CTokenDepositModal({
   const [leverage, setLeverage] = useState<Leverage>(1)
   const [submitting, setSubmitting] = useState(false)
   const { addTransaction } = useAnalytics()
-  const { isEstablished, walletPublicKey } = useSession()
+  const { connected, publicKey } = useWallet()
   const { balances, getBalance, subtractFromBalance, addToBalance } = useBalance()
   const { getCrucible } = useCrucible()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
   
-  // Pass walletPublicKey to the hooks
+  // Use connected wallet public key for hooks
   const publicKeyForHook = useMemo(() => {
-    if (!walletPublicKey) return undefined
-    try {
-      let pk: PublicKey
-      if (walletPublicKey instanceof PublicKey) {
-        pk = walletPublicKey
-      } else if (typeof walletPublicKey === 'string') {
-        pk = new PublicKey(walletPublicKey)
-      } else if (typeof walletPublicKey === 'object' && walletPublicKey !== null) {
-        const walletPubKey = walletPublicKey as any
-        if ('_bn' in walletPubKey || 'toBase58' in walletPubKey || 'toString' in walletPubKey) {
-          const pkString = walletPubKey.toString ? walletPubKey.toString() : 
-                          walletPubKey.toBase58 ? walletPubKey.toBase58() : 
-                          String(walletPubKey)
-          pk = new PublicKey(pkString)
-        } else {
-          return undefined
-        }
-      } else {
-        return undefined
-      }
-      return pk
-    } catch (e) {
-      return undefined
-    }
-  }, [walletPublicKey])
+    if (!publicKey) return undefined
+    return publicKey
+  }, [publicKey])
   
   const { deposit, loading: depositLoading } = useCToken(crucibleAddress, ctokenMint, publicKeyForHook)
   const { wrapTokens, unwrapTokens, trackLeveragedPosition } = useCrucible()
   const { openPosition: openLPPosition, loading: lpLoading } = useLP({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'FOGO' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
     baseAPY: currentAPY,
   })
   const { openPosition: openLeveragedPosition, loading: leveragedLoading } = useLVFPosition({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'FOGO' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
   })
 
-  const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
   const baseTokenBalance = getBalance(baseTokenSymbol)
   const usdcBalance = getBalance('USDC')
   const loading = depositLoading || lpLoading || leveragedLoading || submitting
@@ -140,8 +118,8 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
   }
 
   const handleSubmit = async () => {
-    if (!isEstablished || !walletPublicKey) {
-      alert('⚠️ Wallet not connected!\n\nPlease connect your wallet first using "Sign in with FOGO".')
+    if (!connected || !publicKey) {
+      alert('⚠️ Wallet not connected!\n\nPlease connect your Phantom wallet first.')
       return
     }
 

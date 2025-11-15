@@ -5,7 +5,7 @@ import { useCrucible } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
 import { useLP } from '../hooks/useLP'
 import { useLVFPosition } from '../hooks/useLVFPosition'
-import { useSession } from './FogoSessions'
+import { useWallet } from '../contexts/WalletContext'
 import { formatNumberWithCommas } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 
@@ -34,35 +34,37 @@ export default function CTokenWithdrawModal({
   const { withdraw, loading } = useCToken(crucibleAddress, ctokenMint)
   const { unwrapTokens, getCrucible } = useCrucible()
   const { addToBalance, subtractFromBalance } = useBalance()
-  const { isEstablished, walletPublicKey } = useSession()
+  const { connected, publicKey } = useWallet()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
   
   // Check for LP and leveraged positions for this crucible
   const { positions: lpPositions, closePosition: closeLPPosition, loading: lpLoading } = useLP({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'FOGO' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
     baseAPY: 0, // Not needed for closing
   })
   
   const { positions: lvfPositions, closePosition: closeLVFPosition, loading: lvfLoading } = useLVFPosition({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'FOGO' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
   })
   
   // Check if user has any LP positions for this crucible
   const hasLPPositions = useMemo(() => {
-    if (!isEstablished || !walletPublicKey) return false
-    const hasLP = lpPositions.some(p => p.isOpen && p.owner === walletPublicKey.toBase58())
-    const hasLVF = lvfPositions.some(p => p.isOpen && p.owner === walletPublicKey.toBase58())
+    if (!connected || !publicKey) return false
+    const owner = publicKey.toBase58()
+    const hasLP = lpPositions.some(p => p.isOpen && p.owner === owner)
+    const hasLVF = lvfPositions.some(p => p.isOpen && p.owner === owner)
     return hasLP || hasLVF
-  }, [lpPositions, lvfPositions, isEstablished, walletPublicKey])
+  }, [lpPositions, lvfPositions, connected, publicKey])
   
   const allPositions = useMemo(() => {
+    const owner = publicKey?.toBase58() || ''
     return [
-      ...lpPositions.filter(p => p.isOpen && p.owner === (walletPublicKey?.toBase58() || '')).map(p => ({ ...p, type: 'lp' as const })),
-      ...lvfPositions.filter(p => p.isOpen && p.owner === (walletPublicKey?.toBase58() || '')).map(p => ({ ...p, type: 'lvf' as const })),
+      ...lpPositions.filter(p => p.isOpen && p.owner === owner).map(p => ({ ...p, type: 'lp' as const })),
+      ...lvfPositions.filter(p => p.isOpen && p.owner === owner).map(p => ({ ...p, type: 'lvf' as const })),
     ]
-  }, [lpPositions, lvfPositions, walletPublicKey])
+  }, [lpPositions, lvfPositions, publicKey])
   
   const handleCloseLPPosition = async (positionId: string, positionType: 'lp' | 'lvf') => {
     try {

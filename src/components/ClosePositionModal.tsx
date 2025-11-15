@@ -3,7 +3,6 @@ import { XMarkIcon, ArrowDownIcon } from '@heroicons/react/24/outline'
 import { useCrucible } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
 import { useLVFPosition } from '../hooks/useLVFPosition'
-import { useSession } from './FogoSessions'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { formatNumberWithCommas, RATE_SCALE } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
@@ -12,7 +11,7 @@ interface ClosePositionModalProps {
   isOpen: boolean
   onClose: () => void
   crucibleAddress: string
-  baseTokenSymbol: 'FOGO' | 'FORGE'
+  baseTokenSymbol: 'SOL' | 'FORGE'
   ctokenSymbol: string
   hasCTokenPosition: boolean
   hasLeveragedPosition?: boolean // Optional, will be calculated internally

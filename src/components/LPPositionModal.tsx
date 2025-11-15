@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useLP } from '../hooks/useLP'
-import { useSession } from './FogoSessions'
+import { useWallet } from '../contexts/WalletContext'
 import { useBalance } from '../contexts/BalanceContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useCrucible } from '../hooks/useCrucible'
@@ -10,7 +10,7 @@ interface LPPositionModalProps {
   isOpen: boolean
   onClose: () => void
   crucibleAddress: string
-  baseTokenSymbol: 'FOGO' | 'FORGE'
+  baseTokenSymbol: 'SOL' | 'FORGE'
   baseAPY: number
 }
 
@@ -28,12 +28,12 @@ export default function LPPositionModal({
     baseTokenSymbol,
     baseAPY,
   })
-  const { isEstablished, walletPublicKey } = useSession()
+  const { connected, publicKey } = useWallet()
   const { subtractFromBalance, getBalance, addToBalance } = useBalance()
   const { addTransaction } = useAnalytics()
   const { getCrucible } = useCrucible()
 
-  const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
   const baseTokenBalance = getBalance(baseTokenSymbol)
   const lpAPY = baseAPY * 3 // LP APY = base APY * 3
 
@@ -60,8 +60,8 @@ export default function LPPositionModal({
   }
 
   const handleOpenPosition = async () => {
-    if (!isEstablished || !walletPublicKey) {
-      alert('⚠️ Wallet not connected!\n\nPlease connect your wallet first using "Sign in with FOGO".')
+    if (!connected || !publicKey) {
+      alert('⚠️ Wallet not connected!\n\nPlease connect your Phantom wallet first.')
       return
     }
 

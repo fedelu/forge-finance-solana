@@ -5,8 +5,8 @@
 
 export interface ExtendedCrucibleData {
   id: string
-  baseToken: 'FOGO' | 'FORGE'
-  ptokenSymbol: 'cFOGO' | 'cFORGE'
+  baseToken: 'SOL' | 'FORGE'
+  ptokenSymbol: 'cSOL' | 'cFORGE'
   
   // Wrap Mode Data
   wrapMode: {
@@ -50,9 +50,9 @@ export interface ExtendedCrucibleData {
 // Mock data that updates every 5 seconds
 let mockData: ExtendedCrucibleData[] = [
   {
-    id: 'fogo-crucible',
-    baseToken: 'FOGO',
-    ptokenSymbol: 'cFOGO',
+    id: 'sol-crucible',
+    baseToken: 'SOL',
+    ptokenSymbol: 'cSOL',
     wrapMode: {
       exchangeRate: 1.045,
       totalWrapped: 6450000,
@@ -140,7 +140,7 @@ export function startMockUpdates(callback: (data: ExtendedCrucibleData[]) => voi
         lpMode: {
           ...crucible.lpMode,
           tradingVolume24h: Math.max(0, crucible.lpMode.tradingVolume24h * (1 + volumeDelta)),
-          totalLPValue: crucible.lpMode.totalBaseInLP * (crucible.baseToken === 'FOGO' ? 0.5 : 0.002) + crucible.lpMode.totalUSDCInLP,
+          totalLPValue: crucible.lpMode.totalBaseInLP * (crucible.baseToken === 'FORGE' ? 0.002 : 200) + crucible.lpMode.totalUSDCInLP,
         },
         leveragedMode: {
           ...crucible.leveragedMode,
@@ -170,7 +170,7 @@ export function getAllExtendedCrucibleData(): ExtendedCrucibleData[] {
 
 // Calculate weighted APY across all position types
 export function calculateWeightedAPY(crucible: ExtendedCrucibleData): number {
-  const wrapValue = crucible.wrapMode.totalWrapped * (crucible.baseToken === 'FOGO' ? 0.5 : 0.002)
+  const wrapValue = crucible.wrapMode.totalWrapped * (crucible.baseToken === 'FORGE' ? 0.002 : 200)
   const lpValue = crucible.lpMode.totalLPValue
   const leveragedValue = crucible.leveragedMode.totalLeveragedValue
   const totalValue = wrapValue + lpValue + leveragedValue
@@ -190,7 +190,7 @@ export function calculateWeightedAPY(crucible: ExtendedCrucibleData): number {
 
 // Get total deposited value across all modes
 export function getTotalDepositedValue(crucible: ExtendedCrucibleData): number {
-  const wrapValue = crucible.wrapMode.totalWrapped * (crucible.baseToken === 'FOGO' ? 0.5 : 0.002)
+  const wrapValue = crucible.wrapMode.totalWrapped * (crucible.baseToken === 'FORGE' ? 0.002 : 200)
   const lpValue = crucible.lpMode.totalLPValue
   const leveragedValue = crucible.leveragedMode.totalLeveragedValue
   

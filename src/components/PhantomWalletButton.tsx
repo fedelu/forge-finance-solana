@@ -1,40 +1,41 @@
 import React from 'react';
-import { usePhantomWallet } from '../hooks/usePhantomWallet';
-import { initFogoSession } from '../lib/fogoSessionInit';
+import { useWallet } from '../contexts/WalletContext';
 
 export const PhantomWalletButton: React.FC = () => {
   const {
-    provider,
     publicKey,
     connected,
     connecting,
-    error,
-    isInstalled,
-    isUnlocked,
+    walletStatus,
     connect,
     disconnect,
-    signMessage,
-    clearError
-  } = usePhantomWallet();
+    getBalance,
+  } = useWallet();
+
+  const [balance, setBalance] = React.useState<number | null>(null);
+
+  // Fetch balance when connected
+  React.useEffect(() => {
+    if (connected && publicKey) {
+      getBalance().then(setBalance);
+      // Refresh balance every 5 seconds
+      const interval = setInterval(() => {
+        getBalance().then(setBalance);
+      }, 5000);
+      return () => clearInterval(interval);
+    } else {
+      setBalance(null);
+    }
+  }, [connected, publicKey, getBalance]);
 
   const handleConnect = async () => {
     try {
       console.log('🚀 PhantomWalletButton: Starting connection...');
       await connect();
-      
-      // Initialize Fogo Session after successful connection
-      if (provider && publicKey) {
-        console.log('🔥 PhantomWalletButton: Initializing Fogo Session...');
-        const sessionResult = await initFogoSession(provider);
-        
-        if (sessionResult.success) {
-          console.log('✅ PhantomWalletButton: Fogo Session initialized:', sessionResult.sessionId);
-        } else {
-          console.error('❌ PhantomWalletButton: Fogo Session failed:', sessionResult.error);
-        }
-      }
-    } catch (error) {
+      console.log('✅ PhantomWalletButton: Connected successfully');
+    } catch (error: any) {
       console.error('❌ PhantomWalletButton: Connection failed:', error);
+      alert(`Failed to connect wallet: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -42,135 +43,63 @@ export const PhantomWalletButton: React.FC = () => {
     try {
       console.log('🔌 PhantomWalletButton: Disconnecting...');
       await disconnect();
-    } catch (error) {
+      console.log('✅ PhantomWalletButton: Disconnected successfully');
+    } catch (error: any) {
       console.error('❌ PhantomWalletButton: Disconnect failed:', error);
-    }
-  };
-
-  const handleSignMessage = async () => {
-    if (!connected || !publicKey) {
-      console.error('❌ PhantomWalletButton: Not connected, cannot sign message');
-      return;
-    }
-
-    try {
-      const message = `Hello from Forge Finance! Timestamp: ${Date.now()}`;
-      console.log('✍️ PhantomWalletButton: Signing test message...');
-      
-      const signature = await signMessage(message);
-      
-      if (signature) {
-        console.log('✅ PhantomWalletButton: Message signed successfully');
-        console.log('📊 PhantomWalletButton: Signature length:', signature.length);
-        console.log('📄 PhantomWalletButton: Message:', message);
-      } else {
-        console.error('❌ PhantomWalletButton: Signing failed');
-      }
-    } catch (error) {
-      console.error('❌ PhantomWalletButton: Sign message failed:', error);
+      alert(`Failed to disconnect wallet: ${error.message || 'Unknown error'}`);
     }
   };
 
   const getButtonText = () => {
     if (connecting) return 'Connecting...';
-    if (connected) return 'Disconnect';
-    if (!isInstalled) return 'Install Phantom';
-    if (!isUnlocked) return 'Unlock Phantom';
-    return 'Connect Phantom';
+    if (connected) {
+      const shortAddress = publicKey?.toString().slice(0, 4) + '...' + publicKey?.toString().slice(-4);
+      return shortAddress || 'Connected';
+    }
+    if (!walletStatus.isInstalled) return 'Install Phantom';
+    if (!walletStatus.isUnlocked) return 'Unlock Phantom';
+    return 'Connect Wallet';
   };
 
   const getButtonColor = () => {
-    if (connected) return 'bg-red-600 hover:bg-red-700';
-    if (!isInstalled || !isUnlocked) return 'bg-gray-600 hover:bg-gray-700';
-    return 'bg-purple-600 hover:bg-purple-700';
+    if (connected) return 'bg-gradient-to-r from-fogo-primary to-fogo-secondary hover:from-fogo-primary-dark hover:to-fogo-secondary-dark';
+    if (!walletStatus.isInstalled || !walletStatus.isUnlocked) return 'bg-fogo-gray-700 hover:bg-fogo-gray-600';
+    return 'bg-gradient-to-r from-fogo-primary to-fogo-secondary hover:from-fogo-primary-dark hover:to-fogo-secondary-dark';
   };
 
   const isButtonDisabled = () => {
-    return connecting || (!isInstalled && !connected);
+    return connecting || (!walletStatus.isInstalled && !connected);
   };
 
   return (
-    <div className="space-y-4 p-4 bg-white rounded-lg shadow-lg">
-      <h3 className="text-lg font-semibold text-gray-900">Phantom Wallet Connection</h3>
-      
-      {/* Status Display */}
-      <div className="space-y-2">
-        <div className="flex items-center space-x-2">
-          <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-          <span className="text-sm font-medium">
-            {connected ? 'Connected' : 'Disconnected'}
+    <div className="relative flex items-center gap-3">
+      {connected && publicKey && (
+        <div className="hidden md:flex items-center gap-2 px-3 py-2 panel-muted rounded-lg border border-fogo-gray-700">
+          <div className="w-2 h-2 rounded-full bg-green-400"></div>
+          <span className="text-fogo-gray-300 text-sm font-medium">
+            {publicKey.toString().slice(0, 4)}...{publicKey.toString().slice(-4)}
           </span>
-        </div>
-        
-        {publicKey && (
-          <div className="text-sm text-gray-600">
-            <strong>Address:</strong> {publicKey.toString().slice(0, 8)}...{publicKey.toString().slice(-8)}
-          </div>
-        )}
-        
-        {!isInstalled && (
-          <div className="text-sm text-red-600">
-            Phantom wallet not installed. 
-            <a 
-              href="https://phantom.app/download" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="ml-1 text-blue-600 hover:underline"
-            >
-              Install here
-            </a>
-          </div>
-        )}
-        
-        {isInstalled && !isUnlocked && (
-          <div className="text-sm text-yellow-600">
-            Phantom wallet is locked. Please unlock it and try again.
-          </div>
-        )}
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-red-600">{error}</span>
-            <button
-              onClick={clearError}
-              className="text-red-400 hover:text-red-600 text-sm"
-            >
-              ✕
-            </button>
-          </div>
+          {balance !== null && (
+            <span className="text-fogo-gray-400 text-sm">
+              {balance.toFixed(2)} SOL
+            </span>
+          )}
         </div>
       )}
+      
+      <button
+        onClick={connected ? handleDisconnect : handleConnect}
+        disabled={isButtonDisabled()}
+        className={`px-6 py-3 text-white rounded-lg font-medium transition-all duration-200 border border-fogo-gray-500 hover:border-fogo-primary/50 disabled:opacity-50 disabled:cursor-not-allowed ${getButtonColor()}`}
+      >
+        {getButtonText()}
+      </button>
 
-      {/* Action Buttons */}
-      <div className="space-y-2">
-        <button
-          onClick={connected ? handleDisconnect : handleConnect}
-          disabled={isButtonDisabled()}
-          className={`w-full px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${getButtonColor()}`}
-        >
-          {getButtonText()}
-        </button>
-        
-        {connected && (
-          <button
-            onClick={handleSignMessage}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Test Sign Message
-          </button>
-        )}
-      </div>
-
-      {/* Debug Info */}
-      <div className="text-xs text-gray-500 space-y-1">
-        <div>Installed: {isInstalled ? 'Yes' : 'No'}</div>
-        <div>Unlocked: {isUnlocked ? 'Yes' : 'No'}</div>
-        <div>Connected: {connected ? 'Yes' : 'No'}</div>
-        <div>Connecting: {connecting ? 'Yes' : 'No'}</div>
-      </div>
+      {walletStatus.error && (
+        <div className="absolute top-full mt-2 right-0 p-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-xs max-w-xs">
+          {walletStatus.error}
+        </div>
+      )}
     </div>
   );
 };

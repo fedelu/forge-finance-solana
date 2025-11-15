@@ -30,7 +30,7 @@ export function useLending() {
   useEffect(() => {
     // TODO: Replace with on-chain fetch via IDL
     setMarkets([
-      { marketPubkey: 'MARKET_FOGO', baseMint: 'FOGO', tvl: '120,000', utilizationBps: 4200, supplyApyBps: 800, borrowApyBps: 1120 },
+      { marketPubkey: 'MARKET_SOL', baseMint: 'SOL', tvl: '120,000', utilizationBps: 4200, supplyApyBps: 800, borrowApyBps: 1120 },
       { marketPubkey: 'MARKET_USDC', baseMint: 'USDC', tvl: '310,000', utilizationBps: 5600, supplyApyBps: 800, borrowApyBps: 1540 },
     ])
   }, [])

@@ -32,17 +32,17 @@ export const DEFAULT_CONFIG: VolatilityFarmingConfig = {
   feeRate: INFERNO_CLOSE_FEE_RATE, // Forge principal close fee
   protocolFeeCut: 0.20, // 20% to protocol treasury
   crucibleHoldersCut: 0.80, // 80% to crucible holders
-  totalProtocolTVL: 4_300_000, // 4.3M FOGO
+  totalProtocolTVL: 4_300_000, // 4.3M total TVL (USD)
 };
 
 // Crucible configurations
 export const CRUCIBLE_CONFIGS: CrucibleConfig[] = [
   {
-    id: 'fogo-crucible',
-    name: 'FOGO',
-    symbol: 'FOGO',
+    id: 'sol-crucible',
+    name: 'Solana',
+    symbol: 'SOL',
     volatilityFactor: 0.02, // 2%
-    tvl: 3_225_000, // FOGO crucible TVL for cToken price calculation
+    tvl: 3_225_000, // SOL crucible TVL for cToken price calculation
   },
   {
     id: 'forge-crucible',

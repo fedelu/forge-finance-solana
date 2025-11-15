@@ -20,8 +20,8 @@ export interface CrucibleData {
   id: string;
   name: string;
   symbol: string;
-  baseToken: 'FOGO' | 'FORGE';
-  ptokenSymbol: 'cFOGO' | 'cFORGE';
+  baseToken: 'SOL' | 'FORGE';
+  ptokenSymbol: 'cSOL' | 'cFORGE';
   tvl: number;
   apr: number;
   status: 'active' | 'paused' | 'maintenance';
@@ -70,20 +70,20 @@ const forgeMetrics = calculateVolatilityFarmingMetrics(CRUCIBLE_CONFIGS[1], DEFA
 // Mock crucible data with volatility farming calculations
   const mockCrucibles: CrucibleData[] = [
     {
-      id: 'fogo-crucible',
-      name: 'FOGO',
-      symbol: 'FOGO',
-      baseToken: 'FOGO',
-      ptokenSymbol: 'cFOGO',
-      tvl: 3_225_000, // FOGO crucible TVL for cToken price calculation
+      id: 'sol-crucible',
+      name: 'Solana',
+      symbol: 'SOL',
+      baseToken: 'SOL',
+      ptokenSymbol: 'cSOL',
+      tvl: 3_225_000, // SOL crucible TVL for cToken price calculation
       apr: fogoMetrics.apyCompounded, // Compounded APY from volatility farming
       status: 'active',
       userDeposit: 0,
       userShares: 0,
-      icon: '/fogo-logo.png',
-      ptokenMint: 'mockPfogoMint1',
-      exchangeRate: BigInt(Math.floor(Number(RATE_SCALE) * 1.045)), // Initial exchange rate: 1 cFOGO = 1.045 FOGO (4.5% initial yield)
-      totalWrapped: BigInt(6450000000000), // 6,450,000 cFOGO emitted
+      icon: '/usd-coin-usdc-logo-last.png',
+      ptokenMint: 'mockPsolMint1',
+      exchangeRate: BigInt(Math.floor(Number(RATE_SCALE) * 1.045)), // Initial exchange rate: 1 cSOL = 1.045 SOL (4.5% initial yield)
+      totalWrapped: BigInt(6450000000000), // 6,450,000 cSOL emitted
       userPtokenBalance: BigInt(0),
       estimatedBaseValue: BigInt(0),
       currentAPY: fogoMetrics.apyCompounded * 100, // Convert to percentage
@@ -375,13 +375,14 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
           ? BigInt(Math.floor(Number(current.estimatedBaseValue) * (1 - proportionUnwrapped)))
           : BigInt(0)
         
+        const baseTokenPrice = crucible.baseToken === 'FORGE' ? 0.002 : 200; // Approx prices for demo
         return {
           ...prev,
           [crucibleId]: {
             ptokenBalance: newPTokenBalance, // Subtract unwrapped amount
             baseDeposited: newBaseDeposited, // Proportional base deposited
             estimatedBaseValue: newEstimatedBaseValue, // Proportional estimated value
-            apyEarnedUSD: current.apyEarnedUSD + (apyEarnedTokens * (crucible.baseToken === 'FOGO' ? 0.5 : 0.002)), // Track APY earnings in USD
+            apyEarnedUSD: current.apyEarnedUSD + (apyEarnedTokens * baseTokenPrice), // Track APY earnings in USD
             depositTimestamp: newPTokenBalance > 0 ? current.depositTimestamp : undefined // Keep timestamp if position still open
           }
         };

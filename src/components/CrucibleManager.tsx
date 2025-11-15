@@ -26,8 +26,8 @@ interface Crucible {
   id: string
   name: string
   symbol: string
-  baseToken: 'FOGO' | 'FORGE'
-  ptokenSymbol: 'cFOGO' | 'cFORGE'
+  baseToken: 'SOL' | 'FORGE'
+  ptokenSymbol: 'cSOL' | 'cFORGE'
   tvl: number
   apr: number
   status: 'active' | 'paused' | 'maintenance'
@@ -301,7 +301,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                   <LeveragedProjectionChart
                     baseAPY={crucible.apr * 100}
                     leverage={selectedLeverage[crucible.id] || 1.0}
-                    currentPrice={crucible.baseToken === 'FOGO' ? 0.5 : 0.002}
+                    currentPrice={crucible.baseToken === 'FORGE' ? 0.002 : 200}
                     currentExchangeRate={(() => {
                       // Initial exchange rate is 1.045
                       const initialExchangeRate = 1.045

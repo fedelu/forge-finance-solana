@@ -35,7 +35,7 @@ interface WalletContextType {
   sendTransaction: (transaction: Transaction | VersionedTransaction) => Promise<string>;
   getBalance: () => Promise<number | null>;
   getTokenBalance: (mintAddress: string) => Promise<number | null>;
-  getFogoBalance: () => Promise<number | null>;
+  getSolBalance: () => Promise<number | null>;
   wallet: PhantomWallet | null;
   walletStatus: WalletStatus;
 }
@@ -70,38 +70,93 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     error: undefined
   });
 
-  // Check for Phantom wallet on mount
+  // Check for Phantom wallet on mount and listen for changes
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const phantom = (window as any).phantom?.solana;
+    const detectPhantom = () => {
+      const phantom = (window as any).solana;
+      if (phantom?.isPhantom) {
+        setWallet(phantom);
+        const isConnected = phantom.isConnected && !!phantom.publicKey;
+        setWalletStatus({
+          isInstalled: true,
+          isUnlocked: !!phantom.publicKey,
+          isAvailable: true,
+          error: undefined
+        });
+        
+        // If already connected, set the public key
+        if (isConnected && phantom.publicKey) {
+          setPublicKey(phantom.publicKey);
+          setConnected(true);
+        }
+      } else {
+        setWalletStatus({
+          isInstalled: false,
+          isUnlocked: false,
+          isAvailable: false,
+          error: 'Phantom wallet not found'
+        });
+      }
+    };
+
+    // Initial detection
+    detectPhantom();
+
+    // Listen for Phantom wallet events
+    const handleAccountChange = (publicKey: PublicKey | null) => {
+      if (publicKey) {
+        setPublicKey(publicKey);
+        setConnected(true);
+      } else {
+        setPublicKey(null);
+        setConnected(false);
+      }
+    };
+
+    const handleDisconnect = () => {
+      setPublicKey(null);
+      setConnected(false);
+    };
+
+    const phantom = (window as any).solana;
     if (phantom?.isPhantom) {
-      setWallet(phantom);
-      setWalletStatus({
-        isInstalled: true,
-        isUnlocked: !!phantom.publicKey,
-        isAvailable: true,
-        error: undefined
-      });
-    } else {
-      setWalletStatus({
-        isInstalled: false,
-        isUnlocked: false,
-        isAvailable: false,
-        error: 'Phantom wallet not found'
-      });
+      phantom.on('accountChanged', handleAccountChange);
+      phantom.on('disconnect', handleDisconnect);
     }
+
+    // Listen for provider injection
+    window.addEventListener('load', detectPhantom);
+
+    return () => {
+      if (phantom?.isPhantom) {
+        phantom.removeListener('accountChanged', handleAccountChange);
+        phantom.removeListener('disconnect', handleDisconnect);
+      }
+      window.removeEventListener('load', detectPhantom);
+    };
   }, []);
 
   const connect = useCallback(async (publicKey?: PublicKey) => {
     if (!wallet) {
-      throw new Error('Phantom wallet not found');
+      const error = 'Phantom wallet not found. Please install Phantom wallet.';
+      setWalletStatus(prev => ({
+        ...prev,
+        error
+      }));
+      throw new Error(error);
     }
 
     setConnecting(true);
     try {
-      const response = await wallet.connect();
+      // Request connection to Phantom wallet
+      const response = await wallet.connect({ onlyIfTrusted: false });
       const newPublicKey = response.publicKey;
+      
+      if (!newPublicKey) {
+        throw new Error('Failed to get public key from wallet');
+      }
       
       setPublicKey(newPublicKey);
       setConnected(true);
@@ -112,7 +167,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         error: undefined
       });
       
-      console.log('✅ Wallet connected successfully to Solana testnet');
+      console.log('✅ Wallet connected successfully to Solana devnet:', newPublicKey.toString());
     } catch (error: any) {
       console.error('❌ Wallet connection failed:', error);
       setWalletStatus(prev => ({
@@ -178,20 +233,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   }, [publicKey]);
 
-  const getFogoBalance = useCallback(async (): Promise<number | null> => {
-    if (!publicKey) {
-      return null;
-    }
-
-    try {
-      // This is a simplified version - in a real app you'd use SPL Token functions
-      console.log('FOGO balance check for wallet:', publicKey.toString());
-      return 0; // Placeholder
-    } catch (error) {
-      console.error('❌ Failed to get FOGO balance:', error);
-      return null;
-    }
-  }, [publicKey]);
+  const getSolBalance = useCallback(async (): Promise<number | null> => {
+    return getBalance(); // SOL balance is the same as native balance
+  }, [getBalance]);
 
   const signTransaction = useCallback(async (transaction: Transaction): Promise<Transaction> => {
     if (!wallet || !publicKey) {
@@ -220,24 +264,38 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   }, [wallet, publicKey]);
 
   const sendTransaction = useCallback(async (transaction: Transaction | VersionedTransaction): Promise<string> => {
-    if (!publicKey) {
+    if (!publicKey || !wallet) {
       throw new Error('No wallet connected');
     }
 
     try {
-      // For now, we'll just log that the transaction was received
-      // In a real implementation, you'd handle the transaction properly
-      console.log('📤 Transaction received for sending:', transaction);
+      // Sign the transaction with Phantom
+      let signedTransaction: Transaction | VersionedTransaction;
       
-      // Return a mock signature for now
-      const mockSignature = 'mock_signature_' + Date.now();
-      console.log('✅ Transaction sent successfully (mock):', mockSignature);
-      return mockSignature;
+      if (transaction instanceof VersionedTransaction) {
+        // For versioned transactions, use signTransaction
+        signedTransaction = await wallet.signTransaction(transaction as any);
+      } else {
+        // For legacy transactions
+        signedTransaction = await wallet.signTransaction(transaction);
+      }
+      
+      // Send the signed transaction to the network
+      const signature = await connection.sendRawTransaction(
+        signedTransaction.serialize(),
+        { skipPreflight: false, maxRetries: 3 }
+      );
+      
+      // Wait for confirmation
+      await connection.confirmTransaction(signature, 'confirmed');
+      
+      console.log('✅ Transaction sent successfully:', signature);
+      return signature;
     } catch (error: any) {
       console.error('❌ Transaction failed:', error);
       throw error;
     }
-  }, [publicKey, connection]);
+  }, [publicKey, connection, wallet]);
 
   const value = useMemo(() => ({
     connection,
@@ -253,10 +311,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     sendTransaction,
     getBalance,
     getTokenBalance,
-    getFogoBalance,
+    getSolBalance,
     wallet,
     walletStatus,
-  }), [connection, publicKey, connected, connecting, network, connect, disconnect, switchNetwork, signTransaction, signAllTransactions, sendTransaction, getBalance, getTokenBalance, getFogoBalance, wallet, walletStatus]);
+  }), [connection, publicKey, connected, connecting, network, connect, disconnect, switchNetwork, signTransaction, signAllTransactions, sendTransaction, getBalance, getTokenBalance, getSolBalance, wallet, walletStatus]);
 
   return (
     <WalletContext.Provider value={value}>

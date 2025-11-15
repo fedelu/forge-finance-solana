@@ -18,7 +18,7 @@ interface LVFPositionCardProps {
     isOpen: boolean
   }
   crucibleAddress: string
-  baseTokenSymbol: 'FOGO' | 'FORGE'
+  baseTokenSymbol: 'SOL' | 'FORGE'
   baseAPY: number
   onClose: () => void
 }
@@ -48,7 +48,7 @@ export default function LVFPositionCard({
 
   const handleClosePosition = async () => {
     // Calculate closing fee for confirmation
-    const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+    const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
     const collateralValueUSD = position.collateral * baseTokenPrice
     const principalFeeUSD = collateralValueUSD * INFERNO_CLOSE_FEE_RATE
     const baseAmountAfterFee = position.collateral * (1 - INFERNO_CLOSE_FEE_RATE)

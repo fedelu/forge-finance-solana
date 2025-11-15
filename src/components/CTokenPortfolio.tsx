@@ -34,12 +34,12 @@ export default function CTokenPortfolio() {
 
   // Fetch LVF positions for all crucibles
   // Use individual hooks for each crucible (React hooks rules compliant)
-  const fogoCrucible = positions.find(p => p.baseTokenSymbol === 'FOGO')
+  const fogoCrucible = positions.find(p => p.baseTokenSymbol === 'SOL')
   const forgeCrucible = positions.find(p => p.baseTokenSymbol === 'FORGE')
   
   const fogoLVFPosition = useLVFPosition({
     crucibleAddress: fogoCrucible?.crucibleAddress || '',
-    baseTokenSymbol: 'FOGO',
+    baseTokenSymbol: 'SOL',
   })
   
   const forgeLVFPosition = useLVFPosition({
@@ -50,7 +50,7 @@ export default function CTokenPortfolio() {
   // Fetch LP positions for all crucibles
   const fogoLP = useLP({
     crucibleAddress: fogoCrucible?.crucibleAddress || '',
-    baseTokenSymbol: 'FOGO',
+    baseTokenSymbol: 'SOL',
     baseAPY: fogoCrucible?.baseAPY || 0,
   })
 
@@ -136,7 +136,7 @@ export default function CTokenPortfolio() {
       .filter(p => p.isOpen) // Only open positions
       .map(p => ({ 
         ...p, 
-        crucible: positions.find(pos => pos.baseTokenSymbol === 'FOGO')! 
+        crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
       }))
     const forge = forgeLVFPosition.positions
       .filter(p => p.isOpen) // Only open positions
@@ -155,7 +155,7 @@ export default function CTokenPortfolio() {
       .filter(p => p.isOpen) // Only open positions
       .map(p => ({ 
         ...p, 
-        crucible: positions.find(pos => pos.baseTokenSymbol === 'FOGO')! 
+        crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
       }))
     const forge = forgeLP.positions
       .filter(p => p.isOpen) // Only open positions
@@ -219,7 +219,7 @@ export default function CTokenPortfolio() {
         return isOpen && hasValidData
       })
       .map(lvf => {
-        const basePrice = lvf.token === 'FOGO' ? 0.5 : 0.002
+        const basePrice = lvf.token === 'FORGE' ? 0.002 : 200
         const tokenCollateralValue = lvf.collateral * basePrice // Token collateral value (after fee)
         const leverageFactor = lvf.leverageFactor || 1.0
         const borrowedUSDC = lvf.borrowedUSDC || 0
@@ -273,7 +273,7 @@ export default function CTokenPortfolio() {
     const wrapPositions = positions.reduce((sum, pos) => {
       const userBalance = userBalances[pos.crucibleAddress]
       if (userBalance && userBalance.baseDeposited > 0) {
-        const basePrice = pos.baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+        const basePrice = pos.baseTokenSymbol === 'FORGE' ? 0.002 : 200
         return sum + (userBalance.baseDeposited * basePrice)
       }
       return sum
@@ -282,7 +282,7 @@ export default function CTokenPortfolio() {
     // Calculate LP positions value (allCTokenUSDCPositions includes both LP and leveraged)
     // For "Total Deposited Value", we only count what was actually deposited (excluding borrowed USDC)
     const lpValue = allCTokenUSDCPositions.reduce((sum, pos) => {
-      const basePrice = pos.baseToken === 'FOGO' ? 0.5 : 0.002
+      const basePrice = pos.baseToken === 'FORGE' ? 0.002 : 200
       const tokenCollateralValue = pos.baseAmount * basePrice
       
       // Check if this is a leveraged position (has borrowedUSDC > 0 or leverage > 1)
@@ -406,7 +406,7 @@ export default function CTokenPortfolio() {
                 cTokenPositions.map((position, index) => {
                   const userBalance = userBalances[position.crucibleAddress]
                   const ctokenBalance = userBalance?.ptokenBalance ? Number(userBalance.ptokenBalance) / 1e9 : 0
-                  const basePrice = position.baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+                  const basePrice = position.baseTokenSymbol === 'FORGE' ? 0.002 : 200
                   const exchangeRate = 1.045 // Default exchange rate
                   const valueUSD = ctokenBalance * exchangeRate * basePrice
                   
@@ -629,12 +629,12 @@ function ClosePositionButton({ position, crucible, onClose }: {
 }) {
   const { closePosition: closeLVFPosition, loading: lvfLoading } = useLVFPosition({
     crucibleAddress: crucible.crucibleAddress,
-    baseTokenSymbol: crucible.baseTokenSymbol as 'FOGO' | 'FORGE',
+    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL' | 'FORGE',
   })
   
   const { closePosition: closeLPPosition, loading: lpLoading } = useLP({
     crucibleAddress: crucible.crucibleAddress,
-    baseTokenSymbol: crucible.baseTokenSymbol as 'FOGO' | 'FORGE',
+    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL' | 'FORGE',
     baseAPY: crucible.baseAPY,
   })
   
