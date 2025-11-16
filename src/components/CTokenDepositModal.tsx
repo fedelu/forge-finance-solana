@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { XMarkIcon, ArrowUpIcon, FireIcon, ChartBarIcon, BoltIcon } from '@heroicons/react/24/outline'
-import { PublicKey } from '@solana/web3.js'
+import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
 import { useCToken } from '../hooks/useCToken'
 import { useLP } from '../hooks/useLP'
 import { useLVFPosition } from '../hooks/useLVFPosition'
@@ -37,11 +38,34 @@ export default function CTokenDepositModal({
   const [amount, setAmount] = useState('')
   const [leverage, setLeverage] = useState<Leverage>(1)
   const [submitting, setSubmitting] = useState(false)
+  const [actualWalletBalance, setActualWalletBalance] = useState<number | null>(null)
   const { addTransaction } = useAnalytics()
-  const { connected, publicKey } = useWallet()
+  const { connected, publicKey, connection } = useWallet()
+  const { sendTransaction: adapterSendTransaction } = useSolanaWallet() // Use adapter's sendTransaction directly
   const { balances, getBalance, subtractFromBalance, addToBalance } = useBalance()
   const { getCrucible } = useCrucible()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
+  
+  // Fetch actual wallet balance when modal opens and wallet is connected
+  React.useEffect(() => {
+    if (isOpen && connected && publicKey && baseTokenSymbol === 'SOL') {
+      const fetchBalance = async () => {
+        try {
+          const balance = await connection.getBalance(publicKey)
+          setActualWalletBalance(balance / 1e9) // Convert lamports to SOL
+        } catch (error) {
+          console.error('Failed to fetch wallet balance:', error)
+          setActualWalletBalance(null)
+        }
+      }
+      fetchBalance()
+      // Refresh balance every 5 seconds while modal is open
+      const interval = setInterval(fetchBalance, 5000)
+      return () => clearInterval(interval)
+    } else {
+      setActualWalletBalance(null)
+    }
+  }, [isOpen, connected, publicKey, connection, baseTokenSymbol])
   
   // Use connected wallet public key for hooks
   const publicKeyForHook = useMemo(() => {
@@ -62,7 +86,10 @@ export default function CTokenDepositModal({
   })
 
   const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
-  const baseTokenBalance = getBalance(baseTokenSymbol)
+  // Use actual wallet balance if available (for SOL), otherwise use local balance
+  const baseTokenBalance = (baseTokenSymbol === 'SOL' && actualWalletBalance !== null) 
+    ? actualWalletBalance 
+    : getBalance(baseTokenSymbol)
   const usdcBalance = getBalance('USDC')
   const loading = depositLoading || lpLoading || leveragedLoading || submitting
 const parsedAmount = amount ? parseFloat(amount) : 0
@@ -139,29 +166,169 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         // Wrap mode: Mint cToken using wrapTokens from useCrucible
         const depositAmount = parseFloat(amount)
         
-        // Call wrapTokens which handles the deposit and cToken minting with Forge fee
-        await wrapTokens(crucibleAddress, depositAmount.toString())
+        // Check actual wallet balance from blockchain
+        if (baseTokenSymbol === 'SOL') {
+          // Use cached balance if available, otherwise fetch fresh
+          let solBalance = actualWalletBalance
+          if (solBalance === null) {
+            const actualBalance = await connection.getBalance(publicKey)
+            solBalance = actualBalance / 1e9 // Convert lamports to SOL
+            setActualWalletBalance(solBalance)
+          }
+          
+          // Reserve some SOL for transaction fees (0.01 SOL)
+          const minReserve = 0.01
+          const availableBalance = solBalance - minReserve
+          
+          if (depositAmount > availableBalance) {
+            alert(`⚠️ Insufficient SOL balance!\n\nYou have: ${solBalance.toFixed(4)} SOL\nAvailable (after reserving ${minReserve} SOL for fees): ${availableBalance.toFixed(4)} SOL\n\nRequested: ${depositAmount.toFixed(4)} SOL`)
+            setSubmitting(false)
+            return
+          }
+        }
         
-        // Update wallet balances AFTER wrapTokens completes
-        subtractFromBalance(baseTokenSymbol, depositAmount)
-        
-        // Calculate cTokens received based on exchange rate (after fee)
-        const feeAmount = depositAmount * WRAP_FEE_RATE
-        const netAmount = depositAmount - feeAmount
-        const ctokensReceived = netAmount / 1.045 // Based on initial exchange rate
-        addToBalance(ctokenSymbol, ctokensReceived)
-        
-        // Dispatch event to refresh portfolio
-        window.dispatchEvent(new CustomEvent('wrapPositionOpened', { 
-          detail: { crucibleAddress, baseTokenSymbol } 
-        }))
-        
-        addTransaction({
-          type: 'deposit',
-          amount: depositAmount,
-          token: baseTokenSymbol,
-          crucibleId: crucibleAddress,
-        })
+        // Send actual SOL transaction to crucible vault
+        if (baseTokenSymbol === 'SOL' && publicKey && adapterSendTransaction) {
+          try {
+            // Use the crucible vault address from config (in production, this would be a PDA)
+            const crucibleVaultAddress = new PublicKey('5R7DQ1baJiYoi4GdVu1hTwBZMHxqabDenzaLVA9V7wV3')
+            
+            // Create transfer transaction
+            const transaction = new Transaction().add(
+              SystemProgram.transfer({
+                fromPubkey: publicKey,
+                toPubkey: crucibleVaultAddress,
+                lamports: Math.floor(depositAmount * LAMPORTS_PER_SOL), // Convert SOL to lamports (use floor to avoid decimals)
+              })
+            )
+            
+            // Get recent blockhash (required for transaction)
+            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+            transaction.recentBlockhash = blockhash
+            transaction.feePayer = publicKey
+            
+            // Use the adapter's sendTransaction which handles signing and sending
+            // This will trigger the wallet popup for user approval
+            console.log(`💸 Preparing to send ${depositAmount} SOL to crucible vault...`)
+            console.log(`📝 From: ${publicKey.toString()}`)
+            console.log(`📝 To: ${crucibleVaultAddress.toString()}`)
+            console.log(`📝 Amount: ${depositAmount} SOL (${Math.floor(depositAmount * LAMPORTS_PER_SOL)} lamports)`)
+            
+            // The adapter's sendTransaction will:
+            // 1. Show wallet popup for user to approve
+            // 2. Sign the transaction
+            // 3. Send it to the network
+            // 4. Return the signature
+            const signature = await adapterSendTransaction(transaction, connection, {
+              skipPreflight: false,
+              maxRetries: 3,
+            })
+            
+            console.log(`✅ Transaction sent: ${signature}`)
+            
+            // Wait for confirmation with timeout
+            try {
+              await connection.confirmTransaction({
+                signature,
+                blockhash,
+                lastValidBlockHeight,
+              }, 'confirmed')
+              console.log(`✅ Transaction confirmed: ${signature}`)
+            } catch (confirmError) {
+              // Transaction might still be processing, check status
+              console.warn('Confirmation check failed, verifying transaction status...')
+              const status = await connection.getSignatureStatus(signature)
+              if (status.value?.err) {
+                throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`)
+              }
+              console.log(`✅ Transaction status: ${status.value?.confirmationStatus || 'unknown'}`)
+            }
+            
+            // Update local state after successful transaction
+            await wrapTokens(crucibleAddress, depositAmount.toString())
+            
+            // Calculate cTokens received based on exchange rate (after fee)
+            const feeAmount = depositAmount * WRAP_FEE_RATE
+            const netAmount = depositAmount - feeAmount
+            const ctokensReceived = netAmount / 1.045 // Based on initial exchange rate
+            addToBalance(ctokenSymbol, ctokensReceived)
+            
+            // Refresh actual wallet balance after deposit
+            try {
+              const newBalance = await connection.getBalance(publicKey)
+              setActualWalletBalance(newBalance / 1e9)
+            } catch (error) {
+              console.error('Failed to refresh balance:', error)
+            }
+            
+            // Dispatch events to refresh UI
+            window.dispatchEvent(new CustomEvent('wrapPositionOpened', { 
+              detail: { crucibleAddress, baseTokenSymbol } 
+            }))
+            window.dispatchEvent(new CustomEvent('depositComplete', { 
+              detail: { token: baseTokenSymbol, amount: depositAmount } 
+            }))
+            
+            addTransaction({
+              type: 'deposit',
+              amount: depositAmount,
+              token: baseTokenSymbol,
+              crucibleId: crucibleAddress,
+              signature: signature
+            })
+            
+            // Show success message with transaction link
+            const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`
+            alert(`✅ Deposit Successful!\n\n${depositAmount} SOL deposited\n${ctokensReceived.toFixed(4)} ${ctokenSymbol} received\nTransaction: ${signature.substring(0, 8)}...\n\nView on Explorer: ${explorerUrl}`)
+            
+            setAmount('')
+            onClose()
+            setSubmitting(false)
+            return
+          } catch (error: any) {
+            console.error('Transaction failed:', error)
+            alert(`❌ Transaction Failed: ${error.message || 'Unknown error'}\n\nPlease try again.`)
+            setSubmitting(false)
+            return
+          }
+        } else {
+          // For non-SOL tokens or if wallet not connected, use simulation
+          await wrapTokens(crucibleAddress, depositAmount.toString())
+          subtractFromBalance(baseTokenSymbol, depositAmount)
+          
+          // Calculate cTokens received based on exchange rate (after fee)
+          const feeAmount = depositAmount * WRAP_FEE_RATE
+          const netAmount = depositAmount - feeAmount
+          const ctokensReceived = netAmount / 1.045 // Based on initial exchange rate
+          addToBalance(ctokenSymbol, ctokensReceived)
+          
+          // Dispatch event to refresh portfolio
+          window.dispatchEvent(new CustomEvent('wrapPositionOpened', { 
+            detail: { crucibleAddress, baseTokenSymbol } 
+          }))
+          
+          // Refresh actual wallet balance after deposit
+          if (baseTokenSymbol === 'SOL' && publicKey) {
+            try {
+              const newBalance = await connection.getBalance(publicKey)
+              setActualWalletBalance(newBalance / 1e9)
+            } catch (error) {
+              console.error('Failed to refresh balance:', error)
+            }
+          }
+          
+          // Dispatch event to refresh wallet balance
+          window.dispatchEvent(new CustomEvent('depositComplete', { 
+            detail: { token: baseTokenSymbol, amount: depositAmount } 
+          }))
+          
+          addTransaction({
+            type: 'deposit',
+            amount: depositAmount,
+            token: baseTokenSymbol,
+            crucibleId: crucibleAddress,
+          })
+        }
       } else {
         // LP mode
         const baseAmt = parseFloat(amount)
@@ -210,6 +377,10 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           setTimeout(() => {
             window.dispatchEvent(new CustomEvent('lpPositionOpened', { 
               detail: { crucibleAddress, baseTokenSymbol } 
+            }))
+            // Dispatch event to refresh wallet balance
+            window.dispatchEvent(new CustomEvent('depositComplete', { 
+              detail: { token: baseTokenSymbol, amount: baseAmt } 
             }))
           }, 100)
           
@@ -268,9 +439,9 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           // NOTE: Does NOT add to ptokenBalance - cTOKENS are locked in LP
           trackLeveragedPosition(crucibleAddress, baseForPosition)
           
-          // DON'T add LP tokens here - let FogoSessions calculate them from localStorage
+          // LP tokens are calculated by useLPBalance hook
           // This ensures consistency and prevents double counting
-          console.log('✅ Position opened - FogoSessions will calculate LP tokens from localStorage')
+          console.log('✅ Position opened - LP tokens will be calculated by useLPBalance hook')
 
           // Add transaction to analytics
           addTransaction({
@@ -421,7 +592,10 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               {baseTokenSymbol}
             </span>
             <span className="ml-auto text-xs text-fogo-gray-500">
-              Balance: {baseTokenBalance.toFixed(2)}
+              Balance: {baseTokenBalance.toFixed(4)} {baseTokenSymbol}
+              {baseTokenSymbol === 'SOL' && actualWalletBalance !== null && (
+                <span className="ml-1 text-green-400" title="Live wallet balance">●</span>
+              )}
             </span>
           </label>
           <div className="flex space-x-2">

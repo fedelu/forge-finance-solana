@@ -123,7 +123,7 @@ export default function CTokenWithdrawModal({
           // Remove LP tokens from wallet (if they were added when opening)
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
-          const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+          const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
           const position = lvfPositions.find(p => p.id === positionId)
           if (position) {
             const collateralValue = position.collateral * baseTokenPrice

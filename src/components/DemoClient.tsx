@@ -11,6 +11,7 @@ import { AnalyticsProvider } from '../contexts/AnalyticsContext'
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard'
 import { useLending, MarketInfo } from '../hooks/useLending'
 import { LENDING_YIELD_FEE_RATE } from '../config/fees'
+import PhantomWalletButton from './PhantomWalletButton'
 
 // Lending Supply Modal Component
 function LendingSupplyModal({ 
@@ -120,7 +121,6 @@ function LendingSupplyModal({
 function DemoContent() {
   const [mainTab, setMainTab] = useState('crucibles')
   const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const { connected, publicKey, connect } = useWallet()
   const { markets, supply, loading: lendingLoading } = useLending()
   const [supplyModal, setSupplyModal] = useState<{open: boolean, market: string | null}>({ open: false, market: null })
 
@@ -211,29 +211,7 @@ function DemoContent() {
                 </div>
 
                 <div className="flex items-center justify-end gap-4 flex-shrink-0">
-                  {!connected ? (
-                    <button
-                      onClick={() => connect()}
-                      className="hidden md:flex items-center space-x-3 panel-muted text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 border border-fogo-gray-500 hover:border-fogo-primary/50"
-                    >
-                      <div className="w-6 h-6 bg-gradient-to-r from-fogo-primary to-fogo-secondary rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M14.724 0h-8.36L5.166 4.804h-3.61L.038 10.898a1.28 1.28 0 0 0 1.238 1.591h3.056L1.465 24l9.744-10.309c.771-.816.195-2.162-.925-2.162h-4.66l1.435-5.765h7.863l1.038-4.172A1.28 1.28 0 0 0 14.723 0ZM26.09 18.052h-2.896V5.58h9.086v2.525h-6.19v2.401h5.636v2.525H26.09v5.02Zm13.543.185c-1.283 0-2.404-.264-3.365-.793a5.603 5.603 0 0 1-2.24-2.233c-.533-.96-.8-2.09-.8-3.394 0-1.304.267-2.451.8-3.41a5.55 5.55 0 0 1 2.24-2.225c.96-.523 2.08-.785 3.365-.785 1.285 0 2.42.259 3.381.777a5.474 5.474 0 0 1 2.233 2.218c.528.96.793 2.1.793 3.425 0 1.324-.268 2.437-.801 3.403a5.56 5.56 0 0 1-2.24 2.233c-.961.523-2.081.785-3.366.785v-.001Zm.016-2.525c1.118 0 1.98-.353 2.586-1.062.606-.708.91-1.652.91-2.833 0-1.182-.304-2.137-.91-2.84-.605-.704-1.473-1.055-2.602-1.055-1.128 0-1.984.351-2.595 1.054-.611.704-.916 1.645-.916 2.825 0 1.18.305 2.14.916 2.85.61.708 1.48 1.061 2.61 1.061Z" />
-                        </svg>
-                      </div>
-                      <span>Connect Wallet</span>
-                    </button>
-                  ) : (
-                    <div className="hidden md:flex items-center space-x-3 panel-muted text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 border border-fogo-gray-500">
-                      <div className="w-6 h-6 bg-gradient-to-r from-fogo-primary to-fogo-secondary rounded-lg flex items-center justify-center">
-                        <span className="text-xs font-semibold">◎</span>
-                      </div>
-                      <span className="font-mono text-sm">
-                        {publicKey?.toBase58().slice(0, 4)}...
-                        {publicKey?.toBase58().slice(-4)}
-                      </span>
-                    </div>
-                  )}
+                  <PhantomWalletButton />
                   <button
                     onClick={() => setShowMobileMenu(!showMobileMenu)}
                     className="mobile-menu-button md:hidden p-2 rounded-lg border border-white/10 text-fogo-gray-300 hover:text-white hover:bg-white/10 transition-all duration-200"

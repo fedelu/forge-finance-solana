@@ -10,6 +10,76 @@
 /* Wallet adapter styles */
 @import '@solana/wallet-adapter-react-ui/styles.css';
 
+/* Custom wallet adapter modal styles to match Forge design */
+.wallet-adapter-modal-wrapper {
+  background: rgba(8, 8, 16, 0.95) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+}
+
+.wallet-adapter-modal {
+  background: rgba(8, 8, 16, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 30px 80px rgba(4, 5, 15, 0.55) !important;
+}
+
+.wallet-adapter-modal-title {
+  color: #F8FAFC !important;
+  font-family: 'Azeret Mono', 'Satoshi', monospace !important;
+}
+
+.wallet-adapter-button {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #F8FAFC !important;
+  transition: all 0.3s ease !important;
+}
+
+.wallet-adapter-button:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 102, 14, 0.5) !important;
+  transform: translateY(-2px) !important;
+}
+
+.wallet-adapter-button-start-icon,
+.wallet-adapter-button-end-icon {
+  opacity: 0.8 !important;
+}
+
+.wallet-adapter-modal-list {
+  margin: 0 !important;
+}
+
+.wallet-adapter-modal-list-item {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+  transition: all 0.3s ease !important;
+}
+
+.wallet-adapter-modal-list-item:hover {
+  background: rgba(255, 102, 14, 0.1) !important;
+  border-color: rgba(255, 102, 14, 0.3) !important;
+  transform: translateX(4px) !important;
+}
+
+.wallet-adapter-modal-list-item .wallet-adapter-button {
+  background: transparent !important;
+  border: none !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #F8FAFC !important;
+}
+
+.wallet-adapter-modal-button-close:hover {
+  background: rgba(255, 102, 14, 0.2) !important;
+  border-color: rgba(255, 102, 14, 0.5) !important;
+}
+
 /* Base styles */
 * {
   box-sizing: border-box;

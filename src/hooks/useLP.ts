@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PublicKey } from '@solana/web3.js'
 import { useWallet } from '../contexts/WalletContext'
-import { useSession } from '../components/FogoSessions'
+// Removed useSession - using useWallet directly
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 
 export interface LPPosition {
@@ -27,13 +27,8 @@ interface UseLPProps {
 export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps) {
   // Check wallet connection
   let walletContext: any = null
-  let sessionContext: any = null
-  
-  try {
-    sessionContext = useSession()
-  } catch (e) {
-    // Fogo Sessions not available
-  }
+  // Removed FOGO Sessions - using Solana devnet directly
+  const sessionContext: any = null
   
   try {
     walletContext = useWallet()
@@ -50,7 +45,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
       try {
         publicKey = new PublicKey(sessionContext.walletPublicKey)
       } catch (e) {
-        console.warn('Invalid public key from Fogo Sessions:', e)
+        console.warn('Invalid public key from wallet:', e)
       }
     }
   } else if (walletContext?.publicKey) {
@@ -117,7 +112,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
     } finally {
       setLoading(false)
     }
-  }, [publicKey, crucibleAddress, baseTokenSymbol])
+  }, [publicKey?.toBase58(), crucibleAddress, baseTokenSymbol])
 
   // Open LP position (deposit equal value of base token + USDC)
   const openPosition = useCallback(
@@ -160,7 +155,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
       }
 
       // Validate equal value (within 1% tolerance)
-      const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+      const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
       const baseValue = baseAmount * baseTokenPrice
       const usdcValue = usdcAmount
       const tolerance = Math.max(baseValue, usdcValue) * 0.01 // 1% tolerance
@@ -223,7 +218,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             
             // IMMEDIATELY refetch positions to update state
             setTimeout(() => {
-              fetchPositions()
+              fetchPositionsRef.current?.()
             }, 0)
             
             // IMMEDIATELY dispatch events to trigger wallet and portfolio updates
@@ -242,7 +237,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
               storageArea: localStorage
             }))
             
-            // Force a custom event that FogoSessions will catch
+            // Force a custom event that components will catch
             window.dispatchEvent(new CustomEvent('forceRecalculateLP', {}))
             
             console.log('📢 Dispatched all events for LP position:', newPosition.id)
@@ -260,7 +255,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         setLoading(false)
       }
     },
-    [publicKey, sessionContext, walletContext, crucibleAddress, baseTokenSymbol, baseAPY, sendTransaction, connection]
+    [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), crucibleAddress, baseTokenSymbol, baseAPY]
   )
 
   // Close LP position
@@ -334,7 +329,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         const apyEarnedTokens = position.baseAmount * (exchangeRateGrowth / currentExchangeRate)
         
         // Apply Forge close fees: 2% on principal, 10% on yield
-        const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+        const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
         const principalTokens = position.baseAmount
         const principalFeeTokens = principalTokens * INFERNO_CLOSE_FEE_RATE
         const yieldFeeTokens = apyEarnedTokens * INFERNO_YIELD_FEE_RATE
@@ -380,7 +375,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         setLoading(false)
       }
     },
-    [publicKey, sessionContext, walletContext, positions, sendTransaction, connection]
+    [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), positions]
   )
 
   // Store latest fetchPositions in ref

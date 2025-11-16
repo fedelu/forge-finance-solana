@@ -7,7 +7,7 @@ import {
   FireIcon
 } from '@heroicons/react/24/outline'
 import { useWallet } from '../contexts/WalletContext'
-import { useCrucible } from '../hooks/useCrucible'
+import { useCrucible, CrucibleData } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
 import CTokenDepositModal from './CTokenDepositModal'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
@@ -22,27 +22,8 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useLP } from '../hooks/useLP'
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE } from '../utils/math'
 
-interface Crucible {
-  id: string
-  name: string
-  symbol: string
-  baseToken: 'SOL' | 'FORGE'
-  ptokenSymbol: 'cSOL' | 'cFORGE'
-  tvl: number
-  apr: number
-  status: 'active' | 'paused' | 'maintenance'
-  userDeposit: number
-  userShares: number
-  icon: string
-  // pToken specific fields
-  ptokenMint?: string
-  exchangeRate?: bigint
-  totalWrapped?: bigint
-  userPtokenBalance?: bigint
-  estimatedBaseValue?: bigint
-  currentAPY?: number
-  totalFeesCollected?: number
-}
+// Use CrucibleData from useCrucible hook instead of defining separate interface
+type Crucible = CrucibleData
 
 interface CrucibleManagerProps {
   className?: string
@@ -383,7 +364,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                 setSelectedCrucible(null)
               }}
               crucibleAddress={selectedCrucible}
-              baseTokenSymbol={crucible.baseToken}
+              baseTokenSymbol={crucible.baseToken as 'SOL' | 'FORGE'}
               baseAPY={crucible.apr * 100}
             />
             <ClosePositionModal
@@ -453,7 +434,7 @@ function CrucibleCloseButton({
   crucible,
   onOpenCloseModal,
 }: {
-  crucible: Crucible
+  crucible: CrucibleData
   onOpenCloseModal: () => void
 }) {
   // Hooks must be called unconditionally (React rules)
@@ -469,11 +450,22 @@ function CrucibleCloseButton({
     baseAPY: crucible.apr,
   })
   
+  // Store refetch functions in refs to avoid dependency issues
+  const refetchLVFRef = React.useRef(refetchLVF)
+  const refetchLPRef = React.useRef(refetchLP)
+
+  // Update refs when refetch functions change
+  React.useEffect(() => {
+    refetchLVFRef.current = refetchLVF
+    refetchLPRef.current = refetchLP
+  }, [refetchLVF, refetchLP])
+
   // Refetch positions when component mounts or when crucible changes
   React.useEffect(() => {
-    refetchLVF()
-    refetchLP()
-  }, [crucible.id, crucible.baseToken, refetchLVF, refetchLP])
+    refetchLVFRef.current()
+    refetchLPRef.current()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crucible.id, crucible.baseToken])
 
   // Listen for position opened events to force immediate refetch
   React.useEffect(() => {
@@ -481,10 +473,10 @@ function CrucibleCloseButton({
       const detail = event.detail
       if (detail?.crucibleAddress === crucible.id && detail?.baseTokenSymbol === crucible.baseToken) {
         console.log('🔄 Position opened event detected in CrucibleCloseButton, refetching positions...', detail)
-        // Force immediate refetch
+        // Force immediate refetch using refs
         setTimeout(() => {
-          refetchLVF()
-          refetchLP()
+          refetchLVFRef.current()
+          refetchLPRef.current()
         }, 100)
       }
     }
@@ -496,7 +488,8 @@ function CrucibleCloseButton({
       window.removeEventListener('lvfPositionOpened', handlePositionOpened as EventListener)
       window.removeEventListener('lpPositionOpened', handlePositionOpened as EventListener)
     }
-  }, [crucible.id, crucible.baseToken, refetchLVF, refetchLP])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crucible.id, crucible.baseToken])
   
   const hasCTokenPosition = crucible.userPtokenBalance !== BigInt(0)
   // Check isOpen explicitly, treating undefined as open (for backwards compatibility)

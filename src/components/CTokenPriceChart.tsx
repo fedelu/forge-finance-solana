@@ -20,11 +20,11 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
   // Where t is in days, APY is the annual percentage yield
   const apy = crucible.apr
   const daysInYear = 365
-  const initialPrice = crucible.baseToken === 'FOGO' ? 0.5 : 0.002
+  const initialPrice = crucible.baseToken === 'FORGE' ? 0.002 : 200
   
-  // The final price after 1 year for FOGO: $0.5224 (from accumulated exchange rate)
+  // The final price after 1 year (from accumulated exchange rate)
   // This represents the price after deposits where we "fast forward" to show accumulated yield
-  const finalPrice = crucible.baseToken === 'FOGO' ? 0.5224 : 0.0025
+  const finalPrice = crucible.baseToken === 'FORGE' ? 0.0025 : 208
 
   // Generate data points for the year
   const generateChartData = () => {

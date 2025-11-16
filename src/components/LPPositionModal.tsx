@@ -115,6 +115,11 @@ export default function LPPositionModal({
       window.dispatchEvent(new CustomEvent('lpPositionOpened', { 
         detail: { crucibleAddress, baseTokenSymbol } 
       }))
+      
+      // Dispatch event to refresh wallet balance
+      window.dispatchEvent(new CustomEvent('depositComplete', { 
+        detail: { token: baseTokenSymbol, amount: baseAmt } 
+      }))
 
       onClose()
       setBaseAmount('')

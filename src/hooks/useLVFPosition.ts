@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PublicKey } from '@solana/web3.js'
 import { useWallet } from '../contexts/WalletContext'
-import { useSession } from '../components/FogoSessions'
+// Removed useSession - using useWallet directly
 import { useCrucible as useCrucibleContext } from '../contexts/CrucibleContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
@@ -34,16 +34,9 @@ interface UseLVFPositionProps {
 }
 
 export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPositionProps) {
-  // Check wallet connection - try Fogo Sessions first (main wallet system)
+  // Check wallet connection - using Solana devnet directly
   let walletContext: any = null
-  let sessionContext: any = null
-  
-  // Try Fogo Sessions first (this is the main wallet system in the app)
-  try {
-    sessionContext = useSession()
-  } catch (e) {
-    // Fogo Sessions not available
-  }
+  const sessionContext: any = null // Removed FOGO Sessions
   
   // Try WalletContext as fallback
   try {
@@ -77,7 +70,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
   }
   
   // Determine which wallet context to use
-  // Prioritize Fogo Sessions, fallback to WalletContext
+  // Use WalletContext for wallet connection
   let publicKey: PublicKey | null = null
   
   if (sessionContext?.walletPublicKey) {
@@ -87,7 +80,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       try {
         publicKey = new PublicKey(sessionContext.walletPublicKey)
       } catch (e) {
-        console.warn('Invalid public key from Fogo Sessions:', e)
+        console.warn('Invalid public key from wallet:', e)
       }
     }
   } else if (walletContext?.publicKey) {
@@ -194,7 +187,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
     } finally {
       setLoading(false)
     }
-  }, [publicKey, sessionContext, walletContext, crucibleAddress, baseTokenSymbol])
+  }, [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), crucibleAddress, baseTokenSymbol])
 
   // Open a leveraged position
   const openPosition = useCallback(
@@ -274,7 +267,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const collateralAfterFee = collateralAmount - protocolFee
         
         // Calculate borrowed USDC and deposited USDC based on collateral after fee
-        const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+        const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
         const collateralValueUSD = collateralAfterFee * baseTokenPrice
         const borrowedUSDC = collateralValueUSD * (leverageFactor - 1)
         
@@ -318,7 +311,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         console.log('📦 Creating position object:', newPosition)
         
         // Store to localStorage FIRST (synchronously, before state update)
-        // This ensures FogoSessions can read it when events fire
+        // This ensures components can read it when events fire
         try {
           const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
           const existingIndex = allStoredPositions.findIndex((p: LeveragedPosition) => p.id === newPosition.id)
@@ -385,19 +378,19 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           } 
         }))
         
-        // Force a custom event that FogoSessions will catch
+        // Force a custom event that components will catch
         window.dispatchEvent(new CustomEvent('forceRecalculateLP', {}))
         
         // Refetch positions immediately to ensure portfolio sees it
         // Force immediate refetch after state update (multiple attempts to ensure it works)
         setTimeout(() => {
           console.log('🔄 Refetching positions after opening (50ms)...')
-          fetchPositions()
+          fetchPositionsRef.current?.()
         }, 50)
         
         setTimeout(() => {
           console.log('🔄 Refetching positions after opening (200ms)...')
-          fetchPositions()
+          fetchPositionsRef.current?.()
         }, 200)
         
         console.log('📢 Dispatched events for position:', newPosition.id)
@@ -410,7 +403,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         setLoading(false)
       }
     },
-    [publicKey, sessionContext, walletContext, crucibleContext, crucibleHook, crucibleAddress, baseTokenSymbol, sendTransaction, connection, fetchPositions]
+    [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), crucibleAddress, baseTokenSymbol]
   )
 
   // Close a leveraged position (full or partial)
@@ -531,7 +524,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         })
 
         // Calculate base tokens to return (collateral value + APY earnings)
-        const baseTokenPriceForClose = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+        const baseTokenPriceForClose = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
         
         // Calculate APY earnings based on EXCHANGE RATE ratio (correlated with borrowing interest)
         // APY = ((exchange rate at sell / exchange rate at buy) - 1) * 100
@@ -681,7 +674,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Refetch positions immediately to update portfolio
         setTimeout(() => {
           console.log('🔄 Refetching positions after closing...')
-          fetchPositions()
+          fetchPositionsRef.current?.()
         }, 100)
         
         // Dispatch event to refresh portfolio and wallet balances
@@ -720,14 +713,14 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         setLoading(false)
       }
     },
-    [publicKey, sessionContext, walletContext, positions, crucibleContext, crucibleHook, crucibleAddress, baseTokenSymbol, sendTransaction, connection, fetchPositions]
+    [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), positions, crucibleAddress, baseTokenSymbol]
   )
 
   // Calculate health factor
   const calculateHealth = useCallback(
     (collateral: number, borrowed: number): number => {
       if (borrowed === 0) return 999 // No borrow = safe
-      const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+      const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
       const collateralValue = collateral * baseTokenPrice
       const health = (collateralValue / borrowed) * 100
       return health

@@ -80,7 +80,7 @@ export default function LVFPositionCard({
         const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
         
         // Calculate LP token amount that was added when opening
-        const baseTokenPrice = baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+        const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
         const collateralValue = position.collateral * baseTokenPrice
         const cTokenAmount = position.collateral * 1.045 // Exchange rate to get cToken amount
         

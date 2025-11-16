@@ -60,6 +60,20 @@ export default function CTokenPortfolio() {
     baseAPY: forgeCrucible?.baseAPY || 0,
   })
 
+  // Store refetch functions in refs to avoid dependency issues
+  const fogoLVFRefetchRef = React.useRef(fogoLVFPosition.refetch)
+  const forgeLVFRefetchRef = React.useRef(forgeLVFPosition.refetch)
+  const fogoLPRefetchRef = React.useRef(fogoLP.refetch)
+  const forgeLPRefetchRef = React.useRef(forgeLP.refetch)
+
+  // Update refs when refetch functions change
+  React.useEffect(() => {
+    fogoLVFRefetchRef.current = fogoLVFPosition.refetch
+    forgeLVFRefetchRef.current = forgeLVFPosition.refetch
+    fogoLPRefetchRef.current = fogoLP.refetch
+    forgeLPRefetchRef.current = forgeLP.refetch
+  }, [fogoLVFPosition.refetch, forgeLVFPosition.refetch, fogoLP.refetch, forgeLP.refetch])
+
   // Listen for position opened/closed events to refresh - IMMEDIATE
   React.useEffect(() => {
     const handlePositionChange = (event?: CustomEvent) => {
@@ -68,39 +82,39 @@ export default function CTokenPortfolio() {
       console.log('   Current positions - FOGO LP:', fogoLP.positions.length, 'FORGE LP:', forgeLP.positions.length)
       
       // Trigger refresh IMMEDIATELY - localStorage is already updated
-      // Force refetch multiple times to ensure it works
-      fogoLVFPosition.refetch()
-      forgeLVFPosition.refetch()
-      fogoLP.refetch()
-      forgeLP.refetch()
+      // Use refs to avoid dependency issues
+      fogoLVFRefetchRef.current()
+      forgeLVFRefetchRef.current()
+      fogoLPRefetchRef.current()
+      forgeLPRefetchRef.current()
       
       setRefreshKey(prev => prev + 1)
       
       // Also refresh after delays to catch edge cases
       setTimeout(() => {
         console.log('🔄 Portfolio: Refreshing after 100ms...')
-        fogoLVFPosition.refetch()
-        forgeLVFPosition.refetch()
-        fogoLP.refetch()
-        forgeLP.refetch()
+        fogoLVFRefetchRef.current()
+        forgeLVFRefetchRef.current()
+        fogoLPRefetchRef.current()
+        forgeLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 100)
       
       setTimeout(() => {
         console.log('🔄 Portfolio: Refreshing after 500ms...')
-        fogoLVFPosition.refetch()
-        forgeLVFPosition.refetch()
-        fogoLP.refetch()
-        forgeLP.refetch()
+        fogoLVFRefetchRef.current()
+        forgeLVFRefetchRef.current()
+        fogoLPRefetchRef.current()
+        forgeLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 500)
       
       setTimeout(() => {
         console.log('🔄 Portfolio: Refreshing after 1000ms...')
-        fogoLVFPosition.refetch()
-        forgeLVFPosition.refetch()
-        fogoLP.refetch()
-        forgeLP.refetch()
+        fogoLVFRefetchRef.current()
+        forgeLVFRefetchRef.current()
+        fogoLPRefetchRef.current()
+        forgeLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 1000)
     }
@@ -118,17 +132,19 @@ export default function CTokenPortfolio() {
       window.removeEventListener('lpPositionClosed', handlePositionChange as EventListener)
       window.removeEventListener('forceRecalculateLP', handlePositionChange as EventListener)
     }
-  }, [fogoLVFPosition.refetch, forgeLVFPosition.refetch, fogoLP.refetch, forgeLP.refetch])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Refetch positions when refresh key changes
   React.useEffect(() => {
     if (refreshKey > 0) {
-      fogoLVFPosition.refetch()
-      forgeLVFPosition.refetch()
-      fogoLP.refetch()
-      forgeLP.refetch()
+      fogoLVFRefetchRef.current()
+      forgeLVFRefetchRef.current()
+      fogoLPRefetchRef.current()
+      forgeLPRefetchRef.current()
     }
-  }, [refreshKey, fogoLVFPosition.refetch, forgeLVFPosition.refetch, fogoLP.refetch, forgeLP.refetch])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
 
   // Combine all leveraged positions - read from hooks' state
   const allLVFPositions = React.useMemo(() => {
@@ -507,7 +523,7 @@ export default function CTokenPortfolio() {
                 return openPositions.length > 0 ? (
                   openPositions.map((position) => {
                   const crucible = positions.find(p => p.baseTokenSymbol === position.baseToken)
-                  const basePrice = position.baseToken === 'FOGO' ? 0.5 : 0.002
+                  const basePrice = position.baseToken === 'FORGE' ? 0.5 : 0.002
                   
                   // Total collateral includes both token collateral value AND deposited USDC
                   // collateralUSDC already includes both if it was calculated correctly above
@@ -676,7 +692,7 @@ function ClosePositionButton({ position, crucible, onClose }: {
           }
           // Remove LP tokens
           const lpTokenSymbol = `${crucible.ctokenSymbol}/USDC LP`
-          const basePrice = crucible.baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+          const basePrice = crucible.baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
           const cTokenAmount = position.baseAmount * 1.045 // Exchange rate
           const cTokenValueUSD = cTokenAmount * basePrice
           // For leveraged positions: totalUSDC should equal cToken value for equal value LP pair
@@ -810,7 +826,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
     : 0
   
   // Calculate health factor (only relevant for leveraged positions)
-  const baseTokenPrice = position.baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+  const baseTokenPrice = position.baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
   const collateralValueUSD = collateralInBaseTokens * baseTokenPrice
   const healthFactor = borrowedUSDC > 0 
     ? collateralValueUSD / (borrowedUSDC * 1.3) 
@@ -935,7 +951,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
       </div>
 
       {(() => {
-        const baseTokenPrice = position.baseTokenSymbol === 'FOGO' ? 0.5 : 0.002
+        const baseTokenPrice = position.baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
         const ctokenBalance = Number(userBalance.ptokenBalance) / 1e9
         const collateralValue = userBalance.baseDeposited * baseTokenPrice
         const borrowedUSDC = leverage?.borrowedAmount ? Number(leverage.borrowedAmount) / 1e6 : 0

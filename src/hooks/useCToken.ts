@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { PublicKey, Transaction } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token'
 import { useWallet } from '../contexts/WalletContext'
-import { useSession } from '../components/FogoSessions'
+// Removed useSession - using useWallet directly
 import { UNWRAP_FEE_RATE } from '../config/fees'
 
 interface CTokenBalance {
@@ -22,17 +22,8 @@ interface LeveragePosition {
 export function useCToken(crucibleAddress?: string, ctokenMint?: string, providedPublicKey?: PublicKey | string) {
   // React hooks must be called unconditionally at the top level
   // Try to get contexts, but accept publicKey as parameter if provided
-  let sessionContext: any = null
   let walletContext: any = null
-  
-  // Call hooks unconditionally - they will throw if providers aren't available
-  // But that's expected behavior - components should ensure providers are mounted
-  try {
-    sessionContext = useSession()
-  } catch (e) {
-    // useSession throws if FogoSessionsProvider is not mounted
-    // This is fine - we'll just not use it
-  }
+  const sessionContext: any = null // Removed FOGO Sessions - using Solana devnet directly
   
   try {
     walletContext = useWallet()
@@ -42,7 +33,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
   }
 
   // Determine which wallet context to use
-  // Prioritize provided publicKey, then Fogo Sessions, then WalletContext
+  // Prioritize provided publicKey, then WalletContext
   let publicKey: PublicKey | null = null
   
   // First, use provided publicKey if available
@@ -59,7 +50,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
   }
   
   // Fallback to contexts if publicKey not provided
-  // Prioritize Fogo Sessions (main wallet system)
+  // Use WalletContext for wallet connection
   if (!publicKey && sessionContext?.walletPublicKey) {
     try {
       if (sessionContext.walletPublicKey instanceof PublicKey) {
@@ -68,7 +59,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         publicKey = new PublicKey(sessionContext.walletPublicKey)
       }
     } catch (e) {
-      console.warn('Invalid public key from Fogo Sessions:', e, sessionContext.walletPublicKey)
+      console.warn('Invalid public key from wallet:', e)
     }
   }
   

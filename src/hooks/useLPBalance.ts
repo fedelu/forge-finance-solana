@@ -13,17 +13,17 @@ export function useLPBalance() {
 
   // Calculate LP balances from leveraged positions
   const calculateLPBalances = useCallback(() => {
-    let cFOGO_USDC_LP = 0
+    let cSOL_USDC_LP = 0
     let cFORGE_USDC_LP = 0
 
     // For each crucible with leveraged positions, calculate LP tokens
     crucibles.forEach(crucible => {
-      if (crucible.baseToken === 'FOGO') {
-        // Calculate cFOGO/USDC LP from FOGO crucible leveraged positions
+      if (crucible.baseToken === 'SOL') {
+        // Calculate cSOL/USDC LP from SOL crucible leveraged positions
         // For now, we'll use a mock calculation based on TVL and leverage
         // In production, this would fetch actual LP token balances from on-chain
         const leverageMultiplier = 2.0 // Assume max leverage for calculation
-        const baseTokenPrice = 0.5 // FOGO price
+        const baseTokenPrice = 200 // SOL price
         const baseAmount = (crucible.userPtokenBalance || BigInt(0)) > BigInt(0)
           ? Number(crucible.userPtokenBalance) / 1e9 * 1.045 // Exchange rate
           : 0
@@ -31,7 +31,7 @@ export function useLPBalance() {
         if (baseAmount > 0) {
           const usdcAmount = baseAmount * baseTokenPrice * (leverageMultiplier - 1)
           // LP token amount = sqrt(cFOGO * USDC) (simplified constant product)
-          cFOGO_USDC_LP = Math.sqrt(baseAmount * usdcAmount) || 0
+          cSOL_USDC_LP = Math.sqrt(baseAmount * usdcAmount) || 0
         }
       } else if (crucible.baseToken === 'FORGE') {
         // Calculate cFORGE/USDC LP from FORGE crucible leveraged positions
@@ -49,7 +49,7 @@ export function useLPBalance() {
     })
 
     // Update balances
-    updateBalance('cFOGO/USDC LP', cFOGO_USDC_LP)
+    updateBalance('cSOL/USDC LP', cSOL_USDC_LP)
     updateBalance('cFORGE/USDC LP', cFORGE_USDC_LP)
   }, [crucibles, updateBalance])
 

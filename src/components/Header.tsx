@@ -1,7 +1,5 @@
 import React from 'react'
-import dynamic from 'next/dynamic'
-const WalletMultiButton = dynamic(async () => (await import('@solana/wallet-adapter-react-ui')).WalletMultiButton, { ssr: false })
-import { FogoSessionsButton } from './FogoSessions'
+import { WalletButton } from './WalletButton'
 
 const NAV_ITEMS = [
   { label: 'Demo', href: '/demo', active: false },
@@ -63,10 +61,7 @@ export const Header: React.FC = () => {
               </nav>
 
               <div className="flex items-center gap-3">
-                <div className="hidden md:flex">
-                  <FogoSessionsButton />
-                </div>
-                <WalletMultiButton className="!rounded-xl !bg-white/10 !px-5 !py-2.5 !text-white hover:!bg-white/20 !backdrop-blur !border !border-white/15 !shadow-[0_15px_35px_rgba(4,5,15,0.4)]" />
+                <WalletButton />
               </div>
             </div>
           </div>

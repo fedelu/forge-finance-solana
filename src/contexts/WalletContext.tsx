@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
 import { Connection, PublicKey, Transaction, VersionedTransaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { useConnection, useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet';
 
 // Phantom wallet types
@@ -55,13 +56,31 @@ interface WalletProviderProps {
 }
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
+  // Use Solana Wallet Adapter hooks
+  const { connection: adapterConnection } = useConnection();
+  const {
+    publicKey: adapterPublicKey,
+    connected: adapterConnected,
+    connecting: adapterConnecting,
+    disconnect: adapterDisconnect,
+    wallet: adapterWallet,
+    signTransaction: adapterSignTransaction,
+    signAllTransactions: adapterSignAllTransactions,
+    sendTransaction: adapterSendTransaction,
+  } = useSolanaWallet();
+
   const [network, setNetwork] = useState<'devnet'>('devnet');
-  const [connection, setConnection] = useState(
-    () => new Connection(SOLANA_TESTNET_CONFIG.RPC_URL, SOLANA_TESTNET_CONFIG.COMMITMENT as any)
-  );
-  const [publicKey, setPublicKey] = useState<PublicKey | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  
+  // Memoize connection to prevent infinite re-renders
+  const connection = useMemo(() => {
+    return adapterConnection || new Connection(SOLANA_TESTNET_CONFIG.RPC_URL, SOLANA_TESTNET_CONFIG.COMMITMENT as any);
+  }, [adapterConnection]);
+  
+  // Use adapter state, fallback to local state for compatibility
+  const publicKey = adapterPublicKey;
+  const connected = adapterConnected;
+  const connecting = adapterConnecting;
+  
   const [wallet, setWallet] = useState<PhantomWallet | null>(null);
   const [walletStatus, setWalletStatus] = useState<WalletStatus>({
     isInstalled: false,
@@ -70,123 +89,112 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     error: undefined
   });
 
-  // Check for Phantom wallet on mount and listen for changes
+  // Update wallet status based on adapter state
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    const isInstalled = typeof window !== 'undefined' && (
+      !!(window as any).solana?.isPhantom || 
+      !!(window as any).phantom?.solana?.isPhantom ||
+      !!(window as any).solflare
+    );
+    
+    setWalletStatus({
+      isInstalled: isInstalled || !!adapterWallet,
+      isUnlocked: !!adapterPublicKey,
+      isAvailable: adapterConnected,
+      error: undefined
+    });
 
-    const detectPhantom = () => {
-      const phantom = (window as any).solana;
-      if (phantom?.isPhantom) {
-        setWallet(phantom);
-        const isConnected = phantom.isConnected && !!phantom.publicKey;
-        setWalletStatus({
-          isInstalled: true,
-          isUnlocked: !!phantom.publicKey,
-          isAvailable: true,
-          error: undefined
-        });
-        
-        // If already connected, set the public key
-        if (isConnected && phantom.publicKey) {
-          setPublicKey(phantom.publicKey);
-          setConnected(true);
+    // Set wallet adapter for compatibility - only update if adapter actually changed
+    if (adapterWallet?.adapter) {
+      const adapter = adapterWallet.adapter as any;
+      setWallet(prev => {
+        // Only update if the adapter or key values actually changed
+        if (prev?.publicKey?.toString() === adapter.publicKey?.toString() && 
+            prev?.isConnected === adapter.connected) {
+          return prev;
         }
-      } else {
-        setWalletStatus({
-          isInstalled: false,
-          isUnlocked: false,
-          isAvailable: false,
-          error: 'Phantom wallet not found'
-        });
-      }
-    };
-
-    // Initial detection
-    detectPhantom();
-
-    // Listen for Phantom wallet events
-    const handleAccountChange = (publicKey: PublicKey | null) => {
-      if (publicKey) {
-        setPublicKey(publicKey);
-        setConnected(true);
-      } else {
-        setPublicKey(null);
-        setConnected(false);
-      }
-    };
-
-    const handleDisconnect = () => {
-      setPublicKey(null);
-      setConnected(false);
-    };
-
-    const phantom = (window as any).solana;
-    if (phantom?.isPhantom) {
-      phantom.on('accountChanged', handleAccountChange);
-      phantom.on('disconnect', handleDisconnect);
+        return {
+          isPhantom: adapter.name === 'Phantom',
+          connect: async () => {
+            await adapter.connect();
+            return { publicKey: adapter.publicKey };
+          },
+          disconnect: async () => {
+            await adapter.disconnect();
+          },
+          signTransaction: async (tx: Transaction) => {
+            return await adapter.signTransaction(tx);
+          },
+          signAllTransactions: async (txs: Transaction[]) => {
+            return await adapter.signAllTransactions(txs);
+          },
+          signMessage: async (msg: Uint8Array) => {
+            return await adapter.signMessage(msg);
+          },
+          publicKey: adapter.publicKey,
+          isConnected: adapter.connected,
+        };
+      });
+    } else {
+      setWallet(null);
     }
-
-    // Listen for provider injection
-    window.addEventListener('load', detectPhantom);
-
-    return () => {
-      if (phantom?.isPhantom) {
-        phantom.removeListener('accountChanged', handleAccountChange);
-        phantom.removeListener('disconnect', handleDisconnect);
-      }
-      window.removeEventListener('load', detectPhantom);
-    };
-  }, []);
+  }, [adapterWallet, adapterPublicKey?.toString(), adapterConnected]);
 
   const connect = useCallback(async (publicKey?: PublicKey) => {
-    if (!wallet) {
-      const error = 'Phantom wallet not found. Please install Phantom wallet.';
-      setWalletStatus(prev => ({
-        ...prev,
-        error
-      }));
-      throw new Error(error);
+    // The Solana Wallet Adapter handles connection automatically via WalletMultiButton
+    // This function is kept for backward compatibility but the actual connection
+    // should be done through the WalletMultiButton component
+    if (adapterConnected && adapterPublicKey) {
+      console.log('✅ Wallet already connected:', adapterPublicKey.toString());
+      return;
     }
 
-    setConnecting(true);
-    try {
-      // Request connection to Phantom wallet
-      const response = await wallet.connect({ onlyIfTrusted: false });
-      const newPublicKey = response.publicKey;
-      
-      if (!newPublicKey) {
-        throw new Error('Failed to get public key from wallet');
-      }
-      
-      setPublicKey(newPublicKey);
-      setConnected(true);
-      setWalletStatus({
-        isInstalled: true,
-        isUnlocked: true,
-        isAvailable: true,
-        error: undefined
-      });
-      
-      console.log('✅ Wallet connected successfully to Solana devnet:', newPublicKey.toString());
-    } catch (error: any) {
-      console.error('❌ Wallet connection failed:', error);
+    // Check if wallets are available in the window first
+    const hasPhantom = typeof window !== 'undefined' && (
+      !!(window as any).solana?.isPhantom || 
+      !!(window as any).phantom?.solana?.isPhantom
+    );
+    const hasSolflare = typeof window !== 'undefined' && !!(window as any).solflare;
+    
+    if (!hasPhantom && !hasSolflare) {
+      const errorMessage = 'No wallet adapter available. Please install a Solana wallet (Phantom or Solflare).';
       setWalletStatus(prev => ({
         ...prev,
-        error: error.message || 'Connection failed'
+        error: errorMessage
       }));
-      throw error;
-    } finally {
-      setConnecting(false);
+      throw new Error(errorMessage);
     }
-  }, [wallet]);
+
+    // Wait for adapter to initialize if it's not ready yet (with timeout)
+    // Note: adapterWallet might be null initially until a wallet is selected
+    if (!adapterWallet?.adapter) {
+      console.log('⏳ Wallet adapter not ready yet. Please use the wallet connection button in the header to select a wallet.');
+      const errorMessage = 'Please use the wallet connection button in the header to connect your wallet. The adapter will be ready once you select a wallet.';
+      setWalletStatus(prev => ({
+        ...prev,
+        error: errorMessage
+      }));
+      throw new Error(errorMessage);
+    }
+
+    // If adapter is available, trigger connection through the adapter
+    try {
+      await adapterWallet.adapter.connect();
+    } catch (error: any) {
+      const errorMessage = error.message || 'Connection failed. Please make sure your wallet is unlocked.';
+      setWalletStatus(prev => ({
+        ...prev,
+        error: errorMessage
+      }));
+      throw new Error(errorMessage);
+    }
+  }, [adapterConnected, adapterPublicKey, adapterWallet]);
 
   const disconnect = useCallback(async () => {
-    if (!wallet || !connected) return;
+    if (!adapterConnected) return;
 
     try {
-      await wallet.disconnect();
-      setPublicKey(null);
-      setConnected(false);
+      await adapterDisconnect();
       setWalletStatus(prev => ({
         ...prev,
         isUnlocked: false,
@@ -196,12 +204,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     } catch (error) {
       console.error('❌ Wallet disconnect failed:', error);
     }
-  }, [wallet, connected]);
+  }, [adapterConnected, adapterDisconnect]);
 
   const switchNetwork = useCallback((newNetwork: 'devnet') => {
     // Single-network app in this project: always Solana devnet
+    // The connection is managed by the Solana Wallet Adapter
     setNetwork(newNetwork);
-    setConnection(new Connection(SOLANA_TESTNET_CONFIG.RPC_URL, SOLANA_TESTNET_CONFIG.COMMITMENT as any));
   }, []);
 
   const getBalance = useCallback(async (): Promise<number | null> => {
@@ -238,46 +246,50 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   }, [getBalance]);
 
   const signTransaction = useCallback(async (transaction: Transaction): Promise<Transaction> => {
-    if (!wallet || !publicKey) {
+    if (!adapterPublicKey || !adapterSignTransaction) {
       throw new Error('Wallet not connected');
     }
 
     try {
-      return await wallet.signTransaction(transaction);
+      return await adapterSignTransaction(transaction);
     } catch (error) {
       console.error('❌ Transaction signing failed:', error);
       throw error;
     }
-  }, [wallet, publicKey]);
+  }, [adapterPublicKey, adapterSignTransaction]);
 
   const signAllTransactions = useCallback(async (transactions: Transaction[]): Promise<Transaction[]> => {
-    if (!wallet || !publicKey) {
+    if (!adapterPublicKey || !adapterSignAllTransactions) {
       throw new Error('Wallet not connected');
     }
 
     try {
-      return await wallet.signAllTransactions(transactions);
+      return await adapterSignAllTransactions(transactions);
     } catch (error) {
       console.error('❌ Transaction signing failed:', error);
       throw error;
     }
-  }, [wallet, publicKey]);
+  }, [adapterPublicKey, adapterSignAllTransactions]);
 
   const sendTransaction = useCallback(async (transaction: Transaction | VersionedTransaction): Promise<string> => {
-    if (!publicKey || !wallet) {
+    if (!adapterPublicKey) {
       throw new Error('No wallet connected');
     }
 
     try {
-      // Sign the transaction with Phantom
+      // Sign the transaction first
       let signedTransaction: Transaction | VersionedTransaction;
       
       if (transaction instanceof VersionedTransaction) {
-        // For versioned transactions, use signTransaction
-        signedTransaction = await wallet.signTransaction(transaction as any);
+        if (!adapterSignTransaction) {
+          throw new Error('Cannot sign versioned transaction');
+        }
+        signedTransaction = await adapterSignTransaction(transaction as any);
       } else {
-        // For legacy transactions
-        signedTransaction = await wallet.signTransaction(transaction);
+        if (!adapterSignTransaction) {
+          throw new Error('Cannot sign transaction');
+        }
+        signedTransaction = await adapterSignTransaction(transaction);
       }
       
       // Send the signed transaction to the network
@@ -295,7 +307,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       console.error('❌ Transaction failed:', error);
       throw error;
     }
-  }, [publicKey, connection, wallet]);
+  }, [adapterPublicKey, adapterSignTransaction, connection]);
 
   const value = useMemo(() => ({
     connection,
@@ -314,7 +326,24 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     getSolBalance,
     wallet,
     walletStatus,
-  }), [connection, publicKey, connected, connecting, network, connect, disconnect, switchNetwork, signTransaction, signAllTransactions, sendTransaction, getBalance, getTokenBalance, getSolBalance, wallet, walletStatus]);
+  }), [
+    connection, 
+    publicKey, 
+    connected, 
+    connecting, 
+    network, 
+    connect, 
+    disconnect, 
+    switchNetwork, 
+    signTransaction, 
+    signAllTransactions, 
+    sendTransaction, 
+    getBalance, 
+    getTokenBalance, 
+    getSolBalance, 
+    wallet, 
+    walletStatus
+  ]);
 
   return (
     <WalletContext.Provider value={value}>

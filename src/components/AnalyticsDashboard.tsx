@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useBalance } from '../contexts/BalanceContext';
-import { useSession } from './FogoSessions';
+import { useWallet } from '../contexts/WalletContext';
 import { useCrucible } from '../hooks/useCrucible';
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
@@ -19,7 +19,8 @@ import {
 export const AnalyticsDashboard: React.FC = () => {
   const { analytics, getRecentTransactions } = useAnalytics();
   const { balances } = useBalance();
-  const { liveAPYEarnings, walletPublicKey } = useSession();
+  const { publicKey: walletPublicKey } = useWallet();
+  const liveAPYEarnings = 0; // Removed FOGO Sessions APY tracking - using Solana devnet directly
   const { crucibles, userBalances } = useCrucible();
 
   const recentTransactions = getRecentTransactions(5);
@@ -62,7 +63,7 @@ export const AnalyticsDashboard: React.FC = () => {
         if (currentWalletAddress) {
           leveragedPositions.forEach((position: any) => {
             if (position.isOpen && position.owner === currentWalletAddress) {
-              const baseTokenPrice = position.token === 'FOGO' ? 0.5 : 0.002;
+              const baseTokenPrice = position.token === 'FORGE' ? 0.5 : 0.002;
               const collateralValueUSD = position.collateral * baseTokenPrice;
               // Find the crucible for this position
               const crucible = crucibles.find(c => c.baseToken === position.token);
@@ -282,7 +283,7 @@ export const AnalyticsDashboard: React.FC = () => {
                     )}
                   </p>
                   <p className="text-fogo-gray-400 text-sm font-satoshi mb-1">
-                    {formatCurrency(tx.usdValue || tx.amount * (tx.token === 'FOGO' ? 0.5 : tx.token === 'FORGE' ? 0.002 : tx.token === 'cFOGO' ? 0.5224 : tx.token === 'cFORGE' ? 0.0025 : tx.token === 'SOL' ? 200 : tx.token === 'USDC' ? 1 : tx.token === 'ETH' ? 4000 : 110000))}
+                    {formatCurrency(tx.usdValue || tx.amount * (tx.token === 'FORGE' ? 0.5 : tx.token === 'FORGE' ? 0.002 : tx.token === 'cFOGO' ? 0.5224 : tx.token === 'cFORGE' ? 0.0025 : tx.token === 'SOL' ? 200 : tx.token === 'USDC' ? 1 : tx.token === 'ETH' ? 4000 : 110000))}
                   </p>
                   {tx.leverage && tx.leverage > 1 && (
                     <p className="inline-flex items-center px-2 py-1 bg-orange-500/20 text-orange-400 text-xs font-heading rounded-lg mt-1 uppercase tracking-[0.16em]">
