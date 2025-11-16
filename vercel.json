@@ -1,19 +1,38 @@
 {
   "version": 2,
-  "name": "forge-finance",
   "buildCommand": "cp next.config.prod.js next.config.js && npm run build",
   "outputDirectory": "out",
+  "installCommand": "npm install",
+  "framework": null,
   "env": {
     "NEXT_PUBLIC_SOLANA_NETWORK": "devnet",
     "NEXT_PUBLIC_RPC_URL": "https://api.devnet.solana.com",
     "NEXT_PUBLIC_EXPLORER_URL": "https://explorer.solana.com",
     "NEXT_PUBLIC_COMMITMENT": "confirmed"
   },
-  "redirects": [
+  "rewrites": [
     {
       "source": "/",
-      "destination": "/demo",
-      "permanent": false
+      "destination": "/demo/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
     }
   ]
 }
