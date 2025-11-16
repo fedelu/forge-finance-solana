@@ -12,12 +12,8 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.0",
-    "@fogo/sessions-idls": "^0.0.7",
-    "@fogo/sessions-sdk": "^0.0.17",
-    "@fogo/sessions-sdk-web": "^0.0.11",
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
-    "@pyron-finance/pyron-client": "^1.0.5",
     "@solana/spl-token": "^0.3.9",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
