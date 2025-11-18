@@ -347,14 +347,8 @@ function DemoContent() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-[0.65rem] uppercase tracking-[0.32em] text-fogo-gray-500 font-heading">
-              <a href="#" className="transition-colors hover:text-white">
+              <a href="/docs" className="transition-colors hover:text-white">
                 Docs
-              </a>
-              <a href="#" className="transition-colors hover:text-white">
-                Support
-              </a>
-              <a href="#" className="transition-colors hover:text-white">
-                Careers
               </a>
               <span className="text-fogo-gray-600">© 2025 Forge Protocol</span>
             </div>
