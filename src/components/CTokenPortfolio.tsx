@@ -887,8 +887,9 @@ function ClosePositionButton({ position, crucible, onClose }: {
           // Remove LP tokens
           const lpTokenSymbol = `${crucible.ctokenSymbol}/USDC LP`
           const basePrice = 200 // SOL price
-          // Use actual exchange rate (scaled by 1e6), default to 1.0
-          const currentExchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+          // Use actual exchange rate from getCrucible (scaled by 1e6), default to 1.0
+          const crucibleData = getCrucible(crucible.crucibleAddress)
+          const currentExchangeRate = crucibleData?.exchangeRate ? Number(crucibleData.exchangeRate) / 1e6 : 1.0
           const cTokenAmount = position.baseAmount * currentExchangeRate
           const cTokenValueUSD = cTokenAmount * basePrice
           // For leveraged positions: totalUSDC should equal cToken value for equal value LP pair
