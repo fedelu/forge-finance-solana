@@ -880,7 +880,7 @@ export default function ClosePositionModal({
                         <div className="flex justify-between text-sm">
                           <span className="text-forge-gray-400">Borrowing Interest Rate:</span>
                           <span className="text-orange-400 font-medium">
-                            {BORROW_RATE.toFixed(2)}% APY
+                            {(lpTokenUnwrapPreview.borrowingInterestRatePercent || 10).toFixed(2)}% APY
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
