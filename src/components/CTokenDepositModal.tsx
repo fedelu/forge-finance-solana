@@ -374,6 +374,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               amount: depositAmount,
               token: baseTokenSymbol,
               crucibleId: crucibleAddress,
+              usdValue: depositAmount * baseTokenPrice, // Explicit USD value for accurate tracking
               signature: signature
             })
             
@@ -439,6 +440,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
             amount: depositAmount,
             token: baseTokenSymbol,
             crucibleId: crucibleAddress,
+            usdValue: depositAmount * baseTokenPrice, // Explicit USD value for accurate tracking
           })
         }
       } else {

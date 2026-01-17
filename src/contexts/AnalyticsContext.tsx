@@ -101,6 +101,10 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
       };
       
       const toUsd = (tx: Transaction) => {
+        // Use usdValue if provided (more accurate), otherwise calculate from amount * price
+        if (tx.usdValue !== undefined && tx.usdValue > 0) {
+          return tx.usdValue;
+        }
         const normalizedAmount = normalizeAmount(tx.amount, tx.token);
         return normalizedAmount * price(tx.token);
       };
