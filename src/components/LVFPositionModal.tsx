@@ -12,7 +12,7 @@ interface LVFPositionModalProps {
   isOpen: boolean
   onClose: () => void
   crucibleAddress: string
-  baseTokenSymbol: 'SOL'
+  baseTokenSymbol: 'SOL' | 'FORGE'
   baseAPY: number
 }
 
