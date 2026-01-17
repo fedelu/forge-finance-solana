@@ -654,7 +654,7 @@ export default function ClosePositionModal({
                   </button>
                 </div>
                 <div className="mt-1 text-xs text-forge-gray-400">
-                  Available: {availableCTokens.toFixed(2)} {ctokenSymbol}
+                  Available: {availableCTokens.toFixed(4)} {ctokenSymbol}
                 </div>
               </div>
 
