@@ -942,8 +942,9 @@ function ClosePositionButton({ position, crucible, onClose }: {
           addToBalance(crucible.baseTokenSymbol, lpResult.baseAmount) // Includes APY earnings
           addToBalance('USDC', lpResult.usdcAmount) // Return deposited USDC
           const lpTokenSymbol = `${crucible.ctokenSymbol}/USDC LP`
-          // Use actual exchange rate (scaled by 1e6), default to 1.0
-          const lpExchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+          // Use actual exchange rate from getCrucible (scaled by 1e6), default to 1.0
+          const crucibleData = getCrucible(crucible.crucibleAddress)
+          const lpExchangeRate = crucibleData?.exchangeRate ? Number(crucibleData.exchangeRate) / 1e6 : 1.0
           const cTokenAmount = lpResult.baseAmount * lpExchangeRate
           const lpTokenAmount = Math.sqrt(cTokenAmount * lpResult.usdcAmount)
           subtractFromBalance(lpTokenSymbol, lpTokenAmount)
