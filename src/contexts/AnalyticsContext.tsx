@@ -83,7 +83,27 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
       const newTransactions = [newTransaction, ...prev.transactions].slice(0, 100); // Keep last 100
       
       const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FORGE: 0.002 } as any)[token] || 1;
-      const toUsd = (tx: Transaction) => tx.amount * price(tx.token);
+      
+      // Ensure amounts are in token units (not lamports) before converting to USD
+      // If amount is suspiciously large (> 1M for SOL, > 10M for USDC), likely in lamports/wei
+      const normalizeAmount = (amount: number, token: string): number => {
+        // SOL uses 9 decimals, so 1 SOL = 1e9 lamports
+        // If amount > 1M SOL, likely in lamports - convert to SOL
+        if (token === 'SOL' && amount > 1_000_000) {
+          return amount / 1e9; // Convert lamports to SOL
+        }
+        // USDC uses 6 decimals, so 1 USDC = 1e6 micro-USDC
+        // If amount > 10M USDC, likely in micro-USDC - convert to USDC
+        if (token === 'USDC' && amount > 10_000_000) {
+          return amount / 1e6; // Convert micro-USDC to USDC
+        }
+        return amount; // Already in correct units
+      };
+      
+      const toUsd = (tx: Transaction) => {
+        const normalizedAmount = normalizeAmount(tx.amount, tx.token);
+        return normalizedAmount * price(tx.token);
+      };
 
       const totalDeposits = newTransactions
         .filter(tx => tx.type === 'deposit' || tx.type === 'wrap')
