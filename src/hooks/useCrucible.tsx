@@ -267,9 +267,18 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
               }
             })
           }
-        } catch (balanceError) {
-          // User might not have any cTokens, that's okay
-          console.log('No cToken balance found for user (this is normal if no position exists)')
+        } catch (balanceError: any) {
+          // Log the error for debugging
+          console.warn('Error fetching cToken balance for user:', {
+            publicKey: publicKey?.toString(),
+            error: balanceError?.message,
+            errorDetails: balanceError
+          })
+          // User might not have any cTokens, that's okay - but log for debugging
+          if (balanceError?.message?.includes('could not find') || 
+              balanceError?.message?.includes('Account does not exist')) {
+            console.log('No cToken balance found for user (this is normal if no position exists)')
+          }
         }
       }
     } catch (error) {
@@ -287,7 +296,23 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       setCrucibleUpdateTrigger(prev => prev + 1)
     }, 30000) // Fetch every 30 seconds
     
-    return () => clearInterval(interval)
+    // Listen for deposit events to refresh immediately
+    const handleDeposit = () => {
+      console.log('🔄 Deposit event received, refreshing crucible data...')
+      // Wait a bit for the transaction to confirm
+      setTimeout(() => {
+        fetchCrucibleData()
+      }, 2000)
+    }
+    
+    window.addEventListener('depositComplete', handleDeposit)
+    window.addEventListener('wrapPositionOpened', handleDeposit)
+    
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('depositComplete', handleDeposit)
+      window.removeEventListener('wrapPositionOpened', handleDeposit)
+    }
   }, [fetchCrucibleData])
 
   // Get updated crucibles - use on-chain data if available, otherwise use mock
@@ -524,7 +549,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
 
   const getCrucible = useCallback((crucibleId: string): CrucibleData | undefined => {
     return getUpdatedCrucibles().find(c => c.id === crucibleId);
-  }, []);
+  }, [crucibleUpdateTrigger, userBalances, onChainCrucibleData]);
 
   const calculateWrapPreview = useCallback((crucibleId: string, baseAmount: string) => {
     const crucible = getCrucible(crucibleId);

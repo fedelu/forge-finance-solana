@@ -21,7 +21,7 @@ interface CTokenPosition {
 }
 
 export default function CTokenPortfolio() {
-  const { crucibles, userBalances } = useCrucible()
+  const { crucibles, userBalances, getCrucible } = useCrucible()
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 

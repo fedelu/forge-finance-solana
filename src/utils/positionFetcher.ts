@@ -18,6 +18,7 @@ import {
   type AnchorWallet as LendingAnchorWallet
 } from './lendingProgram'
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet'
+import { fetchCrucibleDirect, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate } from './crucibleFetcher'
 
 /**
  * cToken balance for a user
@@ -95,7 +96,7 @@ function createAnchorWallet(publicKey: PublicKey): AnchorWallet {
 }
 
 /**
- * Fetch user's cToken balance from their ATA
+ * Fetch user's cToken balance from their ATA (using direct fetcher, no Anchor)
  */
 export async function fetchCTokenBalance(
   connection: Connection,
@@ -103,22 +104,55 @@ export async function fetchCTokenBalance(
   crucibleAddress: PublicKey
 ): Promise<CTokenBalance | null> {
   try {
-    const anchorWallet = createAnchorWallet(userPublicKey)
-    const program = getCruciblesProgram(connection, anchorWallet)
+    // Use direct crucible fetcher instead of Anchor (avoids Anchor IDL issues)
+    const crucibleAccount = await fetchCrucibleDirect(connection, crucibleAddress.toString())
     
-    // Fetch crucible to get cToken mint
-    const crucibleAccount = await program.account.crucible.fetch(crucibleAddress)
-    const ctokenMint = crucibleAccount.ctokenMint as PublicKey
+    if (!crucibleAccount) {
+      console.log('Crucible account not found:', crucibleAddress.toString())
+      return null
+    }
+    
+    const ctokenMint = crucibleAccount.ctokenMint
     
     // Get user's cToken ATA
     const userCtokenATA = await getAssociatedTokenAddress(ctokenMint, userPublicKey)
     
-    // Fetch token balance
-    const tokenAccountInfo = await connection.getTokenAccountBalance(userCtokenATA)
-    const balance = BigInt(tokenAccountInfo.value.amount)
+    // Fetch token balance (may fail if account doesn't exist - that's okay)
+    let balance = BigInt(0)
+    let exchangeRate = BigInt(1_000_000) // Default 1.0 exchange rate
     
-    // Get exchange rate
-    const exchangeRate = BigInt(crucibleAccount.exchangeRate.toString())
+    try {
+      const tokenAccountInfo = await connection.getTokenAccountBalance(userCtokenATA)
+      balance = BigInt(tokenAccountInfo.value.amount)
+      
+      if (balance === BigInt(0)) {
+        return null // No balance
+      }
+      
+      // Calculate real exchange rate from vault balance / ctoken supply
+      const vaultBalance = await fetchVaultBalance(connection, crucibleAccount.vault.toString())
+      const ctokenSupply = await fetchCTokenSupply(connection, ctokenMint.toString())
+      const realExchangeRate = calculateRealExchangeRate(vaultBalance, ctokenSupply)
+      exchangeRate = BigInt(Math.floor(realExchangeRate * 1_000_000))
+      
+      console.log('✅ Fetched cToken balance:', {
+        user: userPublicKey.toString(),
+        balance: Number(balance) / 1e9,
+        exchangeRate: Number(exchangeRate) / 1e6,
+        vaultBalance: Number(vaultBalance) / 1e9,
+        ctokenSupply: Number(ctokenSupply) / 1e9,
+      })
+    } catch (tokenError: any) {
+      // Token account doesn't exist - user has no balance
+      if (tokenError?.message?.includes('could not find') || 
+          tokenError?.message?.includes('Account does not exist') ||
+          tokenError?.message?.includes('invalid account')) {
+        console.log('User has no cToken account (no position)')
+        return null
+      }
+      console.warn('Error fetching token balance:', tokenError)
+      throw tokenError
+    }
     
     // Calculate estimated base value
     const estimatedBaseValue = (balance * exchangeRate) / BigInt(1_000_000)
@@ -133,7 +167,8 @@ export async function fetchCTokenBalance(
   } catch (error: any) {
     // Account might not exist if user hasn't deposited
     if (error?.message?.includes('could not find') || 
-        error?.message?.includes('Account does not exist')) {
+        error?.message?.includes('Account does not exist') ||
+        error?.message?.includes('invalid account')) {
       return null
     }
     console.warn('Error fetching cToken balance:', error)
