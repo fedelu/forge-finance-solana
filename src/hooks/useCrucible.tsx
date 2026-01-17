@@ -209,8 +209,10 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         userPtokenBalance: BigInt(0),
         estimatedBaseValue: BigInt(0),
         currentAPY: yieldPercentage > 0 ? yieldPercentage : safeApyCompounded * 100, // Show real yield % if available
-        totalFeesCollected: Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD, // Convert to USD
-        apyEarnedByUsers: yieldPercentage > 0 ? yieldPercentage : (isNaN(solMetrics.crucibleHoldersShare) ? 0 : solMetrics.crucibleHoldersShare * 365),
+        totalFeesCollected: Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD, // Vault fee share (80% of fees) in USD
+        // Yield Earned = Vault fee share (80% of fees that generate yield for cToken holders)
+        // totalFeesAccrued in contract is the vault fee share, which directly generates yield
+        apyEarnedByUsers: (Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD), // Same as totalFeesCollected (vault fee share = yield)
         totalDeposited: 0,
         totalWithdrawn: 0,
       }
