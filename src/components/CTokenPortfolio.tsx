@@ -321,7 +321,10 @@ export default function CTokenPortfolio() {
         value = tokenCollateralValue + depositedUSDC
       }
       
-      const lpAPY = 'lpAPY' in pos && pos.lpAPY ? pos.lpAPY : (pos.baseAPY || 0) * 3
+      // Get baseAPY from crucible by matching baseToken
+      const crucible = crucibles.find(c => c.baseToken === pos.baseToken)
+      const baseAPY = crucible ? (crucible.apr || 0) * 100 : 0
+      const lpAPY = 'lpAPY' in pos && pos.lpAPY ? pos.lpAPY : baseAPY * 3
       totalValue += value
       weightedSum += value * lpAPY
     })
@@ -336,7 +339,7 @@ export default function CTokenPortfolio() {
 
     if (totalValue === 0) return 0
     return weightedSum / totalValue
-  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions])
+  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions, crucibles])
 
   // Filter positions: cTOKENS (simple wrap positions)
   const cTokenPositions = React.useMemo(() => {
