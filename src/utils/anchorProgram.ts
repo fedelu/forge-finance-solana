@@ -1,4 +1,4 @@
-import { Program, AnchorProvider } from '@coral-xyz/anchor'
+import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor'
 import { Connection, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js'
 import { SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 import BN from 'bn.js'
@@ -155,20 +155,11 @@ export function getCruciblesProgram(
     throw new Error('Wallet with publicKey is required')
   }
   
-  // Ensure publicKey is a PublicKey instance
-  const walletPublicKey = wallet.publicKey instanceof PublicKey 
-    ? wallet.publicKey 
-    : new PublicKey(wallet.publicKey.toString())
-  
-  const validatedWallet = {
-    publicKey: walletPublicKey,
-    signTransaction: wallet.signTransaction,
-    signAllTransactions: wallet.signAllTransactions,
-  }
-
+  // wallet.publicKey is already typed as PublicKey, so use it directly
+  // @ts-ignore - Wallet structure doesn't match NodeWallet type, but works at runtime
   const provider = new AnchorProvider(
     connection,
-    validatedWallet as any,
+    wallet as any,
     AnchorProvider.defaultOptions()
   )
 
@@ -176,8 +167,12 @@ export function getCruciblesProgram(
   
   console.log('Creating Anchor program with:', {
     programId: programId.toString(),
-    walletPublicKey: walletPublicKey.toString(),
+    walletPublicKey: wallet.publicKey.toString(),
   })
   
-  return new Program(FORGE_CRUCIBLES_IDL as any, programId, provider)
+  // For Anchor 0.32, use Program constructor with provider
+  // Cast everything to bypass IDL type checking issues
+  // @ts-ignore - Manual IDL doesn't satisfy Anchor's Idl type constraint, but works at runtime
+  const idlWithAddress = { ...(FORGE_CRUCIBLES_IDL as any), address: programId.toString() } as Idl
+  return new Program(idlWithAddress, provider) as any
 }

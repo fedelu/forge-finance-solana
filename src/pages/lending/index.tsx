@@ -9,7 +9,7 @@ import {
   CurrencyDollarIcon,
   FireIcon
 } from '@heroicons/react/24/outline'
-import { useWallet } from '../contexts/WalletContext'
+import { useWallet } from '../../contexts/WalletContext'
 
 export default function LendingPage() {
   const { markets, positions, supply, withdraw } = useLending()

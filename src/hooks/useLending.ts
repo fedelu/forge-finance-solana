@@ -200,7 +200,7 @@ export function useLending() {
     const suppliedAmount = parseFloat(amount)
 
     try {
-      const tx = await program.methods
+      const tx = await (program as any).methods
         .depositUsdc(new anchor.BN(Math.floor(suppliedAmount * 1e6))) // Convert to USDC decimals (6)
         .accounts({
           pool: poolPDA,
@@ -251,7 +251,7 @@ export function useLending() {
     const borrowerUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey)
 
     try {
-      const tx = await program.methods
+      const tx = await (program as any).methods
         .borrowUsdc(new anchor.BN(Math.floor(amount * 1e6))) // Convert to USDC decimals
         .accounts({
           pool: poolPDA,
@@ -293,7 +293,7 @@ export function useLending() {
     const borrowerUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey)
 
     try {
-      const tx = await program.methods
+      const tx = await (program as any).methods
         .repayUsdc(new anchor.BN(Math.floor(amount * 1e6))) // Convert to USDC decimals
         .accounts({
           pool: poolPDA,

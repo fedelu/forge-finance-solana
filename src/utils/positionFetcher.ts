@@ -192,7 +192,7 @@ export async function fetchLPPosition(
     const [positionPDA] = deriveLPPositionPDA(userPublicKey, crucibleAddress)
     
     // Fetch position account
-    const positionAccount = await program.account.lppositionAccount.fetch(positionPDA)
+            const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
     
     if (!positionAccount.isOpen) {
       return null
@@ -237,7 +237,7 @@ export async function fetchLeveragedPosition(
     const [positionPDA] = deriveLeveragedPositionPDA(userPublicKey, crucibleAddress)
     
     // Fetch position account
-    const positionAccount = await program.account.leveragedPosition.fetch(positionPDA)
+    const positionAccount = await (program.account as any).leveragedPosition.fetch(positionPDA)
     
     if (!positionAccount.isOpen) {
       return null
