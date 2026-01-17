@@ -113,14 +113,20 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
         .filter(tx => tx.type === 'withdraw' || tx.type === 'unwrap')
         .reduce((sum, tx) => sum + toUsd(tx), 0);
 
-      // Calculate APY rewards tracking
+      // Calculate APY rewards tracking (also normalize amounts)
       const totalAPYRewards = newTransactions
         .filter(tx => tx.apyRewards && tx.apyRewards > 0)
-        .reduce((sum, tx) => sum + (tx.apyRewards || 0) * price(tx.token), 0);
+        .reduce((sum, tx) => {
+          const normalizedReward = normalizeAmount(tx.apyRewards || 0, tx.token);
+          return sum + normalizedReward * price(tx.token);
+        }, 0);
 
       const totalAPYWithdrawn = newTransactions
         .filter(tx => (tx.type === 'withdraw' || tx.type === 'unwrap') && tx.apyRewards && tx.apyRewards > 0)
-        .reduce((sum, tx) => sum + (tx.apyRewards || 0) * price(tx.token), 0);
+        .reduce((sum, tx) => {
+          const normalizedReward = normalizeAmount(tx.apyRewards || 0, tx.token);
+          return sum + normalizedReward * price(tx.token);
+        }, 0);
       
       // Net volume = deposits - withdrawals (USD)
       const totalVolume = totalDeposits - totalWithdrawals;
