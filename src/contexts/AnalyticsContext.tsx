@@ -196,17 +196,42 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
   const getRecentTransactions = useCallback((limit: number = 10) => {
     const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
     
+    // Normalize amounts to token units (not lamports) before USD conversion
+    const normalizeAmount = (amount: number, token: string): number => {
+      if (token === 'SOL' && amount > 1_000_000) {
+        return amount / 1e9; // Convert lamports to SOL
+      }
+      if (token === 'USDC' && amount > 10_000_000) {
+        return amount / 1e6; // Convert micro-USDC to USDC
+      }
+      return amount;
+    };
+    
     return analytics.transactions
       .slice(0, limit)
-      .map(tx => ({
-        ...tx,
-        usdValue: tx.amount * price(tx.token)
-      }));
+      .map(tx => {
+        const normalizedAmount = normalizeAmount(tx.amount, tx.token);
+        return {
+          ...tx,
+          usdValue: normalizedAmount * price(tx.token)
+        };
+      });
   }, [analytics.transactions]);
 
   // Calculate APY earnings from withdrawals (simplified yearly approach)
   const getRealTimeAPYEarnings = useCallback(() => {
     const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
+    
+    // Normalize amounts to token units (not lamports) before USD conversion
+    const normalizeAmount = (amount: number, token: string): number => {
+      if (token === 'SOL' && amount > 1_000_000) {
+        return amount / 1e9; // Convert lamports to SOL
+      }
+      if (token === 'USDC' && amount > 10_000_000) {
+        return amount / 1e6; // Convert micro-USDC to USDC
+      }
+      return amount;
+    };
     
     // Get all withdrawals that have APY rewards
     const withdrawals = analytics.transactions.filter(tx => (tx.type === 'withdraw' || tx.type === 'unwrap') && tx.apyRewards && tx.apyRewards > 0);
@@ -214,8 +239,9 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
     let totalAPYEarnings = 0;
     
     withdrawals.forEach(withdrawal => {
-      // Add the APY rewards that were earned and withdrawn
-      totalAPYEarnings += (withdrawal.apyRewards || 0) * price(withdrawal.token);
+      // Normalize APY reward amount before converting to USD
+      const normalizedReward = normalizeAmount(withdrawal.apyRewards || 0, withdrawal.token);
+      totalAPYEarnings += normalizedReward * price(withdrawal.token);
     });
     
     return totalAPYEarnings;
