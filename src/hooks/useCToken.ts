@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { PublicKey, Transaction, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, NATIVE_MINT } from '@solana/spl-token'
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, NATIVE_MINT, getAccount } from '@solana/spl-token'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
 import { getCruciblesProgram, AnchorWallet, buildBurnCtokenInstruction } from '../utils/anchorProgram'
@@ -455,6 +455,33 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         await connection.confirmTransaction(txSignature, 'confirmed')
         console.log('✅ Transaction confirmed')
 
+        // Get actual WSOL amount received from the contract (after fee)
+        let actualBaseAmountReceived = 0
+        try {
+          const userWSOLAccount = await getAssociatedTokenAddress(baseMint, publicKey)
+          const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
+          actualBaseAmountReceived = Number(wsolAccountInfo.amount) / 1e9 // Convert lamports to SOL
+          console.log(`💰 Actual WSOL received from contract: ${actualBaseAmountReceived} SOL`)
+        } catch (error: any) {
+          // If account doesn't exist or fetch fails, use calculated value
+          console.warn('Could not fetch WSOL account, using calculated value:', error)
+          actualBaseAmountReceived = baseAmountAfterFee
+        }
+
+        // Calculate actual fee charged by contract
+        // Contract charges 0.75% unwrap fee on base_to_return_before_fee
+        // base_to_return_before_fee = actualBaseAmountReceived / (1 - 0.0075)
+        // actualFee = base_to_return_before_fee - actualBaseAmountReceived
+        const actualBaseBeforeFee = actualBaseAmountReceived / (1 - UNWRAP_FEE_RATE)
+        const actualFeeCharged = actualBaseBeforeFee - actualBaseAmountReceived
+
+        console.log('💰 Fee calculation:', {
+          actualBaseAmountReceived,
+          actualBaseBeforeFee,
+          actualFeeCharged,
+          feePercent: (actualFeeCharged / actualBaseBeforeFee) * 100
+        })
+
         // Clear leverage if withdrawing everything
         if (balance && ctokenAmount >= balance.ctokenBalance) {
           setLeverage(null)
@@ -463,11 +490,11 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         // Refresh balance
         await fetchBalance()
         
-        // Return fee information for display
+        // Return actual fee information from contract
         return {
-          baseAmount: baseAmountAfterFee,
-          fee: withdrawalFee,
-          feePercent: withdrawalFeePercent * 100
+          baseAmount: actualBaseAmountReceived, // Actual amount received (after contract fee)
+          fee: actualFeeCharged, // Actual fee charged by contract
+          feePercent: (actualFeeCharged / actualBaseBeforeFee) * 100 || (UNWRAP_FEE_RATE * 100)
         }
       } catch (txError: any) {
         console.error('Transaction error:', txError)
