@@ -228,11 +228,18 @@ export default function ClosePositionModal({
   // Calculate preview for cToken unwrap
   const cTokenUnwrapPreview = useMemo(() => {
     if (!ctokenAmount || parseFloat(ctokenAmount) <= 0) return null
-    if (!crucible) return null
+    if (!crucible || !crucible.exchangeRate) return null
     
-    const preview = calculateUnwrapPreview(crucibleAddress, ctokenAmount)
-    const baseToReceive = parseFloat(preview.baseAmount)
-    const feeAmount = (baseToReceive / (1 - UNWRAP_FEE_RATE)) * UNWRAP_FEE_RATE // Reverse calculate fee
+    // Calculate base amount before fee using exchange rate (same as calculateUnwrapPreview)
+    const ctokenAmountBN = BigInt(Math.floor(parseFloat(ctokenAmount) * 1e9))
+    const exchangeRateBigInt = crucible.exchangeRate
+    const baseAmountBigInt = (ctokenAmountBN * exchangeRateBigInt) / BigInt(1_000_000) // Exchange rate is scaled by 1M
+    const baseAmountBeforeFee = Number(baseAmountBigInt) / 1e9 // Convert lamports to SOL
+    
+    // Calculate unwrap fee (0.75% of base amount before fee)
+    const feeAmount = baseAmountBeforeFee * UNWRAP_FEE_RATE
+    const baseToReceive = baseAmountBeforeFee - feeAmount // Net amount after fee
+    
     // APY = base received - original deposit (at 1.0 exchange rate)
     const apyEarned = baseToReceive - parseFloat(ctokenAmount)
     
