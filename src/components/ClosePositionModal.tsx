@@ -189,17 +189,25 @@ export default function ClosePositionModal({
 
   // Get available cToken balance from both crucible and balance context
   const availableCTokens = useMemo(() => {
-    // First try to get from BalanceContext (more accurate, updated immediately)
-    const balanceContextCToken = balances.find(b => b.symbol === ctokenSymbol)
-    const balanceContextAmount = balanceContextCToken?.amount || 0
-    
-    // Fallback to crucible balance
+    // Always prefer on-chain crucible balance (most accurate, fetched from blockchain)
     const crucibleBalance = crucible?.userPtokenBalance 
       ? Number(crucible.userPtokenBalance) / 1e9 
       : 0
     
-    // Use the higher of the two (or whichever is available)
-    const available = balanceContextAmount > 0 ? balanceContextAmount : crucibleBalance
+    // Fallback to BalanceContext only if crucible balance is not available
+    const balanceContextCToken = balances.find(b => b.symbol === ctokenSymbol)
+    const balanceContextAmount = balanceContextCToken?.amount || 0
+    
+    // Use crucible balance if available (on-chain data), otherwise fallback to BalanceContext
+    const available = crucibleBalance > 0 ? crucibleBalance : balanceContextAmount
+    
+    console.log('Available cToken balance calculation:', {
+      crucibleBalance,
+      balanceContextAmount,
+      userPtokenBalance: crucible?.userPtokenBalance?.toString(),
+      available,
+      ctokenSymbol
+    })
     
     return available
   }, [crucible, balances, ctokenSymbol])
