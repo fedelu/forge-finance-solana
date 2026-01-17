@@ -2,12 +2,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { useLVFPosition } from './useLVFPosition'
 import { useCrucible } from './useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
+import { usePrice } from '../contexts/PriceContext'
 
 /**
  * Hook to calculate and update LP token balances from leveraged positions
  * LP tokens represent cSOL/USDC positions
  */
 export function useLPBalance() {
+  const { solPrice } = usePrice();
   const { crucibles } = useCrucible()
   const { updateBalance } = useBalance()
 
@@ -22,7 +24,7 @@ export function useLPBalance() {
         // For now, we'll use a mock calculation based on TVL and leverage
         // In production, this would fetch actual LP token balances from on-chain
         const leverageMultiplier = 2.0 // Assume max leverage for calculation
-        const baseTokenPrice = 200 // SOL price
+        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
         // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
         const exchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
         const baseAmount = (crucible.userPtokenBalance || BigInt(0)) > BigInt(0)
@@ -39,7 +41,7 @@ export function useLPBalance() {
 
     // Update balances
     updateBalance('cSOL/USDC LP', cSOL_USDC_LP)
-  }, [crucibles, updateBalance])
+  }, [crucibles, updateBalance, solPrice])
 
   // Recalculate when crucibles or leveraged positions change
   useEffect(() => {

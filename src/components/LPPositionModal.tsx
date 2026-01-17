@@ -4,6 +4,7 @@ import { useLP } from '../hooks/useLP'
 import { useWallet } from '../contexts/WalletContext'
 import { useBalance } from '../contexts/BalanceContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
 
 interface LPPositionModalProps {
@@ -31,9 +32,10 @@ export default function LPPositionModal({
   const { connected, publicKey } = useWallet()
   const { subtractFromBalance, getBalance, addToBalance } = useBalance()
   const { addTransaction } = useAnalytics()
+  const { solPrice } = usePrice()
   const { getCrucible } = useCrucible()
 
-  const baseTokenPrice = 200 // SOL price
+  const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   const baseTokenBalance = getBalance(baseTokenSymbol)
   const lpAPY = baseAPY * 3 // LP APY = base APY * 3
 

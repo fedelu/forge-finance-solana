@@ -1,6 +1,7 @@
 import React from 'react'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useBalance } from '../contexts/BalanceContext'
+import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { formatNumberWithCommas } from '../utils/math'
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
@@ -35,6 +36,7 @@ export default function LVFPositionCard({
     baseTokenSymbol,
   })
   const { addToBalance, subtractFromBalance, getBalance } = useBalance()
+  const { solPrice } = usePrice()
   const { getCrucible } = useCrucible()
 
   const displayPairToken = position.token.replace(/^c/i, 'if')
@@ -48,7 +50,7 @@ export default function LVFPositionCard({
 
   const handleClosePosition = async () => {
     // Calculate closing fee for confirmation
-    const baseTokenPrice = 200 // SOL price
+    const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
     const collateralValueUSD = position.collateral * baseTokenPrice
     const principalFeeUSD = collateralValueUSD * INFERNO_CLOSE_FEE_RATE
     const baseAmountAfterFee = position.collateral * (1 - INFERNO_CLOSE_FEE_RATE)
@@ -80,7 +82,7 @@ export default function LVFPositionCard({
         const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
         
         // Calculate LP token amount that was added when opening
-        const baseTokenPrice = 200 // SOL price
+        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
         const collateralValue = position.collateral * baseTokenPrice
         // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
         const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0

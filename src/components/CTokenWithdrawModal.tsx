@@ -11,6 +11,7 @@ import { useLP } from '../hooks/useLP'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useWallet } from '../contexts/WalletContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import { usePrice } from '../contexts/PriceContext'
 import { formatNumberWithCommas } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { getCruciblesProgram } from '../utils/anchorProgram'
@@ -45,8 +46,9 @@ export default function CTokenWithdrawModal({
   const { connected, publicKey, connection } = useWallet()
   const { sendTransaction: adapterSendTransaction } = useSolanaWallet()
   const { addTransaction } = useAnalytics()
+  const { solPrice } = usePrice()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
-  const baseTokenPrice = 200 // SOL price
+  const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   
   // Check for LP and leveraged positions for this crucible
   const { positions: lpPositions, closePosition: closeLPPosition, loading: lpLoading } = useLP({
@@ -135,7 +137,7 @@ export default function CTokenWithdrawModal({
           // Remove LP tokens from wallet (if they were added when opening)
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
-          const baseTokenPrice = 200 // SOL price
+          const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
           const position = lvfPositions.find(p => p.id === positionId)
           if (position) {
             const collateralValue = position.collateral * baseTokenPrice

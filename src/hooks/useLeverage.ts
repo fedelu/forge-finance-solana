@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { lendingPool } from '../contracts/lendingPool'
+import { usePrice } from '../contexts/PriceContext'
 
 interface LeverageState {
   leverage: number // 1 or 2
@@ -14,6 +15,7 @@ interface UseLeverageProps {
 }
 
 export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageProps = {}) {
+  const { solPrice } = usePrice();
   const [leverageState, setLeverageState] = useState<LeverageState>({
     leverage: 1,
     borrowed: 0,
@@ -65,7 +67,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
       if (selectedLeverage === 2) {
         // Calculate borrow amount (equal to collateral for 2x)
         const borrowAmount = collateralAmount // In base token units, convert to USDC value
-        const baseTokenPrice = 0.5 // SOL price, adjust as needed
+        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
         const borrowAmountUSDC = borrowAmount * baseTokenPrice
 
         // Check if pool has enough liquidity
@@ -119,7 +121,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
         return { success: true, borrowed: 0 }
       }
     },
-    [baseAPY, leverageState.borrowed, calculateHealthFactor, calculateEffectiveAPY]
+    [baseAPY, leverageState.borrowed, calculateHealthFactor, calculateEffectiveAPY, solPrice]
   )
 
   /**
@@ -139,7 +141,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
       }
 
       const newBorrowed = leverageState.borrowed - repayAmount
-      const collateralValue = (initialCollateral || 0) * 0.5 // Assume SOL price
+      const collateralValue = (initialCollateral || 0) * solPrice // Use real-time SOL price from CoinGecko
       const healthFactor = calculateHealthFactor(collateralValue, newBorrowed)
 
       setLeverageState((prev) => ({
@@ -165,13 +167,13 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
         return
       }
 
-      const baseTokenPrice = 0.5 // SOL price
+      const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
       const collateralValue = collateralAmount * baseTokenPrice
       const healthFactor = calculateHealthFactor(collateralValue, leverageState.borrowed)
 
       setLeverageState((prev) => ({ ...prev, healthFactor }))
     },
-    [leverageState.borrowed, calculateHealthFactor]
+    [leverageState.borrowed, calculateHealthFactor, solPrice]
   )
 
   return {

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { usePrice } from './PriceContext';
 
 interface Transaction {
   id: string;
@@ -58,6 +59,7 @@ interface AnalyticsProviderProps {
 }
 
 export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }) => {
+  const { solPrice } = usePrice();
   const [analytics, setAnalytics] = useState<AnalyticsData>({
     totalDeposits: 0,
     totalWithdrawals: 0,
@@ -82,7 +84,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
     setAnalytics(prev => {
       const newTransactions = [newTransaction, ...prev.transactions].slice(0, 100); // Keep last 100
       
-      const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FORGE: 0.002 } as any)[token] || 1;
+      const price = (token: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000, FORGE: 0.002 } as any)[token] || 1;
       
       // Ensure amounts are in token units (not lamports) before converting to USD
       // If amount is suspiciously large (> 1M for SOL, > 10M for USDC), likely in lamports/wei
@@ -176,7 +178,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
         totalAPYWithdrawn
       };
     });
-  }, []);
+  }, [solPrice]);
 
   const getDailyStats = useCallback((days: number = 7) => {
     const stats: Array<{ date: string; volume: number; day: string }> = [];
@@ -204,7 +206,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
   }, [analytics.tokenDistribution]);
 
   const getRecentTransactions = useCallback((limit: number = 10) => {
-    const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
+    const price = (token: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
     
     // Normalize amounts to token units (not lamports) before USD conversion
     const normalizeAmount = (amount: number, token: string): number => {
@@ -226,11 +228,11 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
           usdValue: normalizedAmount * price(tx.token)
         };
       });
-  }, [analytics.transactions]);
+  }, [analytics.transactions, solPrice]);
 
   // Calculate APY earnings from withdrawals (simplified yearly approach)
   const getRealTimeAPYEarnings = useCallback(() => {
-    const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
+    const price = (token: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
     
     // Normalize amounts to token units (not lamports) before USD conversion
     const normalizeAmount = (amount: number, token: string): number => {
@@ -255,7 +257,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
     });
     
     return totalAPYEarnings;
-  }, [analytics.transactions]);
+  }, [analytics.transactions, solPrice]);
 
   const value = {
     analytics,

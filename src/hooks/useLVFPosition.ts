@@ -8,6 +8,7 @@ import { useWallet } from '../contexts/WalletContext'
 import { useCrucible as useCrucibleContext } from '../contexts/CrucibleContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
+import { usePrice } from '../contexts/PriceContext'
 import { RATE_SCALE } from '../utils/math'
 import {
   INFERNO_OPEN_FEE_RATE,
@@ -51,6 +52,7 @@ interface UseLVFPositionProps {
 }
 
 export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPositionProps) {
+  const { solPrice } = usePrice();
   // Check wallet connection - using Solana devnet directly
   let walletContext: any = null
   const sessionContext: any = null // Using Solana devnet directly
@@ -178,7 +180,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             
             if (positionAccount.isOpen) {
               // Convert on-chain position to LeveragedPosition interface
-              const baseTokenPrice = 200 // SOL price (could fetch from oracle)
+              const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
               const collateralNum = Number(positionAccount.collateral) / 1e9 // Convert lamports to SOL
               const borrowedUsdcNum = Number(positionAccount.borrowedUsdc) / 1e6 // Convert USDC decimals
               const leverageFactorNum = Number(positionAccount.leverageFactor) / 100 // 150 -> 1.5, 200 -> 2.0
@@ -715,7 +717,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         })
 
         // Calculate base tokens to return (collateral value + APY earnings)
-        const baseTokenPriceForClose = 200 // SOL price
+        const baseTokenPriceForClose = solPrice // Use real-time SOL price from CoinGecko
         
         // Use actual on-chain exchange rate (no frontend simulation)
         // TODO: Fetch current exchange rate from on-chain crucible account
@@ -1103,12 +1105,12 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
   const calculateHealth = useCallback(
     (collateral: number, borrowed: number): number => {
       if (borrowed === 0) return 999 // No borrow = safe
-      const baseTokenPrice = 200 // SOL price
+      const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
       const collateralValue = collateral * baseTokenPrice
       const health = (collateralValue / borrowed) * 100
       return health
     },
-    [baseTokenSymbol]
+    [baseTokenSymbol, solPrice]
   )
 
   // Calculate effective APY with leverage

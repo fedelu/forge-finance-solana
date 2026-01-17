@@ -9,6 +9,7 @@ import { useBalance } from '../contexts/BalanceContext'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useWallet } from '../contexts/WalletContext'
+import { usePrice } from '../contexts/PriceContext'
 import { formatNumberWithCommas, RATE_SCALE } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
@@ -51,6 +52,7 @@ export default function ClosePositionModal({
     return () => clearInterval(interval)
   }, [isOpen])
 
+  const { solPrice } = usePrice()
   const { getCrucible, calculateUnwrapPreview } = useCrucible()
   const crucible = getCrucible(crucibleAddress)
   const ctokenMint = crucible?.ptokenMint || DEPLOYED_ACCOUNTS.CSOL_MINT
@@ -117,7 +119,7 @@ export default function ClosePositionModal({
     }
   }, [crucibleAddress, baseTokenSymbol, refetchLVF])
 
-  const baseTokenPrice = 200 // SOL price
+  const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   
   // Helper function to unwrap WSOL to SOL
   const unwrapWSOLToSOL = async (userPublicKey: PublicKey): Promise<void> => {
@@ -500,7 +502,7 @@ export default function ClosePositionModal({
         
         // Record transaction
         // Calculate the original position value that was closed (proportional for partial close)
-        const baseTokenPrice = 200 // SOL price
+        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
         const collateralWithdrawn = isPartialClose ? unwrapAmount : availableLeveragedPosition.collateral
         const collateralValueUSD = collateralWithdrawn * baseTokenPrice
         const depositedUSDC = availableLeveragedPosition.depositUSDC || 0

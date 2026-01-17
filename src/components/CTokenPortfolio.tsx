@@ -6,6 +6,7 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useLP } from '../hooks/useLP'
 import { useLending } from '../hooks/useLending'
 import { useBalance } from '../contexts/BalanceContext'
+import { usePrice } from '../contexts/PriceContext'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
 import LVFPositionCard from './LVFPositionCard'
 import { formatNumberWithCommas } from '../utils/math'
@@ -21,6 +22,7 @@ interface CTokenPosition {
 }
 
 export default function CTokenPortfolio() {
+  const { solPrice } = usePrice();
   const { crucibles, userBalances, getCrucible } = useCrucible()
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -196,7 +198,7 @@ export default function CTokenPortfolio() {
         return isOpen && hasValidData
       })
       .map(lvf => {
-        const basePrice = lvf.token === 'FORGE' ? 0.002 : 200
+        const basePrice = lvf.token === 'FORGE' ? 0.002 : solPrice
         const tokenCollateralValue = lvf.collateral * basePrice // Token collateral value (after fee)
         const leverageFactor = lvf.leverageFactor || 1.0
         const borrowedUSDC = lvf.borrowedUSDC || 0
@@ -997,6 +999,7 @@ function ClosePositionButton({ position, crucible, onClose }: {
 }
 
 function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, onSelect: () => void }) {
+  const { solPrice } = usePrice()
   const { leverage, calculateEffectiveAPY } = useCToken(position.crucibleAddress, position.ctokenMint)
   const { userBalances, getCrucible } = useCrucible()
   
@@ -1027,7 +1030,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
     : 0
   
   // Calculate health factor (only relevant for leveraged positions)
-  const baseTokenPrice = position.baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
+  const baseTokenPrice = position.baseTokenSymbol === 'FORGE' ? 0.002 : solPrice
   const collateralValueUSD = collateralInBaseTokens * baseTokenPrice
   const healthFactor = borrowedUSDC > 0 
     ? collateralValueUSD / (borrowedUSDC * 1.3) 
@@ -1125,6 +1128,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
 }
 
 function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition, onClose: () => void }) {
+  const { solPrice } = usePrice()
   const { leverage } = useCToken(position.crucibleAddress, position.ctokenMint)
   const { userBalances, getCrucible } = useCrucible()
   const [showWithdraw, setShowWithdraw] = useState(false)
@@ -1153,7 +1157,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
       </div>
 
       {(() => {
-        const baseTokenPrice = 200 // SOL price
+        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
         const ctokenBalance = Number(userBalance.ptokenBalance) / 1e9
         const collateralValue = userBalance.baseDeposited * baseTokenPrice
         const borrowedUSDC = leverage?.borrowedAmount ? Number(leverage.borrowedAmount) / 1e6 : 0

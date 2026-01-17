@@ -2,6 +2,7 @@ import React from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts'
 import { useCrucible } from '../hooks/useCrucible'
+import { usePrice } from '../contexts/PriceContext'
 
 interface CTokenPriceChartProps {
   isOpen: boolean
@@ -10,6 +11,7 @@ interface CTokenPriceChartProps {
 }
 
 export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceChartProps) {
+  const { solPrice } = usePrice()
   const { crucibles } = useCrucible()
   const crucible = crucibles.find(c => c.id === crucibleId)
 
@@ -20,7 +22,7 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
   // Where t is in days, APY is the annual percentage yield
   const apy = crucible.apr
   const daysInYear = 365
-  const baseTokenPrice = 200 // SOL price in USD
+  const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   
   // Get current exchange rate from on-chain data
   // exchange_rate is scaled by 1_000_000 on-chain (1.0 = 1_000_000)

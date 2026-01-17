@@ -20,6 +20,7 @@ import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram';
 import { deriveCruciblePDA } from '../utils/cruciblePdas';
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet';
 import { useWallet } from '../contexts/WalletContext';
+import { usePrice } from '../contexts/PriceContext';
 import { fetchCTokenBalance, fetchAllUserPositions, type AllUserPositions } from '../utils/positionFetcher';
 import { fetchCrucibleDirect, calculateTVL, getExchangeRateDecimal as getExchangeRateFromCrucible, createDevnetConnection, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate, calculateYieldPercentage } from '../utils/crucibleFetcher';
 
@@ -125,6 +126,7 @@ interface CrucibleProviderProps {
 
 export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) => {
   const { connection, publicKey } = useWallet()
+  const { solPrice } = usePrice()
   
   // Loading state - true until first on-chain fetch completes
   const [loading, setLoading] = useState(true)
@@ -170,7 +172,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       const yieldPercentage = calculateYieldPercentage(realExchangeRate)
       
       // Calculate TVL from vault balance (actual SOL in the vault)
-      const solPriceUSD = 200
+      const solPriceUSD = solPrice // Use real-time SOL price from CoinGecko
       const tvlFromVault = Number(vaultBalance) / 1e9 * solPriceUSD
       const tvlFromDeposited = calculateTVL(crucibleAccount, solPriceUSD)
       
@@ -289,7 +291,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       // No mock fallback - show real state (empty/loading)
       setLoading(false) // Even on error, stop loading
     }
-  }, [connection, publicKey])
+  }, [connection, publicKey, solPrice])
   
   // Fetch crucible data on mount and when connection changes
   useEffect(() => {
@@ -519,7 +521,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
           ? BigInt(Math.floor(Number(current.estimatedBaseValue) * (1 - proportionUnwrapped)))
           : BigInt(0)
         
-        const baseTokenPrice = 200; // SOL price
+        const baseTokenPrice = solPrice; // Use real-time SOL price from CoinGecko
         return {
           ...prev,
           [crucibleId]: {

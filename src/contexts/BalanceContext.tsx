@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react';
+import { usePrice } from './PriceContext';
 
 interface TokenBalance {
   symbol: string;
@@ -32,8 +33,9 @@ interface BalanceProviderProps {
 }
 
 export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) => {
+  const { solPrice } = usePrice();
   const [balances, setBalances] = useState<TokenBalance[]>([
-    { symbol: 'SOL', amount: 25, usdValue: 5000 }, // Start with 25 SOL ($5,000 at $200 each)
+    { symbol: 'SOL', amount: 25, usdValue: 5000 }, // Start with 25 SOL (will be recalculated with real price)
     { symbol: 'FORGE', amount: 5000, usdValue: 10 }, // Start with 5,000 FORGE ($10 at $0.002 each)
     { symbol: 'cSOL', amount: 0, usdValue: 0 }, // Start with 0 cSOL
     { symbol: 'cFORGE', amount: 0, usdValue: 0 }, // Start with 0 cFORGE (worth $0.0025 each)
@@ -51,9 +53,9 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
     // cToken price = base token price * exchange_rate
     // Initial exchange rate is 1.0, so initially cSOL price = SOL price
     const prices: { [key: string]: number } = {
-      'SOL': 200,
+      'SOL': solPrice, // Use real-time SOL price from CoinGecko
       'FORGE': 0.002,
-      'cSOL': 200,  // Initial: same as SOL (exchange rate 1.0). In production, fetch from crucible.exchangeRate
+      'cSOL': solPrice,  // Initial: same as SOL (exchange rate 1.0). In production, fetch from crucible.exchangeRate
       'cFORGE': 0.002, // Initial: same as FORGE (exchange rate 1.0). In production, fetch from crucible.exchangeRate
       'USDC': 1,
       'ETH': 4000,
@@ -64,7 +66,7 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
       'cFORGE/USDC LP': 1.0, // LP token price (calculated from underlying assets)
     };
     return prices[symbol] || 0;
-  }, []);
+  }, [solPrice]);
 
   const updateBalance = useCallback((symbol: string, amount: number) => {
     setBalances(prev => {

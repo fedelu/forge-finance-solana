@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useBalance } from '../contexts/BalanceContext';
 import { useWallet } from '../contexts/WalletContext';
+import { usePrice } from '../contexts/PriceContext';
 import { useCrucible } from '../hooks/useCrucible';
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
@@ -17,6 +18,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 export const AnalyticsDashboard: React.FC = () => {
+  const { solPrice } = usePrice();
   const { analytics, getRecentTransactions } = useAnalytics();
   const { balances } = useBalance();
   const { publicKey: walletPublicKey } = useWallet();
@@ -27,7 +29,7 @@ export const AnalyticsDashboard: React.FC = () => {
 
   // Calculate annual APY earnings based on cToken holdings and leveraged positions
   const getTotalAPYEarnings = () => {
-    const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000 } as any)[token] || 1;
+    const price = (token: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000 } as any)[token] || 1;
     
     // Calculate APY earnings from cToken holdings
     let totalAPYEarnings = 0;
@@ -283,7 +285,7 @@ export const AnalyticsDashboard: React.FC = () => {
                     )}
                   </p>
                   <p className="text-forge-gray-400 text-sm font-satoshi mb-1">
-                    {formatCurrency(tx.usdValue || tx.amount * (tx.token === 'cSOL' ? 209 : tx.token === 'SOL' ? 200 : tx.token === 'USDC' ? 1 : tx.token === 'ETH' ? 4000 : 110000))}
+                    {formatCurrency(tx.usdValue || tx.amount * (tx.token === 'cSOL' ? solPrice * 1.045 : tx.token === 'SOL' ? solPrice : tx.token === 'USDC' ? 1 : tx.token === 'ETH' ? 4000 : 110000))}
                   </p>
                   {tx.leverage && tx.leverage > 1 && (
                     <p className="inline-flex items-center px-2 py-1 bg-orange-500/20 text-orange-400 text-xs font-heading rounded-lg mt-1 uppercase tracking-[0.16em]">

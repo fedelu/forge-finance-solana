@@ -276,7 +276,7 @@ export async function fetchLendingPoolDirect(
 /**
  * Calculate TVL in USD from crucible data
  * @param crucibleData - The crucible account data
- * @param solPriceUSD - Current SOL price in USD (default $200)
+ * @param solPriceUSD - Current SOL price in USD (default $200 as fallback, but callers should pass real-time price from PriceContext)
  */
 export function calculateTVL(
   crucibleData: CrucibleAccountData,

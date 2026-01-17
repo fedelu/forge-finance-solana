@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { fetchCrucibleDirect, calculateTVL, createDevnetConnection } from '../utils/crucibleFetcher';
+import { usePrice } from './PriceContext';
 
 interface Crucible {
   id: string;
@@ -39,6 +40,7 @@ interface CrucibleProviderProps {
 }
 
 export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) => {
+  const { solPrice } = usePrice();
   const [loading, setLoading] = useState(true);
   const [crucibles, setCrucibles] = useState<Crucible[]>([
     {
@@ -54,7 +56,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     }
   ]);
 
-  const price = (symbol: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000 } as any)[symbol] || 1;
+  const price = useCallback((symbol: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000 } as any)[symbol] || 1, [solPrice]);
 
   const updateCrucibleDeposit = useCallback((crucibleId: string, amount: number) => {
     console.log(`CrucibleContext: Adding deposit of ${amount} to ${crucibleId}`);
@@ -75,7 +77,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         return crucible;
       });
     });
-  }, []);
+  }, [price]);
 
   const updateCrucibleWithdraw = useCallback((crucibleId: string, amount: number) => {
     console.log(`CrucibleContext: Withdrawing ${amount} from ${crucibleId}`);
@@ -96,7 +98,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         return crucible;
       });
     });
-  }, []);
+  }, [price]);
 
   const updateCrucibleTVL = useCallback((crucibleId: string, amountUSD: number) => {
     console.log(`CrucibleContext: Updating TVL for ${crucibleId} by ${amountUSD} USD`);
@@ -138,7 +140,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       const crucibleData = await fetchCrucibleDirect(connection);
       
       if (crucibleData) {
-        const tvl = calculateTVL(crucibleData, 200); // $200 SOL price
+        const tvl = calculateTVL(crucibleData, solPrice); // Use real-time SOL price from CoinGecko
         setCrucibles(prev => prev.map(c => {
           if (c.id === 'sol-crucible') {
             return {
@@ -156,7 +158,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [solPrice]);
 
   // Fetch on-chain data on mount
   useEffect(() => {

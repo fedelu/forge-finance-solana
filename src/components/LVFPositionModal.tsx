@@ -5,6 +5,7 @@ import { useWallet } from '../contexts/WalletContext'
 import { lendingPool } from '../contracts/lendingPool'
 import { useBalance } from '../contexts/BalanceContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { INFERNO_OPEN_FEE_RATE } from '../config/fees'
 
@@ -32,6 +33,7 @@ export default function LVFPositionModal({
   const { connected, publicKey } = useWallet()
   const { subtractFromBalance, addToBalance, getBalance } = useBalance()
   const { addTransaction } = useAnalytics()
+  const { solPrice } = usePrice()
   const { getCrucible } = useCrucible()
 
   const handleOpenPosition = async () => {
@@ -132,7 +134,7 @@ export default function LVFPositionModal({
     }
   }
 
-  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : solPrice
   const collateralValue = amount ? parseFloat(amount) * baseTokenPrice : 0
   const borrowedUSDC = collateralValue * (leverage - 1)
   const health = amount && borrowedUSDC > 0

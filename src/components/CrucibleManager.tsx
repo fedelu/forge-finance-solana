@@ -7,6 +7,7 @@ import {
   FireIcon
 } from '@heroicons/react/24/outline'
 import { useWallet } from '../contexts/WalletContext'
+import { usePrice } from '../contexts/PriceContext'
 import { useCrucible, CrucibleData } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
 import CTokenDepositModal from './CTokenDepositModal'
@@ -33,6 +34,7 @@ interface CrucibleManagerProps {
 }
 
 export default function CrucibleManager({ className = '', onDeposit, onWithdraw, isConnected = false }: CrucibleManagerProps) {
+  const { solPrice } = usePrice()
   const { connected } = useWallet()
   const { crucibles, loading, error } = useCrucible()
   const [activeMode, setActiveMode] = useState<'wrap' | 'lp' | 'leveraged'>('wrap')
@@ -283,7 +285,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                   <LeveragedProjectionChart
                     baseAPY={crucible.apr * 100}
                     leverage={selectedLeverage[crucible.id] || 1.0}
-                    currentPrice={200}
+                    currentPrice={solPrice}
                     currentExchangeRate={(() => {
                       // Initial exchange rate is 1.0 (grows as yield accumulates)
                       const initialExchangeRate = 1.0

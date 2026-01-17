@@ -10,6 +10,7 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useWallet } from '../contexts/WalletContext'
 import { useBalance } from '../contexts/BalanceContext'
+import { usePrice } from '../contexts/PriceContext'
 import { lendingPool } from '../contracts/lendingPool'
 import { useCrucible } from '../hooks/useCrucible'
 import { WRAP_FEE_RATE, INFERNO_OPEN_FEE_RATE } from '../config/fees'
@@ -50,6 +51,7 @@ export default function CTokenDepositModal({
   const { sendTransaction: adapterSendTransaction } = useSolanaWallet() // Use adapter's sendTransaction directly
   const { balances, getBalance, subtractFromBalance, addToBalance } = useBalance()
   const { getCrucible } = useCrucible()
+  const { solPrice } = usePrice()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
   
   // Fetch actual wallet balance when modal opens and wallet is connected
@@ -91,7 +93,7 @@ export default function CTokenDepositModal({
     baseTokenSymbol: baseTokenSymbol as 'SOL',
   })
 
-  const baseTokenPrice = 200 // SOL price
+  const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   // Use actual wallet balance if available (for SOL), otherwise use local balance
   const baseTokenBalance = (baseTokenSymbol === 'SOL' && actualWalletBalance !== null) 
     ? actualWalletBalance 

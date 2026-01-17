@@ -1,4 +1,5 @@
 import React from 'react';
+import { usePrice } from '../contexts/PriceContext';
 import { 
   calculateVolatilityFarmingMetrics, 
   CRUCIBLE_CONFIGS, 
@@ -13,6 +14,7 @@ interface VolatilityFarmingMetricsProps {
 }
 
 export default function VolatilityFarmingMetrics({ className = '' }: VolatilityFarmingMetricsProps) {
+  const { solPrice } = usePrice();
   // Calculate metrics for SOL crucible
   const solMetrics = calculateVolatilityFarmingMetrics(CRUCIBLE_CONFIGS[0], DEFAULT_CONFIG);
 
@@ -38,7 +40,7 @@ export default function VolatilityFarmingMetrics({ className = '' }: VolatilityF
               </div>
               <div className="flex justify-between">
                 <span className="text-forge-gray-400">Token Price:</span>
-                <span className="text-forge-accent font-satoshi">$200</span>
+                <span className="text-forge-accent font-satoshi">${solPrice.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-forge-gray-400">TVL:</span>

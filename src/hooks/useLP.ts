@@ -4,6 +4,7 @@ import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddres
 import * as anchor from '@coral-xyz/anchor'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
+import { usePrice } from '../contexts/PriceContext'
 import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram'
 import { fetchCrucibleDirect } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveLPPositionPDA, deriveUSDCVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
@@ -31,6 +32,7 @@ interface UseLPProps {
 }
 
 export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps) {
+  const { solPrice } = usePrice();
   // Check wallet connection
   let walletContext: any = null
   // Using Solana devnet directly
@@ -227,7 +229,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
       }
 
       // Validate equal value (within 1% tolerance)
-      const baseTokenPrice = 200 // SOL price
+      const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
       const baseValue = baseAmount * baseTokenPrice
       const usdcValue = usdcAmount
       const tolerance = Math.max(baseValue, usdcValue) * 0.01 // 1% tolerance
@@ -580,7 +582,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         console.log('✅ Transaction confirmed')
         
         // Apply Forge close fees: 2% on principal, 10% on yield (calculated on-chain, using estimates for UI)
-        const baseTokenPrice = 200 // SOL price
+        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
         const principalTokens = position.baseAmount
         const principalFeeTokens = principalTokens * INFERNO_CLOSE_FEE_RATE
         const yieldFeeTokens = apyEarnedTokens * INFERNO_YIELD_FEE_RATE
