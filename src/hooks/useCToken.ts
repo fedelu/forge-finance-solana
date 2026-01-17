@@ -459,6 +459,8 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         // Check BEFORE unwrapping to get the exact amount the contract returned
         let actualBaseAmountReceived = 0
         let actualFeeCharged = 0
+        let actualBaseBeforeFee = 0
+        
         try {
           const userWSOLAccount = await getAssociatedTokenAddress(baseMint, publicKey)
           const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
@@ -470,7 +472,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           // Contract returns: base_to_return = base_to_return_before_fee - unwrap_fee
           // So: base_to_return_before_fee = base_to_return / (1 - unwrap_fee_rate)
           // And: unwrap_fee = base_to_return_before_fee - base_to_return
-          const actualBaseBeforeFee = actualBaseAmountReceived / (1 - UNWRAP_FEE_RATE)
+          actualBaseBeforeFee = actualBaseAmountReceived / (1 - UNWRAP_FEE_RATE)
           actualFeeCharged = actualBaseBeforeFee - actualBaseAmountReceived
 
           console.log('💰 Contract fee calculation:', {
@@ -485,6 +487,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           console.warn('Could not fetch WSOL account, using calculated value:', error)
           actualBaseAmountReceived = baseAmountAfterFee
           actualFeeCharged = withdrawalFee
+          actualBaseBeforeFee = baseAmountBeforeFee
         }
 
         // Clear leverage if withdrawing everything
@@ -496,10 +499,14 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         await fetchBalance()
         
         // Return actual fee information from contract
+        const calculatedFeePercent = actualBaseBeforeFee > 0 
+          ? (actualFeeCharged / actualBaseBeforeFee) * 100 
+          : (UNWRAP_FEE_RATE * 100)
+        
         return {
           baseAmount: actualBaseAmountReceived, // Actual amount received (after contract fee)
           fee: actualFeeCharged, // Actual fee charged by contract
-          feePercent: (actualFeeCharged / actualBaseBeforeFee) * 100 || (UNWRAP_FEE_RATE * 100)
+          feePercent: calculatedFeePercent
         }
       } catch (txError: any) {
         console.error('Transaction error:', txError)
