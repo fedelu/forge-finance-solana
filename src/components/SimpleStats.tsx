@@ -67,11 +67,18 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
     
     // Real data when client-side - no more mock percentages
     const totalCrucibles = crucibles.length
-    const totalTVL = crucibles.reduce((sum, crucible) => sum + crucible.tvl, 0)
+    let totalTVL = 0
+    for (const crucible of crucibles) {
+      totalTVL += crucible.tvl || 0
+    }
     const totalUsers = analytics.transactionCount > 0 ? analytics.transactionCount : 0 // Real user count from transactions
-    const averageAPR = crucibles.length > 0 
-      ? crucibles.reduce((sum, crucible) => sum + crucible.apr, 0) / crucibles.length 
-      : 0 // Show 0 if no data, not fake 8.5
+    let totalAPR = 0
+    if (crucibles.length > 0) {
+      for (const crucible of crucibles) {
+        totalAPR += crucible.apr || 0
+      }
+    }
+    const averageAPR = crucibles.length > 0 ? totalAPR / crucibles.length : 0
     // Compute 24h volume - dynamic based on recent deposits
     const now = Date.now()
     const txs = (analytics as any).transactions || []

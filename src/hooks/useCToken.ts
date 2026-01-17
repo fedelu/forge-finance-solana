@@ -4,6 +4,7 @@ import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddres
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
 import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram'
+import { fetchCrucibleDirect, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
 import { UNWRAP_FEE_RATE } from '../config/fees'
@@ -101,12 +102,16 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
       const [cruciblePDA] = deriveCruciblePDA(baseMint)
       
-      // Fetch crucible account to get exchange rate
+      // Fetch crucible account to get exchange rate (using direct fetcher)
       let exchangeRate = 1.0 // Default fallback (initial exchange rate is 1.0)
       try {
-        const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-        // Exchange rate is scaled by 1_000_000, convert to decimal
-        exchangeRate = Number(crucibleAccount.exchangeRate) / 1_000_000
+        const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+        if (crucibleAccount) {
+          // Calculate real exchange rate from vault balance / ctoken supply
+          const vaultBalance = await fetchVaultBalance(connection, crucibleAccount.vault.toString())
+          const ctokenSupply = await fetchCTokenSupply(connection, crucibleAccount.ctokenMint.toString())
+          exchangeRate = calculateRealExchangeRate(vaultBalance, ctokenSupply)
+        }
       } catch (error) {
         console.warn('Could not fetch crucible account, using default exchange rate:', error)
       }
@@ -259,11 +264,14 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       const [vaultPDA, vaultBump] = deriveVaultPDA(cruciblePDA)
       const ctokenMintPubkey = new PublicKey(ctokenMint)
       
-      // Fetch crucible account to get treasury address
+      // Fetch crucible account to get treasury address (using direct fetcher)
       let treasuryAccount: PublicKey
       try {
-        const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-        treasuryAccount = crucibleAccount.treasury as PublicKey
+        const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+        if (!crucibleAccount) {
+          throw new Error('Crucible account not found')
+        }
+        treasuryAccount = crucibleAccount.treasury
       } catch (error) {
         throw new Error(`Failed to fetch crucible account: ${error}`)
       }
@@ -387,11 +395,14 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       const [vaultPDA] = deriveVaultPDA(cruciblePDA)
       const ctokenMintPubkey = new PublicKey(ctokenMint)
       
-      // Fetch crucible account to get treasury address
+      // Fetch crucible account to get treasury address (using direct fetcher)
       let treasuryAccount: PublicKey
       try {
-        const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-        treasuryAccount = crucibleAccount.treasury as PublicKey
+        const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+        if (!crucibleAccount) {
+          throw new Error('Crucible account not found')
+        }
+        treasuryAccount = crucibleAccount.treasury
       } catch (error) {
         // Fallback to deployed treasury if crucible fetch fails
         treasuryAccount = new PublicKey(DEPLOYED_ACCOUNTS.WSOL_TREASURY)

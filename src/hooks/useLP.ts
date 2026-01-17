@@ -5,6 +5,7 @@ import * as anchor from '@coral-xyz/anchor'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
 import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram'
+import { fetchCrucibleDirect } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveLPPositionPDA, deriveUSDCVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet'
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
@@ -99,7 +100,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           
           // Try to fetch position account
           try {
-            const positionAccount = await program.account.lppositionAccount.fetch(positionPDA)
+            const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
             
             if (positionAccount.isOpen) {
               // Convert on-chain position to LPPosition interface
@@ -261,16 +262,19 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           console.warn('Crucible PDA mismatch, using provided address:', crucibleAddress)
         }
         
-        // Fetch crucible account to get treasury and oracle
+        // Fetch crucible account to get treasury and oracle (using direct fetcher)
         let treasuryBase: PublicKey
         let treasuryUSDC: PublicKey
         let oracleAccount: PublicKey | null = null
         try {
-          const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-          treasuryBase = crucibleAccount.treasury as PublicKey
-          treasuryUSDC = crucibleAccount.treasury as PublicKey // TODO: Separate USDC treasury or use same
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (!crucibleAccount) {
+            throw new Error('Crucible account not found')
+          }
+          treasuryBase = crucibleAccount.treasury
+          treasuryUSDC = crucibleAccount.treasury // TODO: Separate USDC treasury or use same
           if (crucibleAccount.oracle) {
-            oracleAccount = crucibleAccount.oracle as PublicKey
+            oracleAccount = crucibleAccount.oracle
           }
         } catch (error) {
           throw new Error(`Failed to fetch crucible account: ${error}`)
@@ -328,7 +332,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Fetch position account to get actual position ID
         let positionId: string
         try {
-          const positionAccount = await program.account.lppositionAccount.fetch(positionPDA)
+            const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
           positionId = positionAccount.positionId.toString()
         } catch (error) {
           console.warn('Could not fetch position account, using PDA as ID:', error)
@@ -512,13 +516,16 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
         const cruciblePDA = new PublicKey(crucibleAddress)
         
-        // Fetch crucible account to get treasury
+        // Fetch crucible account to get treasury (using direct fetcher)
         let treasuryBase: PublicKey
         let treasuryUSDC: PublicKey
         try {
-          const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-          treasuryBase = crucibleAccount.treasury as PublicKey
-          treasuryUSDC = crucibleAccount.treasury as PublicKey // TODO: Separate USDC treasury or use same
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (!crucibleAccount) {
+            throw new Error('Crucible account not found')
+          }
+          treasuryBase = crucibleAccount.treasury
+          treasuryUSDC = crucibleAccount.treasury // TODO: Separate USDC treasury or use same
         } catch (error) {
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
@@ -537,7 +544,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Fetch position account to verify it exists and get bump
         let positionBump: number
         try {
-          const positionAccount = await program.account.lppositionAccount.fetch(positionPDA)
+            const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
           if (!positionAccount.isOpen) {
             throw new Error('Position is already closed')
           }

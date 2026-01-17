@@ -25,6 +25,7 @@ import {
   type AnchorWallet
 } from '../utils/lendingProgram'
 import { getCruciblesProgram } from '../utils/anchorProgram'
+import { fetchCrucibleDirect } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA, deriveLeveragedPositionPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 
@@ -173,7 +174,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           
           // Try to fetch position account from on-chain
           try {
-            const positionAccount = await program.account.leveragedPosition.fetch(positionPDA)
+            const positionAccount = await (program.account as any).leveragedPosition.fetch(positionPDA)
             
             if (positionAccount.isOpen) {
               // Convert on-chain position to LeveragedPosition interface
@@ -388,14 +389,17 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
         const cruciblePDA = new PublicKey(crucibleAddress)
         
-        // Fetch crucible account to get treasury and oracle
+        // Fetch crucible account to get treasury and oracle (using direct fetcher)
         let treasuryAccount: PublicKey
         let oracleAccount: PublicKey | null = null
         try {
-          const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-          treasuryAccount = crucibleAccount.treasury as PublicKey
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (!crucibleAccount) {
+            throw new Error('Crucible account not found')
+          }
+          treasuryAccount = crucibleAccount.treasury
           if (crucibleAccount.oracle) {
-            oracleAccount = crucibleAccount.oracle as PublicKey
+            oracleAccount = crucibleAccount.oracle
           }
         } catch (error) {
           throw new Error(`Failed to fetch crucible account: ${error}`)
@@ -460,7 +464,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Fetch position account to get actual position data
         let actualPosition: any
         try {
-          actualPosition = await program.account.leveragedPosition.fetch(positionPDA)
+          actualPosition = await (program.account as any).leveragedPosition.fetch(positionPDA)
         } catch (error) {
           console.warn('Could not fetch position account:', error)
         }
@@ -792,7 +796,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           } catch (error) {
             console.error('Error fetching borrowing interest from on-chain:', error)
             // Fallback to calculation with default rate
-            const positionCreatedAt = position.createdAt ? new Date(position.createdAt).getTime() : Date.now() - (30 * 24 * 60 * 60 * 1000)
+            const positionCreatedAt = position.timestamp ? position.timestamp : Date.now() - (30 * 24 * 60 * 60 * 1000)
             const now = Date.now()
             const timeElapsedSeconds = (now - positionCreatedAt) / 1000
             const proportionalBorrowedUSDC = position.borrowedUSDC * proportion
@@ -805,7 +809,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           }
         } else if (position.borrowedUSDC > 0) {
           // Fallback calculation when wallet not connected
-          const positionCreatedAt = position.createdAt ? new Date(position.createdAt).getTime() : Date.now() - (30 * 24 * 60 * 60 * 1000)
+          const positionCreatedAt = position.timestamp ? position.timestamp : Date.now() - (30 * 24 * 60 * 60 * 1000)
           const now = Date.now()
           const timeElapsedSeconds = (now - positionCreatedAt) / 1000
           const proportionalBorrowedUSDC = position.borrowedUSDC * proportion
@@ -848,11 +852,14 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
         const cruciblePDA = new PublicKey(crucibleAddress)
         
-        // Fetch crucible account to get treasury
+        // Fetch crucible account to get treasury (using direct fetcher)
         let treasuryAccount: PublicKey
         try {
-          const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
-          treasuryAccount = crucibleAccount.treasury as PublicKey
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (!crucibleAccount) {
+            throw new Error('Crucible account not found')
+          }
+          treasuryAccount = crucibleAccount.treasury
         } catch (error) {
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
@@ -872,7 +879,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         
         // Fetch position account to verify it exists
         try {
-          const positionAccount = await program.account.leveragedPosition.fetch(positionPDA)
+          const positionAccount = await (program.account as any).leveragedPosition.fetch(positionPDA)
           if (!positionAccount.isOpen) {
             throw new Error('Position is already closed')
           }
