@@ -456,31 +456,36 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         console.log('✅ Transaction confirmed')
 
         // Get actual WSOL amount received from the contract (after fee)
+        // Check BEFORE unwrapping to get the exact amount the contract returned
         let actualBaseAmountReceived = 0
+        let actualFeeCharged = 0
         try {
           const userWSOLAccount = await getAssociatedTokenAddress(baseMint, publicKey)
           const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
           actualBaseAmountReceived = Number(wsolAccountInfo.amount) / 1e9 // Convert lamports to SOL
           console.log(`💰 Actual WSOL received from contract: ${actualBaseAmountReceived} SOL`)
+          
+          // Calculate actual fee charged by contract
+          // Contract charges 0.75% unwrap fee on base_to_return_before_fee
+          // Contract returns: base_to_return = base_to_return_before_fee - unwrap_fee
+          // So: base_to_return_before_fee = base_to_return / (1 - unwrap_fee_rate)
+          // And: unwrap_fee = base_to_return_before_fee - base_to_return
+          const actualBaseBeforeFee = actualBaseAmountReceived / (1 - UNWRAP_FEE_RATE)
+          actualFeeCharged = actualBaseBeforeFee - actualBaseAmountReceived
+
+          console.log('💰 Contract fee calculation:', {
+            actualBaseAmountReceived,
+            actualBaseBeforeFee,
+            actualFeeCharged,
+            feePercent: (actualFeeCharged / actualBaseBeforeFee) * 100,
+            contractFeeRate: UNWRAP_FEE_RATE * 100 + '%'
+          })
         } catch (error: any) {
           // If account doesn't exist or fetch fails, use calculated value
           console.warn('Could not fetch WSOL account, using calculated value:', error)
           actualBaseAmountReceived = baseAmountAfterFee
+          actualFeeCharged = withdrawalFee
         }
-
-        // Calculate actual fee charged by contract
-        // Contract charges 0.75% unwrap fee on base_to_return_before_fee
-        // base_to_return_before_fee = actualBaseAmountReceived / (1 - 0.0075)
-        // actualFee = base_to_return_before_fee - actualBaseAmountReceived
-        const actualBaseBeforeFee = actualBaseAmountReceived / (1 - UNWRAP_FEE_RATE)
-        const actualFeeCharged = actualBaseBeforeFee - actualBaseAmountReceived
-
-        console.log('💰 Fee calculation:', {
-          actualBaseAmountReceived,
-          actualBaseBeforeFee,
-          actualFeeCharged,
-          feePercent: (actualFeeCharged / actualBaseBeforeFee) * 100
-        })
 
         // Clear leverage if withdrawing everything
         if (balance && ctokenAmount >= balance.ctokenBalance) {
