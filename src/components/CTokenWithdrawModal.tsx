@@ -209,6 +209,45 @@ export default function CTokenWithdrawModal({
           const withdrawResult = await withdraw(ctokenAmountBigInt, exchangeRate)
           
           if (withdrawResult) {
+            // Contract returns WSOL - unwrap to SOL
+            try {
+              const wsolMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
+              const userWSOLAccount = await getAssociatedTokenAddress(wsolMint, publicKey)
+              
+              try {
+                const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
+                
+                if (wsolAccountInfo.amount > BigInt(0)) {
+                  const closeInstruction = createCloseAccountInstruction(
+                    userWSOLAccount,
+                    publicKey,
+                    publicKey
+                  )
+                  
+                  const unwrapTx = new Transaction().add(closeInstruction)
+                  const { blockhash } = await connection.getLatestBlockhash('confirmed')
+                  unwrapTx.recentBlockhash = blockhash
+                  unwrapTx.feePayer = publicKey
+                  
+                  console.log(`🔄 Unwrapping WSOL to SOL: ${wsolAccountInfo.amount.toString()} lamports`)
+                  
+                  if (adapterSendTransaction) {
+                    const unwrapSignature = await adapterSendTransaction(unwrapTx, connection)
+                    await connection.confirmTransaction(unwrapSignature, 'confirmed')
+                    console.log('✅ WSOL unwrapped to SOL:', unwrapSignature)
+                  }
+                }
+              } catch (unwrapError: any) {
+                if (unwrapError.name === 'TokenAccountNotFoundError' || unwrapError.message?.includes('Account not found') || unwrapError.message?.includes('0')) {
+                  console.log('ℹ️ No WSOL account found or 0 balance - nothing to unwrap')
+                } else {
+                  console.warn('Warning: Could not unwrap WSOL to SOL:', unwrapError)
+                }
+              }
+            } catch (error: any) {
+              console.warn('Warning: Could not unwrap WSOL to SOL:', error)
+            }
+            
             addToBalance(baseTokenSymbol, withdrawResult.baseAmount)
             
             const unwrapSummary = [

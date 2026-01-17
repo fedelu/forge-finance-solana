@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { PublicKey, SystemProgram } from '@solana/web3.js'
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token'
+import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddress, getAccount, createCloseAccountInstruction } from '@solana/spl-token'
 import * as anchor from '@coral-xyz/anchor'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
@@ -944,6 +944,51 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           vaultFeeShare: vaultFeeShare, // 80% stays in vault for yield
           protocolFeeShare: protocolFeeShare // 20% transferred to treasury
         })
+
+        // Unwrap WSOL to SOL if baseToken is SOL (contract returns WSOL)
+        if (baseTokenSymbol === 'SOL' && currentPublicKey && connection) {
+          try {
+            const wsolMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL mint
+            const userWSOLAccount = await getAssociatedTokenAddress(wsolMint, currentPublicKey)
+            
+            try {
+              const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
+              
+              if (wsolAccountInfo.amount > BigInt(0)) {
+                // Close WSOL account to unwrap to SOL
+                const closeInstruction = createCloseAccountInstruction(
+                  userWSOLAccount,
+                  currentPublicKey,
+                  currentPublicKey
+                )
+                
+                const unwrapTx = new Transaction().add(closeInstruction)
+                const { blockhash } = await connection.getLatestBlockhash('confirmed')
+                unwrapTx.recentBlockhash = blockhash
+                unwrapTx.feePayer = currentPublicKey
+                
+                console.log(`🔄 Unwrapping WSOL to SOL: ${wsolAccountInfo.amount.toString()} lamports`)
+                
+                if (walletContext?.sendTransaction) {
+                  const unwrapSignature = await walletContext.sendTransaction(unwrapTx, connection)
+                  await connection.confirmTransaction(unwrapSignature, 'confirmed')
+                  console.log('✅ WSOL unwrapped to SOL:', unwrapSignature)
+                }
+              }
+            } catch (unwrapError: any) {
+              // If account doesn't exist or is empty, that's fine - no WSOL to unwrap
+              if (unwrapError.name === 'TokenAccountNotFoundError' || unwrapError.message?.includes('Account not found') || unwrapError.message?.includes('0')) {
+                console.log('ℹ️ No WSOL account found or 0 balance - nothing to unwrap')
+              } else {
+                console.warn('Warning: Could not unwrap WSOL to SOL:', unwrapError)
+                // Don't throw - contract already transferred tokens, unwrap is optional
+              }
+            }
+          } catch (error: any) {
+            console.warn('Warning: Could not unwrap WSOL to SOL:', error)
+            // Don't throw - contract already transferred tokens, unwrap is optional
+          }
+        }
 
         // Update crucible TVL when closing position (decrease by deposit + borrow, proportional for partial)
         const collateralValueUSDForClose = collateralToClose * baseTokenPriceForClose
