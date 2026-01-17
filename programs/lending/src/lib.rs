@@ -1,6 +1,9 @@
 // Summary: Anchor program implementing isolated lending markets with supply, borrow,
 // repay, withdraw and interest accrual. Uses u128 fixed-point RATE_SCALE = 1e9
 // to match existing crucible cToken rate scale. Includes pause and admin hooks.
+//
+// NOTE: For crucibles leverage, only USDC lending markets are used.
+// This allows crucible positions to borrow USDC for leveraged LP positions.
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, MintTo, Burn};
@@ -8,9 +11,48 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, MintTo, Burn}
 pub mod state;
 use state::*;
 
-declare_id!("LenD1ng111111111111111111111111111111111111");
+declare_id!("BeJW4TrT31GWgW5wpLeYS4tFiCQquHd5bHcfYrPykErs");
 
 pub const RATE_SCALE: u128 = 1_000_000_000u128; // 1e9 fixed point for rates
+
+/// Helper function to accrue interest on a market - can be called internally
+fn do_accrue_interest(market: &mut Market) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp as u64;
+    if now <= market.last_accrued_ts { return Ok(()); }
+
+    // utilization = borrowed / max(1, supply)
+    let supply = market.total_supply.max(1);
+    let util_scaled = (market.total_borrowed as u128)
+        .checked_mul(RATE_SCALE).unwrap()
+        .checked_div(supply as u128).unwrap();
+
+    // piecewise interest rate
+    let kink_scaled = (market.interest_model.kink_bps as u128) * RATE_SCALE / 10_000u128;
+    let base_scaled = (market.interest_model.base_rate_bps as u128) * RATE_SCALE / 10_000u128;
+    let slope1_scaled = (market.interest_model.slope1_bps as u128) * RATE_SCALE / 10_000u128;
+    let slope2_scaled = (market.interest_model.slope2_bps as u128) * RATE_SCALE / 10_000u128;
+
+    let ir_scaled = if util_scaled <= kink_scaled {
+        base_scaled + util_scaled.checked_mul(slope1_scaled).unwrap() / RATE_SCALE
+    } else {
+        let pre = base_scaled + kink_scaled.checked_mul(slope1_scaled).unwrap() / RATE_SCALE;
+        let delta = util_scaled - kink_scaled;
+        pre + delta.checked_mul(slope2_scaled).unwrap() / RATE_SCALE
+    };
+
+    // simple linear accrual per second on index: index *= (1 + ir_per_sec)
+    // ir_scaled is annualized in fixed-point; convert roughly to per-second
+    let seconds = now - market.last_accrued_ts;
+    let per_sec_scaled = ir_scaled / (365u128 * 24 * 60 * 60);
+    let increment = market.accumulated_index
+        .checked_mul(per_sec_scaled).unwrap()
+        .checked_mul(seconds as u128).unwrap()
+        .checked_div(RATE_SCALE).unwrap();
+
+    market.accumulated_index = market.accumulated_index.checked_add(increment).unwrap();
+    market.last_accrued_ts = now;
+    Ok(())
+}
 
 #[program]
 pub mod lending {
@@ -49,42 +91,7 @@ pub mod lending {
     }
 
     pub fn accrue_interest(ctx: Context<AccrueInterest>) -> Result<()> {
-        let market = &mut ctx.accounts.market;
-        let now = Clock::get()?.unix_timestamp as u64;
-        if now <= market.last_accrued_ts { return Ok(()); }
-
-        // utilization = borrowed / max(1, supply)
-        let supply = market.total_supply.max(1);
-        let util_scaled = (market.total_borrowed as u128)
-            .checked_mul(RATE_SCALE).unwrap()
-            .checked_div(supply as u128).unwrap();
-
-        // piecewise interest rate
-        let kink_scaled = (market.interest_model.kink_bps as u128) * RATE_SCALE / 10_000u128;
-        let base_scaled = (market.interest_model.base_rate_bps as u128) * RATE_SCALE / 10_000u128;
-        let slope1_scaled = (market.interest_model.slope1_bps as u128) * RATE_SCALE / 10_000u128;
-        let slope2_scaled = (market.interest_model.slope2_bps as u128) * RATE_SCALE / 10_000u128;
-
-        let ir_scaled = if util_scaled <= kink_scaled {
-            base_scaled + util_scaled.checked_mul(slope1_scaled).unwrap() / RATE_SCALE
-        } else {
-            let pre = base_scaled + kink_scaled.checked_mul(slope1_scaled).unwrap() / RATE_SCALE;
-            let delta = util_scaled - kink_scaled;
-            pre + delta.checked_mul(slope2_scaled).unwrap() / RATE_SCALE
-        };
-
-        // simple linear accrual per second on index: index *= (1 + ir_per_sec)
-        // ir_scaled is annualized in fixed-point; convert roughly to per-second
-        let seconds = now - market.last_accrued_ts;
-        let per_sec_scaled = ir_scaled / (365u128 * 24 * 60 * 60);
-        let increment = market.accumulated_index
-            .checked_mul(per_sec_scaled).unwrap()
-            .checked_mul(seconds as u128).unwrap()
-            .checked_div(RATE_SCALE).unwrap();
-
-        market.accumulated_index = market.accumulated_index.checked_add(increment).unwrap();
-        market.last_accrued_ts = now;
-        Ok(())
+        do_accrue_interest(&mut ctx.accounts.market)
     }
 
     pub fn supply(ctx: Context<Supply>, amount: u64) -> Result<()> {
@@ -93,7 +100,7 @@ pub mod lending {
         require!(amount > 0, LendingError::InvalidAmount);
 
         // Accrue before state changes
-        accrue_interest(Context::new(ctx.program_id, AccrueInterest { market: ctx.accounts.market.clone() }, vec![]))?;
+        do_accrue_interest(market)?;
 
         // Transfer base tokens to vault
         let cpi_accounts = Transfer {
@@ -149,13 +156,73 @@ pub mod lending {
         Ok(())
     }
 
-    pub fn borrow(_ctx: Context<Borrow>, _amount: u64) -> Result<()> {
-        // Placeholder: LVF will manage collateralization; ensure checks before enabling
-        err!(LendingError::Unimplemented)
+    pub fn borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require!(!market.paused, LendingError::Paused);
+        require!(amount > 0, LendingError::InvalidAmount);
+
+        // Accrue interest before state changes
+        do_accrue_interest(market)?;
+
+        // Check available liquidity
+        let available = (market.total_supply as i128)
+            .checked_sub(market.total_borrowed as i128)
+            .ok_or(LendingError::InvalidAmount)?;
+        require!(amount as i128 <= available, LendingError::InvalidAmount);
+
+        // Update borrowed amount
+        market.total_borrowed = market.total_borrowed
+            .checked_add(amount as u128)
+            .ok_or(LendingError::InvalidAmount)?;
+
+        // Transfer borrowed tokens to user
+        let seeds = &[b"market", market.base_mint.as_ref(), &[market.bump]];
+        let signer = &[&seeds[..]];
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.vault.to_account_info(),
+            to: ctx.accounts.user_account.to_account_info(),
+            authority: market.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer),
+            amount,
+        )?;
+
+        emit!(BorrowEvent { user: ctx.accounts.user.key(), amount });
+        Ok(())
     }
 
-    pub fn repay(_ctx: Context<Repay>, _amount: u64) -> Result<()> {
-        err!(LendingError::Unimplemented)
+    pub fn repay(ctx: Context<Repay>, amount: u64) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require!(!market.paused, LendingError::Paused);
+        require!(amount > 0, LendingError::InvalidAmount);
+
+        // Accrue interest before state changes
+        do_accrue_interest(market)?;
+
+        // Calculate total owed including accrued interest
+        // For simplicity, use accumulated_index to calculate interest
+        // In production, track per-user borrow index
+        let total_owed = amount; // Simplified: assume amount includes interest
+
+        // Transfer repayment from user to vault
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_account.to_account_info(),
+            to: ctx.accounts.vault.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts),
+            total_owed,
+        )?;
+
+        // Update borrowed amount (assuming full repayment for now)
+        market.total_borrowed = market.total_borrowed
+            .checked_sub(amount as u128)
+            .unwrap_or(0);
+
+        emit!(RepayEvent { user: ctx.accounts.user.key(), amount: total_owed });
+        Ok(())
     }
 }
 
@@ -241,12 +308,28 @@ pub struct Withdraw<'info> {
 
 #[derive(Accounts)]
 pub struct Borrow<'info> {
+    #[account(mut)]
     pub market: Account<'info, Market>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(mut)]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct Repay<'info> {
+    #[account(mut)]
     pub market: Account<'info, Market>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(mut)]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[event]
@@ -261,6 +344,18 @@ pub struct WithdrawEvent {
     pub amount: u64,
 }
 
+#[event]
+pub struct BorrowEvent {
+    pub user: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
+pub struct RepayEvent {
+    pub user: Pubkey,
+    pub amount: u64,
+}
+
 #[error_code]
 pub enum LendingError {
     #[msg("Invalid parameters")] InvalidParams,
@@ -268,6 +363,7 @@ pub enum LendingError {
     #[msg("Invalid amount")] InvalidAmount,
     #[msg("Unauthorized")] Unauthorized,
     #[msg("Unimplemented")] Unimplemented,
+    #[msg("Insufficient liquidity")] InsufficientLiquidity,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]

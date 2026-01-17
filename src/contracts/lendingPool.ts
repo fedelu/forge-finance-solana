@@ -1,19 +1,77 @@
 /**
- * Mock Lending Pool for USDC borrowing
- * In production, this would interact with an on-chain lending protocol
+ * USDC-only Lending Pool for Crucible Leverage
+ * This is the only lending pool used for leverage in crucibles.
+ * Allows crucible positions to borrow USDC for leveraged LP positions.
+ * Fetches real data from on-chain lending pool.
  */
+
+import { fetchLendingPoolDirect, createDevnetConnection } from '../utils/crucibleFetcher'
 
 interface LendingPoolState {
   totalLiquidity: number
   borrowed: number
   interestRate: number // APY as decimal (0.10 = 10%)
+  lastFetchTime: number
 }
 
 class LendingPool {
   private state: LendingPoolState = {
-    totalLiquidity: 1000000, // Mock: 1M USDC available
+    totalLiquidity: 0, // Will be fetched from on-chain (no fake data)
     borrowed: 0,
-    interestRate: 0.05, // 5% APY
+    interestRate: 0.05, // 5% APY (default, will be updated from on-chain)
+    lastFetchTime: 0,
+  }
+  
+  private fetchPromise: Promise<void> | null = null
+
+  /**
+   * Fetch real pool state from on-chain
+   */
+  async fetchFromOnChain(): Promise<void> {
+    // Debounce: only fetch if last fetch was more than 10 seconds ago
+    const now = Date.now()
+    if (now - this.state.lastFetchTime < 10000 && this.state.lastFetchTime > 0) {
+      return
+    }
+    
+    // Prevent concurrent fetches
+    if (this.fetchPromise) {
+      return this.fetchPromise
+    }
+    
+    this.fetchPromise = (async () => {
+      try {
+        const connection = createDevnetConnection()
+        const poolData = await fetchLendingPoolDirect(connection)
+        
+        if (poolData) {
+          // Convert from on-chain format (USDC has 6 decimals)
+          const totalLiquidity = Number(poolData.totalLiquidity) / 1e6
+          const borrowed = Number(poolData.totalBorrowed) / 1e6
+          const interestRate = Number(poolData.borrowRate) / 100 // Convert basis points to decimal
+          
+          this.state = {
+            totalLiquidity: totalLiquidity - borrowed, // Available = total - borrowed
+            borrowed: borrowed,
+            interestRate: interestRate,
+            lastFetchTime: now,
+          }
+          
+          console.log('✅ LendingPool: Fetched real data from on-chain:', {
+            totalLiquidity: this.state.totalLiquidity,
+            borrowed: this.state.borrowed,
+            interestRate: this.state.interestRate,
+          })
+        }
+      } catch (error) {
+        console.warn('⚠️ LendingPool: Could not fetch on-chain data:', error)
+        // Keep existing state, don't fall back to fake data
+      } finally {
+        this.fetchPromise = null
+      }
+    })()
+    
+    return this.fetchPromise
   }
 
   /**
@@ -68,9 +126,11 @@ class LendingPool {
   }
 
   /**
-   * Get current pool state
+   * Get current pool state (triggers async fetch if stale)
    */
   getState(): LendingPoolState {
+    // Trigger async fetch in background (non-blocking)
+    this.fetchFromOnChain().catch(console.error)
     return { ...this.state }
   }
 
@@ -89,14 +149,24 @@ class LendingPool {
   }
 
   /**
-   * Reset pool state (for testing)
+   * Reset pool state - fetches fresh data from on-chain
    */
-  reset(): void {
+  async reset(): Promise<void> {
     this.state = {
-      totalLiquidity: 1000000,
+      totalLiquidity: 0,
       borrowed: 0,
-      interestRate: 0.10,
+      interestRate: 0.05,
+      lastFetchTime: 0,
     }
+    await this.fetchFromOnChain()
+  }
+  
+  /**
+   * Force refresh from on-chain
+   */
+  async refresh(): Promise<void> {
+    this.state.lastFetchTime = 0 // Reset debounce
+    await this.fetchFromOnChain()
   }
 }
 

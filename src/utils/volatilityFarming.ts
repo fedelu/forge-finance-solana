@@ -7,14 +7,14 @@ export interface VolatilityFarmingConfig {
   feeRate: number; // Closing fee on principal (e.g. 2% = 0.02)
   protocolFeeCut: number; // 20% = 0.20 (protocol treasury)
   crucibleHoldersCut: number; // 80% = 0.80 (crucible holders)
-  totalProtocolTVL: number; // 4,300,000 FOGO
+  totalProtocolTVL: number; // Total protocol TVL
 }
 
 export interface CrucibleConfig {
   id: string;
   name: string;
   symbol: string;
-  volatilityFactor: number; // 4% for FOGO, 8% for FORGE
+  volatilityFactor: number; // Volatility factor (e.g., 4% for SOL, 8% for FORGE)
   tvl: number;
 }
 
@@ -27,31 +27,47 @@ export interface VolatilityFarmingResults {
   transactionFrequency: number;
 }
 
-// Default configuration
+// Default configuration - TVL starts at 0, will be fetched from on-chain
 export const DEFAULT_CONFIG: VolatilityFarmingConfig = {
   feeRate: INFERNO_CLOSE_FEE_RATE, // Forge principal close fee
   protocolFeeCut: 0.20, // 20% to protocol treasury
   crucibleHoldersCut: 0.80, // 80% to crucible holders
-  totalProtocolTVL: 4_300_000, // 4.3M total TVL (USD)
+  totalProtocolTVL: 0, // Will be fetched from on-chain (no fake data)
 };
 
-// Crucible configurations
+// Crucible configurations - TVL is 0 by default, updated from on-chain
 export const CRUCIBLE_CONFIGS: CrucibleConfig[] = [
   {
     id: 'sol-crucible',
     name: 'Solana',
     symbol: 'SOL',
     volatilityFactor: 0.02, // 2%
-    tvl: 3_225_000, // SOL crucible TVL for cToken price calculation
-  },
-  {
-    id: 'forge-crucible',
-    name: 'FORGE',
-    symbol: 'FORGE',
-    volatilityFactor: 0.18, // 18%
-    tvl: 1_075_000, // 25% of protocol TVL (4,300,000 * 0.25)
+    tvl: 0, // Will be fetched from on-chain (no fake data)
   },
 ];
+
+/**
+ * Create a crucible config with dynamic TVL from on-chain
+ */
+export function createCrucibleConfig(tvl: number): CrucibleConfig {
+  return {
+    id: 'sol-crucible',
+    name: 'Solana',
+    symbol: 'SOL',
+    volatilityFactor: 0.02,
+    tvl: tvl,
+  };
+}
+
+/**
+ * Create a volatility farming config with dynamic TVL
+ */
+export function createVolatilityConfig(totalTVL: number): VolatilityFarmingConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    totalProtocolTVL: totalTVL,
+  };
+}
 
 /**
  * Calculate transaction frequency based on volatility
@@ -59,10 +75,8 @@ export const CRUCIBLE_CONFIGS: CrucibleConfig[] = [
  */
 export function calculateTransactionFrequency(volatilityFactor: number): number {
   // Specific transaction frequencies for each crucible
-  if (volatilityFactor === 0.02) { // FOGO: 2% volatility
+  if (volatilityFactor === 0.02) { // 2% volatility
     return 0.05; // 0.05 transaction frequency
-  } else if (volatilityFactor === 0.18) { // FORGE: 18% volatility
-    return 0.01; // 0.01 transaction frequency
   }
   // Fallback to volatility factor for other cases
   return volatilityFactor;

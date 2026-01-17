@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to update Anchor.toml with new program IDs
-# Usage: ./update-anchor-config.sh [mainnet|fogo]
+# Usage: ./update-anchor-config.sh [mainnet|devnet]
 
 set -e
 
@@ -83,44 +83,8 @@ wallet = "/Users/federicodelucchi/.config/solana/mainnet-keypair.json"
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 EOF
 
-elif [ "$NETWORK" = "fogo" ]; then
-    print_status "Updating Anchor.toml for Fogo testnet..."
-    
-    # Create backup
-    cp Anchor.toml Anchor.toml.backup
-    
-    # Update the [programs.fogo-testnet] section
-    cat > temp_anchor.toml << EOF
-[features]
-seeds = false
-skip-lint = false
-
-[toolchain]
-anchor_version = "0.32.0"
-
-[programs.fogo-testnet]
-forge_core = "$FORGE_CORE"
-forge_crucibles = "$FORGE_CRUCIBLES"
-forge_sparks = "$FORGE_SPARKS"
-forge_smelters = "$FORGE_SMELTERS"
-forge_heat = "$FORGE_HEAT"
-forge_reactors = "$FORGE_REACTORS"
-forge_firewall = "$FORGE_FIREWALL"
-forge_engineers = "$FORGE_ENGINEERS"
-
-[registry]
-url = "https://api.apr.dev"
-
-[provider]
-cluster = "fogo-testnet"
-wallet = "/Users/federicodelucchi/.config/solana/fogo-testnet-keypair.json"
-
-[scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
-EOF
-
 else
-    echo "Error: Invalid network. Use 'mainnet' or 'fogo'"
+    echo "Error: Invalid network. Use 'mainnet' or 'devnet'"
     exit 1
 fi
 

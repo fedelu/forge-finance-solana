@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import { fetchCrucibleDirect, calculateTVL, createDevnetConnection } from '../utils/crucibleFetcher';
 
 interface Crucible {
   id: string;
@@ -14,11 +15,13 @@ interface Crucible {
 
 interface CrucibleContextType {
   crucibles: Crucible[];
+  loading: boolean;
   updateCrucibleDeposit: (crucibleId: string, amount: number) => void;
   updateCrucibleWithdraw: (crucibleId: string, amount: number) => void;
   updateCrucibleTVL: (crucibleId: string, amountUSD: number) => void;
   getCrucible: (crucibleId: string) => Crucible | undefined;
   addCrucible: (crucible: Crucible) => void;
+  refreshFromOnChain: () => Promise<void>;
 }
 
 const CrucibleContext = createContext<CrucibleContextType | undefined>(undefined);
@@ -36,65 +39,22 @@ interface CrucibleProviderProps {
 }
 
 export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) => {
+  const [loading, setLoading] = useState(true);
   const [crucibles, setCrucibles] = useState<Crucible[]>([
     {
-      id: 'fogo-stable-crucible',
-      name: 'FOGO Stable',
-      symbol: 'FOGO',
-      tvl: 2_500_000,
-      apr: 0.12, // 12% APY - Stable strategy
+      id: 'sol-crucible',
+      name: 'Solana',
+      symbol: 'SOL',
+      tvl: 0, // Will be fetched from on-chain (no fake data)
+      apr: 0.18, // 18% APY
       status: 'active',
       userDeposit: 0,
       userShares: 0,
-      icon: '🔥'
-    },
-    {
-      id: 'fogo-growth-crucible',
-      name: 'FOGO Growth',
-      symbol: 'FOGO',
-      tvl: 1_800_000,
-      apr: 0.18, // 18% APY - Growth strategy
-      status: 'active',
-      userDeposit: 0,
-      userShares: 0,
-      icon: '🚀'
-    },
-    {
-      id: 'fogo-premium-crucible',
-      name: 'FOGO Premium',
-      symbol: 'FOGO',
-      tvl: 3_200_000,
-      apr: 0.15, // 15% APY - Premium strategy
-      status: 'active',
-      userDeposit: 0,
-      userShares: 0,
-      icon: '💎'
-    },
-    {
-      id: 'fogo-yield-crucible',
-      name: 'FOGO Yield',
-      symbol: 'FOGO',
-      tvl: 1_500_000,
-      apr: 0.22, // 22% APY - High yield strategy
-      status: 'active',
-      userDeposit: 0,
-      userShares: 0,
-      icon: '⚡'
-    },
-    {
-      id: 'fogo-defi-crucible',
-      name: 'FOGO DeFi',
-      symbol: 'FOGO',
-      tvl: 900_000,
-      apr: 0.25, // 25% APY - DeFi strategy
-      status: 'active',
-      userDeposit: 0,
-      userShares: 0,
-      icon: '🏦'
+      icon: '/solana-sol-logo.png'
     }
   ]);
 
-  const price = (symbol: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[symbol] || 1;
+  const price = (symbol: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000 } as any)[symbol] || 1;
 
   const updateCrucibleDeposit = useCallback((crucibleId: string, amount: number) => {
     console.log(`CrucibleContext: Adding deposit of ${amount} to ${crucibleId}`);
@@ -170,13 +130,51 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     console.log('Crucible added:', crucible);
   }, []);
 
+  // Fetch real on-chain data
+  const refreshFromOnChain = useCallback(async () => {
+    setLoading(true);
+    try {
+      const connection = createDevnetConnection();
+      const crucibleData = await fetchCrucibleDirect(connection);
+      
+      if (crucibleData) {
+        const tvl = calculateTVL(crucibleData, 200); // $200 SOL price
+        setCrucibles(prev => prev.map(c => {
+          if (c.id === 'sol-crucible') {
+            return {
+              ...c,
+              tvl: tvl,
+              status: crucibleData.paused ? 'paused' : 'active',
+            };
+          }
+          return c;
+        }));
+        console.log('CrucibleContext: Updated from on-chain, TVL:', tvl);
+      }
+    } catch (error) {
+      console.error('CrucibleContext: Error fetching on-chain data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fetch on-chain data on mount
+  useEffect(() => {
+    refreshFromOnChain();
+    // Refresh every 30 seconds
+    const interval = setInterval(refreshFromOnChain, 30000);
+    return () => clearInterval(interval);
+  }, [refreshFromOnChain]);
+
   const value = {
     crucibles,
+    loading,
     updateCrucibleDeposit,
     updateCrucibleWithdraw,
     updateCrucibleTVL,
     getCrucible,
     addCrucible,
+    refreshFromOnChain,
   };
 
   return (

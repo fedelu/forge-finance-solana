@@ -11,7 +11,7 @@ This document describes the new cToken minting/burning and Leveraged Volatility 
 **File: `programs/forge-crucibles/src/ctoken.rs`**
 
 Added Anchor program functions:
-- `mint_ctoken`: Mints cTokens when users deposit base tokens (FOGO/FORGE)
+- `mint_ctoken`: Mints cTokens when users deposit base tokens (SOL/FORGE)
 - `burn_ctoken`: Burns cTokens and returns base tokens plus accrued yield
 
 **Key Features:**
@@ -71,8 +71,8 @@ const [selectedLeverage, setSelectedLeverage] = useState(1.0)
   onClose={() => setShowDeposit(false)}
   crucibleAddress={crucible.address}
   ctokenMint={crucible.ctokenMint}
-  baseTokenSymbol="FOGO"
-  ctokenSymbol="cFOGO"
+  baseTokenSymbol="FORGE"
+  ctokenSymbol="cFORGE"
   currentAPY={crucible.apy}
 />
 
@@ -117,8 +117,8 @@ export const crucibles = [
   {
     address: 'YOUR_CRUCIBLE_ADDRESS',
     ctokenMint: 'YOUR_CTOKEN_MINT',
-    baseTokenSymbol: 'FOGO',
-    ctokenSymbol: 'cFOGO',
+    baseTokenSymbol: 'FORGE',
+    ctokenSymbol: 'cFORGE',
     baseMint: 'YOUR_BASE_MINT',
   },
   // ... more crucibles

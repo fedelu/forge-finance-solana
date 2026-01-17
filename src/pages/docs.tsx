@@ -17,29 +17,29 @@ export default function DocsPage() {
             <div className="mb-12 lg:mb-16 relative pt-8 lg:pt-12">
               {/* Decorative background elements */}
               <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-                <div className="absolute top-0 left-0 w-64 h-64 lg:w-96 lg:h-96 bg-fogo-primary/5 rounded-full blur-3xl"></div>
-                <div className="absolute top-0 right-0 w-64 h-64 lg:w-96 lg:h-96 bg-fogo-primary-light/5 rounded-full blur-3xl"></div>
+                <div className="absolute top-0 left-0 w-64 h-64 lg:w-96 lg:h-96 bg-forge-primary/5 rounded-full blur-3xl"></div>
+                <div className="absolute top-0 right-0 w-64 h-64 lg:w-96 lg:h-96 bg-forge-primary-light/5 rounded-full blur-3xl"></div>
               </div>
               
               {/* Main Title */}
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-fogo-primary via-fogo-primary-light to-fogo-primary bg-clip-text text-transparent leading-tight mb-4 lg:mb-6">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-forge-primary via-forge-primary-light to-forge-primary bg-clip-text text-transparent leading-tight mb-4 lg:mb-6">
                 Forge Protocol
               </h1>
               
               {/* Subtitle */}
-              <p className="text-base sm:text-lg lg:text-xl text-fogo-gray-300 mb-6 lg:mb-8 font-light leading-relaxed max-w-3xl">
+              <p className="text-base sm:text-lg lg:text-xl text-forge-gray-300 mb-6 lg:mb-8 font-light leading-relaxed max-w-3xl">
                 Complete guide to understanding and using Forge Protocol
               </p>
               
               {/* Version Info with better styling */}
               <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm">
-                  <span className="text-fogo-gray-400">Version</span>
-                  <span className="text-fogo-primary font-semibold">1.0</span>
+                  <span className="text-forge-gray-400">Version</span>
+                  <span className="text-forge-primary font-semibold">1.0</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 backdrop-blur-sm">
-                  <span className="text-fogo-gray-400">Last Updated</span>
-                  <span className="text-white font-medium">November 2025</span>
+                  <span className="text-forge-gray-400">Last Updated</span>
+                  <span className="text-white font-medium">January 2026</span>
                 </div>
               </div>
             </div>
@@ -47,21 +47,21 @@ export default function DocsPage() {
             {/* Executive Summary */}
             <section id="executive-summary" className="mb-16 scroll-mt-24">
               <h2 className="text-3xl font-bold mb-6 text-white">Executive Summary</h2>
-              <div className="space-y-4 text-fogo-gray-300">
+              <div className="space-y-4 text-forge-gray-300">
                 <p className="text-lg leading-relaxed">
-                  <strong className="text-white">Forge Protocol</strong> is a permissionless, modular decentralized finance (DeFi) protocol built on Solana that enables any SPL token to become the foundation of a self-sustaining financial system. The protocol creates yield-generating vaults called <strong className="text-fogo-primary">"Crucibles"</strong> which provide depositors with synthetic wrapped versions of deposited assets (cTokens).
+                  <strong className="text-white">Forge Protocol</strong> is a permissionless, modular decentralized finance (DeFi) protocol built on Solana that enables any SPL token to become the foundation of a self-sustaining financial system. The protocol creates yield-generating vaults called <strong className="text-forge-primary">"Crucibles"</strong> which provide depositors with synthetic wrapped versions of deposited assets (cTokens).
                 </p>
                 <p>
-                  Crucibles unlock yield opportunities through internal protocol mechanics including <strong className="text-white">Volatility Farming</strong>, <strong className="text-white">Inferno Mode</strong>, and <strong className="text-white">Lending Markets</strong>. These primitives work together to generate <strong className="text-fogo-primary">organic yield from volatility and market activity</strong>, without relying on inflationary token emissions.
+                  Crucibles unlock yield opportunities through internal protocol mechanics including <strong className="text-white">Volatility Farming</strong>, <strong className="text-white">Inferno Mode</strong>, and <strong className="text-white">Lending Markets</strong>. These primitives work together to generate <strong className="text-forge-primary">organic yield from volatility and market activity</strong>, without relying on inflationary token emissions.
                 </p>
               </div>
 
-              <div className="mt-8 p-6 rounded-2xl border border-fogo-primary/30 bg-gradient-to-br from-fogo-primary/10 to-transparent backdrop-blur-sm">
+              <div className="mt-8 p-6 rounded-2xl border border-forge-primary/30 bg-gradient-to-br from-forge-primary/10 to-transparent backdrop-blur-sm">
                 <h3 className="text-xl font-semibold mb-4 text-white">Why Forge Protocol Exists</h3>
-                <p className="text-fogo-gray-300 leading-relaxed">
-                  Most DeFi protocols rely on emissions through newly minted tokens distributed as rewards. These emissions dilute supply, decay in effectiveness over time, and devalue the very assets they're designed to support. <strong className="text-fogo-primary">Forge Protocol eliminates this dependence</strong> by treating volatility as a yield source, enabling real, sustainable incentives.
+                <p className="text-forge-gray-300 leading-relaxed">
+                  Most DeFi protocols rely on emissions through newly minted tokens distributed as rewards. These emissions dilute supply, decay in effectiveness over time, and devalue the very assets they're designed to support. <strong className="text-forge-primary">Forge Protocol eliminates this dependence</strong> by treating volatility as a yield source, enabling real, sustainable incentives.
                 </p>
-                <p className="mt-4 text-fogo-gray-300">
+                <p className="mt-4 text-forge-gray-300">
                   The protocol captures fees from wrapping/unwrapping assets, trading activity, and borrowing behavior. <strong className="text-white">These fees are recycled back into the system</strong>, creating a compounding flywheel for protocol growth that does not require new token issuance.
                 </p>
               </div>
@@ -71,30 +71,30 @@ export default function DocsPage() {
             <section id="project-overview" className="mb-16 scroll-mt-24">
               <h2 className="text-3xl font-bold mb-6 text-white">Project Overview</h2>
               
-              <div className="space-y-6 text-fogo-gray-300">
+              <div className="space-y-6 text-forge-gray-300">
                 <div>
                   <h3 className="text-xl font-semibold mb-3 text-white">What is Forge Protocol?</h3>
                   <p className="leading-relaxed">
-                    <strong className="text-white">Forge Protocol</strong> is a permissionless, modular DeFi protocol that allows any SPL token to become the foundation of a self-sustaining financial system. The protocol enables the creation of vaults called <strong className="text-fogo-primary">"Crucibles"</strong> which provide depositors with synthetic wrapped versions of deposited assets (cTokens like cSOL, cFORGE).
+                    <strong className="text-white">Forge Protocol</strong> is a permissionless, modular DeFi protocol that allows any SPL token to become the foundation of a self-sustaining financial system. The protocol enables the creation of vaults called <strong className="text-forge-primary">"Crucibles"</strong> which provide depositors with synthetic wrapped versions of deposited assets (cTokens like cSOL).
                   </p>
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4 mt-6">
                   <div className="p-5 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                     <h4 className="font-semibold text-white mb-2">Sustainability</h4>
-                    <p className="text-sm text-fogo-gray-400">No emissions or inflationary mechanics. Yield comes exclusively from on-chain economic activity.</p>
+                    <p className="text-sm text-forge-gray-400">No emissions or inflationary mechanics. Yield comes exclusively from on-chain economic activity.</p>
                   </div>
                   <div className="p-5 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                     <h4 className="font-semibold text-white mb-2">Transparency</h4>
-                    <p className="text-sm text-fogo-gray-400">All actions and fee flows recorded on-chain. Protocol parameters are transparent and verifiable.</p>
+                    <p className="text-sm text-forge-gray-400">All actions and fee flows recorded on-chain. Protocol parameters are transparent and verifiable.</p>
                   </div>
                   <div className="p-5 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                     <h4 className="font-semibold text-white mb-2">Accessibility</h4>
-                    <p className="text-sm text-fogo-gray-400">Anyone can deposit assets and start earning yield immediately. No approvals or governance votes required.</p>
+                    <p className="text-sm text-forge-gray-400">Anyone can deposit assets and start earning yield immediately. No approvals or governance votes required.</p>
                   </div>
                   <div className="p-5 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                     <h4 className="font-semibold text-white mb-2">Aligned Incentives</h4>
-                    <p className="text-sm text-fogo-gray-400">Each participant role earns value in different ways, creating a sustainable ecosystem.</p>
+                    <p className="text-sm text-forge-gray-400">Each participant role earns value in different ways, creating a sustainable ecosystem.</p>
                   </div>
                 </div>
               </div>
@@ -105,12 +105,12 @@ export default function DocsPage() {
               <h2 className="text-3xl font-bold mb-6 text-white">How It Works</h2>
               
               <div className="space-y-6">
-                <div className="p-6 rounded-2xl border border-fogo-primary/30 bg-gradient-to-br from-fogo-primary/10 to-transparent backdrop-blur-sm">
+                <div className="p-6 rounded-2xl border border-forge-primary/30 bg-gradient-to-br from-forge-primary/10 to-transparent backdrop-blur-sm">
                   <h3 className="text-xl font-semibold mb-4 text-white">Volatility as a Yield Source</h3>
-                  <p className="text-fogo-gray-300 mb-4 leading-relaxed">
-                    <strong className="text-fogo-primary">Forge Protocol treats volatility as a yield source</strong>, enabling real, sustainable incentives. Unlike protocols that rely on token emissions, Forge Protocol generates yield exclusively from on-chain economic activity.
+                  <p className="text-forge-gray-300 mb-4 leading-relaxed">
+                    <strong className="text-forge-primary">Forge Protocol treats volatility as a yield source</strong>, enabling real, sustainable incentives. Unlike protocols that rely on token emissions, Forge Protocol generates yield exclusively from on-chain economic activity.
                   </p>
-                  <ol className="space-y-3 text-fogo-gray-300 list-decimal list-inside">
+                  <ol className="space-y-3 text-forge-gray-300 list-decimal list-inside">
                     <li><strong className="text-white">Market Volatility Creates Opportunities</strong>: When asset prices fluctuate, price deviations between wrapped tokens (cTokens) and underlying assets create arbitrage opportunities</li>
                     <li><strong className="text-white">Arbitrageurs Capture Spreads</strong>: Traders automatically wrap/unwrap tokens to capture price differences</li>
                     <li><strong className="text-white">Fees Generate Yield</strong>: Each wrap/unwrap transaction generates fees that flow back to Crucible stakers</li>
@@ -120,24 +120,24 @@ export default function DocsPage() {
 
                 <div className="mt-6 p-6 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                   <h4 className="font-semibold mb-3 text-white">The Compounding Flywheel</h4>
-                  <div className="space-y-2 text-sm text-fogo-gray-400 font-mono">
+                  <div className="space-y-2 text-sm text-forge-gray-400 font-mono">
                     <div>Market Volatility</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Price Deviations</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Arbitrage Opportunities</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Wrap/Unwrap Activity</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Fee Generation</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Fees Distributed (80% to Stakers, 20% to Protocol)</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Higher Yield Attracts More Deposits</div>
-                    <div className="text-fogo-primary">↓</div>
+                    <div className="text-forge-primary">↓</div>
                     <div>Increased TVL = More Fee Revenue</div>
-                    <div className="text-fogo-primary">↓</div>
-                    <div className="text-fogo-primary">Cycle Repeats (Compounding Growth)</div>
+                    <div className="text-forge-primary">↓</div>
+                    <div className="text-forge-primary">Cycle Repeats (Compounding Growth)</div>
                   </div>
                 </div>
               </div>
@@ -151,13 +151,13 @@ export default function DocsPage() {
                 {/* Crucible Staking */}
                 <div className="p-6 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-sm">
                   <h3 className="text-2xl font-bold text-white mb-4">1. Crucible Staking (Volatility Farming)</h3>
-                  <p className="text-fogo-gray-300 mb-4">
-                    Deposit assets into a "Crucible" to receive yield-bearing cTokens. This is the foundation of <strong className="text-fogo-primary">Volatility Farming</strong> - earning yield from market volatility and trading activity.
+                  <p className="text-forge-gray-300 mb-4">
+                    Deposit assets into a "Crucible" to receive yield-bearing cTokens. This is the foundation of <strong className="text-forge-primary">Volatility Farming</strong> - earning yield from market volatility and trading activity.
                   </p>
                   <div className="grid md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <h4 className="font-semibold text-white mb-2">Key Features</h4>
-                      <ul className="space-y-1 text-sm text-fogo-gray-400">
+                      <ul className="space-y-1 text-sm text-forge-gray-400">
                         <li>• Wrap Fee: 0.5% on deposit</li>
                         <li>• Unwrap Fee: 0.75% → 0.3% (after 5-day cooldown)</li>
                         <li>• Yield Source: 80% of protocol fees</li>
@@ -165,9 +165,9 @@ export default function DocsPage() {
                         <li>• No Emissions: All yield from real market activity</li>
                       </ul>
                     </div>
-                    <div className="p-4 rounded-lg bg-fogo-primary/10 border border-fogo-primary/20">
+                    <div className="p-4 rounded-lg bg-forge-primary/10 border border-forge-primary/20">
                       <h4 className="font-semibold text-white mb-2">Example</h4>
-                      <div className="text-sm text-fogo-gray-300 space-y-1">
+                      <div className="text-sm text-forge-gray-300 space-y-1">
                         <div>Deposit: 100 SOL</div>
                         <div>Wrap Fee: 0.5 SOL (0.5%)</div>
                         <div>cTokens Received: ~95.2 cSOL</div>
@@ -180,13 +180,13 @@ export default function DocsPage() {
                 {/* LP Positions */}
                 <div className="p-6 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-sm">
                   <h3 className="text-2xl font-bold text-white mb-4">2. Liquidity Pool (LP) Positions</h3>
-                  <p className="text-fogo-gray-300 mb-4">
-                    Provide liquidity to DEX pairs and earn from <strong className="text-fogo-primary">dual fee capture</strong> - both DEX trading fees and protocol arbitrage fees.
+                  <p className="text-forge-gray-300 mb-4">
+                    Provide liquidity to DEX pairs and earn from <strong className="text-forge-primary">dual fee capture</strong> - both DEX trading fees and protocol arbitrage fees.
                   </p>
                   <div className="grid md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <h4 className="font-semibold text-white mb-2">Key Features</h4>
-                      <ul className="space-y-1 text-sm text-fogo-gray-400">
+                      <ul className="space-y-1 text-sm text-forge-gray-400">
                         <li>• Open Fee: 1% of position value</li>
                         <li>• Close Fee: 2% principal + 10% yield</li>
                         <li>• LP APY: ~3x base Crucible APY</li>
@@ -194,9 +194,9 @@ export default function DocsPage() {
                         <li>• Volatility Amplification</li>
                       </ul>
                     </div>
-                    <div className="p-4 rounded-lg bg-fogo-primary/10 border border-fogo-primary/20">
+                    <div className="p-4 rounded-lg bg-forge-primary/10 border border-forge-primary/20">
                       <h4 className="font-semibold text-white mb-2">Example</h4>
-                      <div className="text-sm text-fogo-gray-300 space-y-1">
+                      <div className="text-sm text-forge-gray-300 space-y-1">
                         <div>Deposit: 100 cSOL + $20,000 USDC</div>
                         <div>LP APY: ~24% (3x base)</div>
                         <div>Annual Yield: ~$9,504</div>
@@ -208,13 +208,13 @@ export default function DocsPage() {
                 {/* Inferno Mode */}
                 <div className="p-6 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-sm">
                   <h3 className="text-2xl font-bold text-white mb-4">3. Inferno Mode</h3>
-                  <p className="text-fogo-gray-300 mb-4">
-                    <strong className="text-fogo-primary">Inferno Mode</strong> allows you to amplify your exposure to volatility farming strategies by utilizing leverage. Borrow assets to increase position size and potentially enhance returns.
+                  <p className="text-forge-gray-300 mb-4">
+                    <strong className="text-forge-primary">Inferno Mode</strong> allows you to amplify your exposure to volatility farming strategies by utilizing leverage. Borrow assets to increase position size and potentially enhance returns.
                   </p>
                   <div className="grid md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <h4 className="font-semibold text-white mb-2">Key Features</h4>
-                      <ul className="space-y-1 text-sm text-fogo-gray-400">
+                      <ul className="space-y-1 text-sm text-forge-gray-400">
                         <li>• Leverage: Up to 2x (1.5x and 2x options)</li>
                         <li>• Borrowing Rate: 10% APY</li>
                         <li>• Health Factor Monitoring</li>
@@ -224,7 +224,7 @@ export default function DocsPage() {
                     </div>
                     <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
                       <h4 className="font-semibold text-white mb-2">Risk Note</h4>
-                      <p className="text-sm text-fogo-gray-300">
+                      <p className="text-sm text-forge-gray-300">
                         While leverage can magnify gains, it also increases the risk of losses. Users should carefully monitor positions and maintain adequate health factors.
                       </p>
                     </div>
@@ -246,57 +246,57 @@ export default function DocsPage() {
                       <th className="text-left py-3 px-4 text-white font-semibold">Notes</th>
                     </tr>
                   </thead>
-                  <tbody className="text-fogo-gray-300">
+                  <tbody className="text-forge-gray-300">
                     <tr className="border-b border-white/5">
                       <td className="py-3 px-4">Wrap</td>
-                      <td className="py-3 px-4 text-fogo-primary">0.5%</td>
+                      <td className="py-3 px-4 text-forge-primary">0.5%</td>
                       <td className="py-3 px-4 text-sm">Charged on deposit amount</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-3 px-4">Unwrap</td>
-                      <td className="py-3 px-4 text-fogo-primary">0.75% → 0.3%</td>
+                      <td className="py-3 px-4 text-forge-primary">0.75% → 0.3%</td>
                       <td className="py-3 px-4 text-sm">Starts at 0.75%, reduces to 0.3% after 5-day cooldown</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-3 px-4">Open LP Position</td>
-                      <td className="py-3 px-4 text-fogo-primary">1%</td>
+                      <td className="py-3 px-4 text-forge-primary">1%</td>
                       <td className="py-3 px-4 text-sm">Charged on total position value</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-3 px-4">Close LP Position</td>
-                      <td className="py-3 px-4 text-fogo-primary">2% + 10%</td>
+                      <td className="py-3 px-4 text-forge-primary">2% + 10%</td>
                       <td className="py-3 px-4 text-sm">2% of principal + 10% of yield earned</td>
                     </tr>
                     <tr className="border-b border-white/5">
                       <td className="py-3 px-4">Liquidation</td>
-                      <td className="py-3 px-4 text-red-400">10%</td>
+                      <td className="py-3 px-4 text-forge-primary">10%</td>
                       <td className="py-3 px-4 text-sm">Charged if position becomes undercollateralized</td>
                     </tr>
                     <tr>
                       <td className="py-3 px-4">Lending Yield Fee</td>
-                      <td className="py-3 px-4 text-fogo-primary">10%</td>
+                      <td className="py-3 px-4 text-forge-primary">10%</td>
                       <td className="py-3 px-4 text-sm">Protocol takes 10% of lending yield</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              <div className="mt-6 p-6 rounded-xl border border-fogo-primary/30 bg-gradient-to-br from-fogo-primary/10 to-transparent backdrop-blur-sm">
+              <div className="mt-6 p-6 rounded-xl border border-forge-primary/30 bg-gradient-to-br from-forge-primary/10 to-transparent backdrop-blur-sm">
                 <h3 className="text-xl font-semibold mb-4 text-white">Fee Distribution</h3>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <CheckCircleIcon className="w-5 h-5 text-fogo-primary" />
+                      <CheckCircleIcon className="w-5 h-5 text-forge-primary" />
                       <span className="font-semibold text-white">80% → Crucible Stakers</span>
                     </div>
-                    <p className="text-sm text-fogo-gray-400 ml-7">Distributed to cToken holders based on their stake</p>
+                    <p className="text-sm text-forge-gray-400 ml-7">Distributed to cToken holders based on their stake</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <CheckCircleIcon className="w-5 h-5 text-fogo-primary" />
+                      <CheckCircleIcon className="w-5 h-5 text-forge-primary" />
                       <span className="font-semibold text-white">20% → FORGE Protocol</span>
                     </div>
-                    <p className="text-sm text-fogo-gray-400 ml-7">Protocol treasury for development and operations</p>
+                    <p className="text-sm text-forge-gray-400 ml-7">Protocol treasury for development and operations</p>
                   </div>
                 </div>
               </div>
@@ -309,10 +309,10 @@ export default function DocsPage() {
               <div className="space-y-6">
                 <div className="p-6 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                   <h3 className="text-xl font-semibold mb-4 text-white">Revenue Streams</h3>
-                  <p className="text-fogo-gray-300 mb-4">
-                    All revenue comes from <strong className="text-fogo-primary">real on-chain economic activity</strong>, not token emissions:
+                  <p className="text-forge-gray-300 mb-4">
+                    All revenue comes from <strong className="text-forge-primary">real on-chain economic activity</strong>, not token emissions:
                   </p>
-                  <ul className="space-y-2 text-fogo-gray-300">
+                  <ul className="space-y-2 text-forge-gray-300">
                     <li>• <strong className="text-white">Wrap/Unwrap Fees</strong>: 0.5-0.75% on all token wrapping operations (volatility-driven)</li>
                     <li>• <strong className="text-white">LP Position Fees</strong>: 1% open + 2% close + 10% yield fee</li>
                     <li>• <strong className="text-white">Liquidation Fees</strong>: 10% on liquidated positions</li>
@@ -321,12 +321,12 @@ export default function DocsPage() {
                   </ul>
                 </div>
 
-                <div className="p-6 rounded-xl border border-fogo-primary/30 bg-gradient-to-br from-fogo-primary/10 to-transparent backdrop-blur-sm">
+                <div className="p-6 rounded-xl border border-forge-primary/30 bg-gradient-to-br from-forge-primary/10 to-transparent backdrop-blur-sm">
                   <h3 className="text-xl font-semibold mb-4 text-white">Sustainable Growth Model</h3>
-                  <p className="text-fogo-gray-300 mb-4">
-                    Unlike emission-based protocols, Forge Protocol's growth is <strong className="text-fogo-primary">self-sustaining</strong>:
+                  <p className="text-forge-gray-300 mb-4">
+                    Unlike emission-based protocols, Forge Protocol's growth is <strong className="text-forge-primary">self-sustaining</strong>:
                   </p>
-                  <div className="space-y-2 text-fogo-gray-300">
+                  <div className="space-y-2 text-forge-gray-300">
                     <div>• More volatility → More arbitrage → More fees → Higher yield</div>
                     <div>• Higher yield → More deposits → Higher TVL → More fees</div>
                     <div>• Fees recycled → Compounding growth → Sustainable ecosystem</div>
@@ -342,7 +342,7 @@ export default function DocsPage() {
               <div className="space-y-6">
                 <div className="p-6 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
                   <h3 className="text-xl font-semibold mb-4 text-white">Getting Started</h3>
-                  <ol className="space-y-3 text-fogo-gray-300 list-decimal list-inside">
+                  <ol className="space-y-3 text-forge-gray-300 list-decimal list-inside">
                     <li><strong className="text-white">Connect Wallet</strong>: Install Phantom or Solflare wallet and connect to Solana Devnet (for testing) or Mainnet (for production)</li>
                     <li><strong className="text-white">Get Test Tokens</strong>: Use Solana faucet to get devnet SOL and USDC</li>
                     <li><strong className="text-white">Start Staking</strong>: Navigate to Crucibles section and deposit tokens</li>
@@ -358,12 +358,12 @@ export default function DocsPage() {
 
             {/* Footer */}
             <div className="mt-16 pt-8 border-t border-white/10">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-fogo-gray-500">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-forge-gray-500">
                 <div>
-                  <p className="text-fogo-gray-400">For more information, visit the <Link href="/demo" className="text-fogo-primary hover:text-fogo-primary-light">Demo</Link> page</p>
+                  <p className="text-forge-gray-400">For more information, visit the <Link href="/demo" className="text-forge-primary hover:text-forge-primary-light">Demo</Link> page</p>
                 </div>
                 <div>
-                  <p>© 2025 Forge Protocol. All rights reserved.</p>
+                  <p>© 2026 Forge Protocol. All rights reserved.</p>
                 </div>
               </div>
             </div>

@@ -1,6 +1,8 @@
-// Summary: BigInt-safe helpers for utilization and APY math with RATE_SCALE = 1e9
+// Summary: BigInt-safe helpers for utilization and APY math
+// Note: Exchange rate RATE_SCALE is 1e6 (in math.ts), but utilization uses 1e9 for precision
 
-export const RATE_SCALE = 1_000_000_000n
+export const UTILIZATION_SCALE = 1_000_000_000n // 9 decimal places for utilization calculations
+export const RATE_SCALE = 1_000_000n // 6 decimal places - matches on-chain exchange_rate
 
 export function toBigIntAmount(amount: string, decimals: number): bigint {
   const [whole, frac = ''] = amount.split('.')
@@ -18,7 +20,7 @@ export function fromBigIntAmount(amount: bigint, decimals: number): string {
 
 export function computeUtilization(totalBorrowed: bigint, totalSupply: bigint): bigint {
   if (totalSupply === 0n) return 0n
-  return (totalBorrowed * RATE_SCALE) / totalSupply
+  return (totalBorrowed * UTILIZATION_SCALE) / totalSupply
 }
 
 

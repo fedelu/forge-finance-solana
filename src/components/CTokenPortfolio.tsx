@@ -1,12 +1,15 @@
 import React, { useState } from 'react'
+import { BanknotesIcon } from '@heroicons/react/24/outline'
 import { useCToken } from '../hooks/useCToken'
 import { useCrucible } from '../hooks/useCrucible'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useLP } from '../hooks/useLP'
+import { useLending } from '../hooks/useLending'
 import { useBalance } from '../contexts/BalanceContext'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
 import LVFPositionCard from './LVFPositionCard'
 import { formatNumberWithCommas } from '../utils/math'
+import { calculateBorrowInterest } from '../utils/lendingProgram'
 
 interface CTokenPosition {
   crucibleAddress: string
@@ -32,89 +35,67 @@ export default function CTokenPortfolio() {
     leverage: undefined, // Will be fetched from useCToken
   }))
 
-  // Fetch LVF positions for all crucibles
-  // Use individual hooks for each crucible (React hooks rules compliant)
-  const fogoCrucible = positions.find(p => p.baseTokenSymbol === 'SOL')
-  const forgeCrucible = positions.find(p => p.baseTokenSymbol === 'FORGE')
+  // Fetch LVF positions for SOL crucible
+  const solCrucible = positions.find(p => p.baseTokenSymbol === 'SOL')
   
-  const fogoLVFPosition = useLVFPosition({
-    crucibleAddress: fogoCrucible?.crucibleAddress || '',
+  const solLVFPosition = useLVFPosition({
+    crucibleAddress: solCrucible?.crucibleAddress || '',
     baseTokenSymbol: 'SOL',
   })
-  
-  const forgeLVFPosition = useLVFPosition({
-    crucibleAddress: forgeCrucible?.crucibleAddress || '',
-    baseTokenSymbol: 'FORGE',
-  })
 
-  // Fetch LP positions for all crucibles
-  const fogoLP = useLP({
-    crucibleAddress: fogoCrucible?.crucibleAddress || '',
+  // Fetch LP positions for SOL crucible
+  const solLP = useLP({
+    crucibleAddress: solCrucible?.crucibleAddress || '',
     baseTokenSymbol: 'SOL',
-    baseAPY: fogoCrucible?.baseAPY || 0,
+    baseAPY: solCrucible?.baseAPY || 0,
   })
 
-  const forgeLP = useLP({
-    crucibleAddress: forgeCrucible?.crucibleAddress || '',
-    baseTokenSymbol: 'FORGE',
-    baseAPY: forgeCrucible?.baseAPY || 0,
-  })
+  // Fetch lending pool positions
+  const { positions: lendingPositions, withdraw: withdrawLending, repay: repayLending } = useLending()
 
   // Store refetch functions in refs to avoid dependency issues
-  const fogoLVFRefetchRef = React.useRef(fogoLVFPosition.refetch)
-  const forgeLVFRefetchRef = React.useRef(forgeLVFPosition.refetch)
-  const fogoLPRefetchRef = React.useRef(fogoLP.refetch)
-  const forgeLPRefetchRef = React.useRef(forgeLP.refetch)
+  const solLVFRefetchRef = React.useRef(solLVFPosition.refetch)
+  const solLPRefetchRef = React.useRef(solLP.refetch)
 
   // Update refs when refetch functions change
   React.useEffect(() => {
-    fogoLVFRefetchRef.current = fogoLVFPosition.refetch
-    forgeLVFRefetchRef.current = forgeLVFPosition.refetch
-    fogoLPRefetchRef.current = fogoLP.refetch
-    forgeLPRefetchRef.current = forgeLP.refetch
-  }, [fogoLVFPosition.refetch, forgeLVFPosition.refetch, fogoLP.refetch, forgeLP.refetch])
+    solLVFRefetchRef.current = solLVFPosition.refetch
+    solLPRefetchRef.current = solLP.refetch
+  }, [solLVFPosition.refetch, solLP.refetch])
 
   // Listen for position opened/closed events to refresh - IMMEDIATE
   React.useEffect(() => {
     const handlePositionChange = (event?: CustomEvent) => {
       console.log('🔄 Portfolio: Position changed event received', event?.type, event?.detail)
-      console.log('   Current positions - FOGO LVF:', fogoLVFPosition.positions.length, 'FORGE LVF:', forgeLVFPosition.positions.length)
-      console.log('   Current positions - FOGO LP:', fogoLP.positions.length, 'FORGE LP:', forgeLP.positions.length)
+      console.log('   Current positions - SOL LVF:', solLVFPosition.positions.length)
+      console.log('   Current positions - SOL LP:', solLP.positions.length)
       
       // Trigger refresh IMMEDIATELY - localStorage is already updated
       // Use refs to avoid dependency issues
-      fogoLVFRefetchRef.current()
-      forgeLVFRefetchRef.current()
-      fogoLPRefetchRef.current()
-      forgeLPRefetchRef.current()
+      solLVFRefetchRef.current()
+      solLPRefetchRef.current()
       
       setRefreshKey(prev => prev + 1)
       
       // Also refresh after delays to catch edge cases
       setTimeout(() => {
         console.log('🔄 Portfolio: Refreshing after 100ms...')
-        fogoLVFRefetchRef.current()
-        forgeLVFRefetchRef.current()
-        fogoLPRefetchRef.current()
-        forgeLPRefetchRef.current()
+        solLVFRefetchRef.current()
+        solLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 100)
       
       setTimeout(() => {
         console.log('🔄 Portfolio: Refreshing after 500ms...')
-        fogoLVFRefetchRef.current()
-        forgeLVFRefetchRef.current()
-        fogoLPRefetchRef.current()
-        forgeLPRefetchRef.current()
+        solLVFRefetchRef.current()
+        solLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 500)
       
       setTimeout(() => {
         console.log('🔄 Portfolio: Refreshing after 1000ms...')
-        fogoLVFRefetchRef.current()
-        forgeLVFRefetchRef.current()
-        fogoLPRefetchRef.current()
-        forgeLPRefetchRef.current()
+        solLVFRefetchRef.current()
+        solLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 1000)
     }
@@ -138,70 +119,50 @@ export default function CTokenPortfolio() {
   // Refetch positions when refresh key changes
   React.useEffect(() => {
     if (refreshKey > 0) {
-      fogoLVFRefetchRef.current()
-      forgeLVFRefetchRef.current()
-      fogoLPRefetchRef.current()
-      forgeLPRefetchRef.current()
+      solLVFRefetchRef.current()
+      solLPRefetchRef.current()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey])
 
   // Combine all leveraged positions - read from hooks' state
   const allLVFPositions = React.useMemo(() => {
-    const fogo = fogoLVFPosition.positions
+    const sol = solLVFPosition.positions
       .filter(p => p.isOpen) // Only open positions
       .map(p => ({ 
         ...p, 
         crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
       }))
-    const forge = forgeLVFPosition.positions
-      .filter(p => p.isOpen) // Only open positions
-      .map(p => ({ 
-        ...p, 
-        crucible: positions.find(pos => pos.baseTokenSymbol === 'FORGE')! 
-      }))
-    console.log('📊 Portfolio - FOGO LVF positions:', fogo.length, fogo.map(p => ({ id: p.id, token: p.token, isOpen: p.isOpen })))
-    console.log('📊 Portfolio - FORGE LVF positions:', forge.length, forge.map(p => ({ id: p.id, token: p.token, isOpen: p.isOpen })))
-    return [...fogo, ...forge]
-  }, [fogoLVFPosition.positions, forgeLVFPosition.positions, positions])
+    console.log('📊 Portfolio - SOL LVF positions:', sol.length, sol.map(p => ({ id: p.id, token: p.token, isOpen: p.isOpen })))
+    return sol
+  }, [solLVFPosition.positions, positions])
 
   // Combine all LP positions - read from hooks' state
   const allLPPositions = React.useMemo(() => {
-    const fogo = fogoLP.positions
+    const sol = solLP.positions
       .filter(p => p.isOpen) // Only open positions
       .map(p => ({ 
         ...p, 
         crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
       }))
-    const forge = forgeLP.positions
-      .filter(p => p.isOpen) // Only open positions
-      .map(p => ({ 
-        ...p, 
-        crucible: positions.find(pos => pos.baseTokenSymbol === 'FORGE')! 
-      }))
-    console.log('📊 Portfolio - FOGO LP positions:', fogo.length, fogo.map(p => ({ id: p.id, baseToken: p.baseToken, isOpen: p.isOpen })))
-    console.log('📊 Portfolio - FORGE LP positions:', forge.length, forge.map(p => ({ id: p.id, baseToken: p.baseToken, isOpen: p.isOpen })))
-    return [...fogo, ...forge]
-  }, [fogoLP.positions, forgeLP.positions, positions])
+    console.log('📊 Portfolio - SOL LP positions:', sol.length, sol.map(p => ({ id: p.id, baseToken: p.baseToken, isOpen: p.isOpen })))
+    return sol
+  }, [solLP.positions, positions])
 
   // Refetch positions periodically and on mount
   React.useEffect(() => {
     // Initial fetch
-    fogoLVFPosition.refetch()
-    forgeLVFPosition.refetch()
-    fogoLP.refetch()
-    forgeLP.refetch()
+    solLVFPosition.refetch()
+    solLP.refetch()
     
     // Set up interval to refetch every 5 seconds
     const interval = setInterval(() => {
-      fogoLVFPosition.refetch()
-      forgeLVFPosition.refetch()
-      fogoLP.refetch()
-      forgeLP.refetch()
+      solLVFPosition.refetch()
+      solLP.refetch()
     }, 5000)
     
     return () => clearInterval(interval)
-  }, [fogoLVFPosition.refetch, forgeLVFPosition.refetch, fogoLP.refetch, forgeLP.refetch])
+  }, [solLVFPosition.refetch, solLP.refetch])
 
   // Combine all LP and leveraged positions for cTOKENS/USDC section
   const allCTokenUSDCPositions = React.useMemo(() => {
@@ -289,7 +250,7 @@ export default function CTokenPortfolio() {
     const wrapPositions = positions.reduce((sum, pos) => {
       const userBalance = userBalances[pos.crucibleAddress]
       if (userBalance && userBalance.baseDeposited > 0) {
-        const basePrice = pos.baseTokenSymbol === 'FORGE' ? 0.002 : 200
+        const basePrice = 200 // SOL price
         return sum + (userBalance.baseDeposited * basePrice)
       }
       return sum
@@ -298,7 +259,7 @@ export default function CTokenPortfolio() {
     // Calculate LP positions value (allCTokenUSDCPositions includes both LP and leveraged)
     // For "Total Deposited Value", we only count what was actually deposited (excluding borrowed USDC)
     const lpValue = allCTokenUSDCPositions.reduce((sum, pos) => {
-      const basePrice = pos.baseToken === 'FORGE' ? 0.002 : 200
+      const basePrice = 200 // SOL price
       const tokenCollateralValue = pos.baseAmount * basePrice
       
       // Check if this is a leveraged position (has borrowedUSDC > 0 or leverage > 1)
@@ -318,15 +279,64 @@ export default function CTokenPortfolio() {
       }
     }, 0)
 
-    return wrapPositions + lpValue
-  }, [positions, userBalances, allCTokenUSDCPositions])
+    // Calculate lending positions value (only supplied amounts, not borrowed)
+    const lendingValue = lendingPositions.reduce((sum, pos) => {
+      // Only count supplied amounts (assets), not borrowed (liabilities)
+      return sum + (pos.suppliedAmount || 0)
+    }, 0)
+
+    return wrapPositions + lpValue + lendingValue
+  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions])
 
   // Calculate weighted APY
   const weightedAPY = React.useMemo(() => {
-    // Simplified calculation - in production would use actual position values
-    const baseAPY = positions.reduce((sum, pos) => sum + pos.baseAPY, 0) / positions.length
-    return baseAPY
-  }, [positions])
+    let totalValue = 0
+    let weightedSum = 0
+
+    // cToken positions
+    positions.forEach(pos => {
+      const userBalance = userBalances[pos.crucibleAddress]
+      if (userBalance && userBalance.baseDeposited > 0) {
+        const basePrice = 200 // SOL price
+        const value = userBalance.baseDeposited * basePrice
+        totalValue += value
+        weightedSum += value * pos.baseAPY
+      }
+    })
+
+    // LP positions
+    allCTokenUSDCPositions.forEach(pos => {
+      const basePrice = 200 // SOL price
+      const tokenCollateralValue = pos.baseAmount * basePrice
+      const isLeveraged = ('borrowedUSDC' in pos && pos.borrowedUSDC > 0) || 
+                         ('leverage' in pos && pos.leverage > 1.0) ||
+                         ('leverageFactor' in pos && pos.leverageFactor > 1.0)
+      
+      let value = 0
+      if (isLeveraged) {
+        const depositUSDC = 'depositUSDC' in pos ? (pos.depositUSDC || 0) : 0
+        value = tokenCollateralValue + depositUSDC
+      } else {
+        const depositedUSDC = pos.usdcAmount || 0
+        value = tokenCollateralValue + depositedUSDC
+      }
+      
+      const lpAPY = 'lpAPY' in pos && pos.lpAPY ? pos.lpAPY : (pos.baseAPY || 0) * 3
+      totalValue += value
+      weightedSum += value * lpAPY
+    })
+
+    // Lending positions (supplied only)
+    lendingPositions.forEach(pos => {
+      if (pos.suppliedAmount > 0) {
+        totalValue += pos.suppliedAmount
+        weightedSum += pos.suppliedAmount * (pos.effectiveApy || 4.5)
+      }
+    })
+
+    if (totalValue === 0) return 0
+    return weightedSum / totalValue
+  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions])
 
   // Filter positions: cTOKENS (simple wrap positions)
   const cTokenPositions = React.useMemo(() => {
@@ -343,23 +353,23 @@ export default function CTokenPortfolio() {
     <div className="space-y-8">
       {/* Unified Dashboard Summary - Enhanced */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="panel rounded-2xl p-6 hover:shadow-fogo-lg hover:border-fogo-primary/30 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-fogo-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+        <div className="panel rounded-2xl p-6 hover:shadow-forge-lg hover:border-forge-primary/30 transition-all duration-300 group relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-fogo-primary/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-fogo-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-10 h-10 rounded-lg bg-forge-primary/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-forge-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <div className="text-fogo-gray-400 text-sm font-medium">Total Deposited Value</div>
+              <div className="text-forge-gray-400 text-sm font-medium">Total Deposited Value</div>
             </div>
             <div className="text-3xl font-heading text-white">
               ${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
         </div>
-        <div className="panel rounded-2xl p-6 hover:shadow-fogo-lg hover:border-fogo-primary/30 transition-all duration-300 group relative overflow-hidden">
+        <div className="panel rounded-2xl p-6 hover:shadow-forge-lg hover:border-forge-primary/30 transition-all duration-300 group relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-3">
@@ -368,28 +378,28 @@ export default function CTokenPortfolio() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
-              <div className="text-fogo-gray-400 text-sm font-medium">Weighted APY</div>
+              <div className="text-forge-gray-400 text-sm font-medium">Weighted APY</div>
             </div>
             <div className="text-3xl font-heading text-green-400">
               {weightedAPY.toFixed(2)}%
             </div>
           </div>
         </div>
-        <div className="panel rounded-2xl p-6 hover:shadow-fogo-lg hover:border-fogo-primary/30 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-fogo-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+        <div className="panel rounded-2xl p-6 hover:shadow-forge-lg hover:border-forge-primary/30 transition-all duration-300 group relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-fogo-primary/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-fogo-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-10 h-10 rounded-lg bg-forge-primary/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-forge-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
-              <div className="text-fogo-gray-400 text-sm font-medium">Active Positions</div>
+              <div className="text-forge-gray-400 text-sm font-medium">Active Positions</div>
             </div>
             <div className="text-3xl font-heading text-white">
-              {cTokenPositions.length + allCTokenUSDCPositions.length}
-              <span className="text-base text-fogo-gray-400 ml-2 font-normal">
-                ({cTokenPositions.length} cTokens, {allCTokenUSDCPositions.length} ifTOKEN/USDC)
+              {cTokenPositions.length + allCTokenUSDCPositions.length + lendingPositions.length}
+              <span className="text-base text-forge-gray-400 ml-2 font-normal">
+                ({cTokenPositions.length} cTokens, {allCTokenUSDCPositions.length} ifTOKEN/USDC, {lendingPositions.length} Lending)
               </span>
             </div>
           </div>
@@ -410,26 +420,28 @@ export default function CTokenPortfolio() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-fogo-gray-700/50">
-                <th className="text-left py-4 px-6 text-fogo-gray-400 font-semibold text-sm uppercase tracking-wider">cToken</th>
-                <th className="text-right py-4 px-6 text-fogo-gray-400 font-semibold text-sm uppercase tracking-wider">Balance</th>
-                <th className="text-right py-4 px-6 text-fogo-gray-400 font-semibold text-sm uppercase tracking-wider">Value</th>
-                <th className="text-right py-4 px-6 text-fogo-gray-400 font-semibold text-sm uppercase tracking-wider">APY</th>
+              <tr className="border-b border-forge-gray-700/50">
+                <th className="text-left py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">cToken</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Balance</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Value</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">APY</th>
               </tr>
             </thead>
             <tbody>
               {cTokenPositions.length > 0 ? (
                 cTokenPositions.map((position, index) => {
                   const userBalance = userBalances[position.crucibleAddress]
+                  const crucible = getCrucible(position.crucibleAddress)
                   const ctokenBalance = userBalance?.ptokenBalance ? Number(userBalance.ptokenBalance) / 1e9 : 0
-                  const basePrice = position.baseTokenSymbol === 'FORGE' ? 0.002 : 200
-                  const exchangeRate = 1.045 // Default exchange rate
+                  const basePrice = 200 // SOL price
+                  // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
+                  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
                   const valueUSD = ctokenBalance * exchangeRate * basePrice
                   
                   return (
                     <tr 
                       key={position.crucibleAddress} 
-                      className="group border-b border-fogo-gray-800/50 hover:bg-gradient-to-r hover:from-fogo-gray-800/40 hover:to-fogo-gray-800/20 transition-all duration-300"
+                      className="group border-b border-forge-gray-800/50 hover:bg-gradient-to-r hover:from-forge-gray-800/40 hover:to-forge-gray-800/20 transition-all duration-300"
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
                       <td className="py-5 px-6">
@@ -441,7 +453,7 @@ export default function CTokenPortfolio() {
                           </div>
                           <div>
                             <div className="text-white font-semibold text-base">{position.ctokenSymbol}</div>
-                            <div className="text-fogo-gray-500 text-xs font-medium mt-0.5">{position.baseTokenSymbol}</div>
+                            <div className="text-forge-gray-500 text-xs font-medium mt-0.5">{position.baseTokenSymbol}</div>
                           </div>
                         </div>
                       </td>
@@ -466,7 +478,7 @@ export default function CTokenPortfolio() {
               ) : (
                 <tr>
                   <td colSpan={4} className="py-16 px-6 text-center">
-                    <div className="text-fogo-gray-400 text-sm font-medium">
+                    <div className="text-forge-gray-400 text-sm font-medium">
                       No cToken positions yet. Wrap tokens to create a position.
                     </div>
                   </td>
@@ -491,29 +503,29 @@ export default function CTokenPortfolio() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-fogo-gray-700">
-                <th className="text-left py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Pair</th>
-                <th className="text-right py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
+              <tr className="border-b border-forge-gray-700">
+                <th className="text-left py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Pair</th>
+                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
                   <div className="flex flex-col items-end gap-0.5">
                     <span>Collateral</span>
-                    <span className="text-[10px] text-fogo-gray-500 font-satoshi">cToken value</span>
+                    <span className="text-[10px] text-forge-gray-500 font-satoshi">cToken value</span>
                   </div>
                 </th>
-                <th className="text-right py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
+                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
                   <div className="flex flex-col items-end gap-0.5">
                     <span>Borrowed</span>
-                    <span className="text-[10px] text-fogo-gray-500 font-satoshi">USDC</span>
+                    <span className="text-[10px] text-forge-gray-500 font-satoshi">USDC</span>
                   </div>
                 </th>
-                <th className="text-right py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Leverage</th>
-                <th className="text-right py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
+                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Leverage</th>
+                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
                   <div className="flex flex-col items-end gap-0.5">
                     <span>Health</span>
-                    <span className="text-[10px] text-fogo-gray-500 font-satoshi">Factor</span>
+                    <span className="text-[10px] text-forge-gray-500 font-satoshi">Factor</span>
                   </div>
                 </th>
-                <th className="text-right py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">APY</th>
-                <th className="text-right py-3 px-4 text-fogo-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Total Value</th>
+                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">APY</th>
+                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Total Value</th>
               </tr>
             </thead>
             <tbody>
@@ -523,7 +535,7 @@ export default function CTokenPortfolio() {
                 return openPositions.length > 0 ? (
                   openPositions.map((position) => {
                   const crucible = positions.find(p => p.baseTokenSymbol === position.baseToken)
-                  const basePrice = position.baseToken === 'FORGE' ? 0.5 : 0.002
+                  const basePrice = 200 // SOL price
                   
                   // Total collateral includes both token collateral value AND deposited USDC
                   // collateralUSDC already includes both if it was calculated correctly above
@@ -549,7 +561,7 @@ export default function CTokenPortfolio() {
                   const totalValue = totalCollateralValue + borrowedUSDC // Total position value = collateral + borrowed
                   
                   return (
-                    <tr key={position.id} className="border-b border-fogo-gray-800 hover:bg-fogo-gray-800/30 transition-colors">
+                    <tr key={position.id} className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
                       <td className="py-4 px-4">
                         <div className="flex items-center space-x-2">
                           <span className="text-white text-base font-heading">
@@ -568,7 +580,7 @@ export default function CTokenPortfolio() {
                         <div className="text-white text-base font-heading">
                           ${collateralValueUSD.toFixed(2)} USD
                         </div>
-                        <div className="text-fogo-gray-500 text-xs font-satoshi mt-1">
+                        <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
                           {position.baseAmount.toFixed(2)} {position.baseToken}
                           {depositUSDC > 0 && (
                             <span className="ml-2 text-green-400 font-heading">+ {depositUSDC.toFixed(2)} USDC</span>
@@ -576,7 +588,7 @@ export default function CTokenPortfolio() {
                         </div>
                       </td>
                       <td className="text-right py-4 px-4">
-                        <span className={`text-base font-heading ${borrowedUSDC > 0 ? 'text-orange-400' : 'text-fogo-gray-500'}`}>
+                        <span className={`text-base font-heading ${borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'}`}>
                           {borrowedUSDC > 0 ? `${borrowedUSDC.toFixed(2)} USDC` : '-'}
                         </span>
                       </td>
@@ -591,7 +603,7 @@ export default function CTokenPortfolio() {
                       </td>
                       <td className="text-right py-4 px-4">
                         <span className={`text-xs font-heading ${
-                          healthFactor >= 999 ? 'text-fogo-gray-500' :
+                          healthFactor >= 999 ? 'text-forge-gray-500' :
                           healthFactor >= 2.0 ? 'text-green-400' :
                           healthFactor >= 1.5 ? 'text-yellow-400' :
                           healthFactor >= 1.0 ? 'text-orange-400' :
@@ -612,15 +624,194 @@ export default function CTokenPortfolio() {
                 ) : (
                   <tr>
                     <td colSpan={7} className="py-8 px-4 text-center">
-                      <div className="text-fogo-gray-400 text-sm">
+                      <div className="text-forge-gray-400 text-sm">
                         No LP positions yet. Create an LP position to see it here.
-                      </div>
-                      <div className="text-fogo-gray-500 text-xs mt-2">
-                        Debug: Total positions = {allCTokenUSDCPositions.length}, Open = {allCTokenUSDCPositions.filter(p => p.isOpen).length}
                       </div>
                     </td>
                   </tr>
                 )
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Lending Pool Positions Section */}
+      <div className="panel rounded-3xl p-8">
+        <div className="flex items-center gap-4 mb-8">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/30 to-purple-500/10 flex items-center justify-center ring-2 ring-purple-500/20">
+            <BanknotesIcon className="w-6 h-6 text-purple-400" />
+          </div>
+          <h3 className="text-2xl font-heading text-white">Lending Pool</h3>
+          <span className="px-4 py-1.5 bg-gradient-to-r from-purple-500/20 to-purple-500/10 text-purple-400 text-xs text-lg font-heading rounded-full border border-purple-500/30">
+            {lendingPositions.filter(p => (p.suppliedAmount > 0) || (p.borrowedAmount && p.borrowedAmount > 0)).length}
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-forge-gray-700">
+                <th className="text-left py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Type</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Amount</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">APY</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Interest</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Value</th>
+                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const activeLendingPositions = lendingPositions.filter(p => 
+                  (p.suppliedAmount > 0) || (p.borrowedAmount && p.borrowedAmount > 0)
+                )
+
+                if (activeLendingPositions.length > 0) {
+                  return activeLendingPositions.map((position, index) => {
+                    const isSupplied = position.suppliedAmount > 0
+                    const isBorrowed = position.borrowedAmount && position.borrowedAmount > 0
+                    
+                    // Calculate interest for borrowed positions
+                    let borrowedInterest = 0
+                    if (isBorrowed && position.borrowedAmount) {
+                      // Estimate interest (in production, this would come from on-chain data)
+                      // For now, use a simple calculation
+                      const estimatedDays = 30 // Default estimate
+                      const secondsElapsed = estimatedDays * 24 * 60 * 60
+                      borrowedInterest = calculateBorrowInterest(
+                        position.borrowedAmount,
+                        10, // 10% APY
+                        secondsElapsed
+                      )
+                    }
+
+                    const suppliedValue = isSupplied 
+                      ? position.suppliedAmount + (position.interestEarned || 0)
+                      : 0
+                    const borrowedValue = isBorrowed && position.borrowedAmount
+                      ? position.borrowedAmount + borrowedInterest
+                      : 0
+
+                    return (
+                      <React.Fragment key={`${position.marketPubkey}-${index}`}>
+                        {isSupplied && (
+                          <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 bg-gradient-to-br from-green-500/30 to-green-500/10 rounded-xl flex items-center justify-center ring-2 ring-green-500/20">
+                                  <span className="text-green-400 text-lg font-heading">S</span>
+                                </div>
+                                <div>
+                                  <div className="text-white text-base font-heading">Supplied</div>
+                                  <div className="text-forge-gray-500 text-xs font-satoshi">Lending</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <div className="text-white text-base font-heading">
+                                {formatNumberWithCommas(position.suppliedAmount.toFixed(2))} USDC
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <span className="inline-flex items-center px-3 py-1 bg-green-500/20 text-green-400 font-semibold rounded-lg text-sm border border-green-500/30">
+                                {(position.effectiveApy || 4.5).toFixed(2)}%
+                              </span>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <div className="text-green-400 text-base font-heading">
+                                +{formatNumberWithCommas((position.interestEarned || 0).toFixed(2))} USDC
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <div className="text-white text-base font-heading">
+                                ${formatNumberWithCommas(suppliedValue.toFixed(2))}
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <button
+                                onClick={async () => {
+                                  if (confirm(`Withdraw ${position.suppliedAmount.toFixed(2)} USDC?`)) {
+                                    try {
+                                      await withdrawLending(position.marketPubkey, position.suppliedAmount.toString())
+                                      alert('Withdrawal successful!')
+                                    } catch (error: any) {
+                                      alert(`Withdrawal failed: ${error.message}`)
+                                    }
+                                  }
+                                }}
+                                className="px-4 py-2 bg-forge-gray-700 hover:bg-forge-gray-600 text-white rounded-lg font-satoshi font-medium transition-all duration-200 hover:scale-105 text-sm"
+                              >
+                                Withdraw
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                        {isBorrowed && position.borrowedAmount && (
+                          <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 bg-gradient-to-br from-orange-500/30 to-orange-500/10 rounded-xl flex items-center justify-center ring-2 ring-orange-500/20">
+                                  <span className="text-orange-400 text-lg font-heading">B</span>
+                                </div>
+                                <div>
+                                  <div className="text-white text-base font-heading">Borrowed</div>
+                                  <div className="text-forge-gray-500 text-xs font-satoshi">Debt</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <div className="text-white text-base font-heading">
+                                {formatNumberWithCommas(position.borrowedAmount.toFixed(2))} USDC
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <span className="inline-flex items-center px-3 py-1 bg-orange-500/20 text-orange-400 font-semibold rounded-lg text-sm border border-orange-500/30">
+                                10.00%
+                              </span>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <div className="text-orange-400 text-base font-heading">
+                                -{formatNumberWithCommas(borrowedInterest.toFixed(2))} USDC
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <div className="text-white text-base font-heading">
+                                ${formatNumberWithCommas(borrowedValue.toFixed(2))}
+                              </div>
+                            </td>
+                            <td className="text-right py-4 px-6">
+                              <button
+                                onClick={async () => {
+                                  const totalOwed = position.borrowedAmount! + borrowedInterest
+                                  if (confirm(`Repay ${totalOwed.toFixed(2)} USDC (principal + interest)?`)) {
+                                    try {
+                                      await repayLending(totalOwed)
+                                      alert('Repayment successful!')
+                                    } catch (error: any) {
+                                      alert(`Repayment failed: ${error.message}`)
+                                    }
+                                  }
+                                }}
+                                className="px-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-lg font-satoshi font-medium transition-all duration-200 hover:scale-105 text-sm border border-orange-500/30"
+                              >
+                                Repay
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })
+                } else {
+                  return (
+                    <tr>
+                      <td colSpan={6} className="py-16 px-6 text-center">
+                        <div className="text-forge-gray-400 text-sm font-medium">
+                          No lending positions yet. Supply USDC to earn yield or borrow for leverage.
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                }
               })()}
             </tbody>
           </table>
@@ -645,12 +836,12 @@ function ClosePositionButton({ position, crucible, onClose }: {
 }) {
   const { closePosition: closeLVFPosition, loading: lvfLoading } = useLVFPosition({
     crucibleAddress: crucible.crucibleAddress,
-    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL' | 'FORGE',
+    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL',
   })
   
   const { closePosition: closeLPPosition, loading: lpLoading } = useLP({
     crucibleAddress: crucible.crucibleAddress,
-    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL' | 'FORGE',
+    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL',
     baseAPY: crucible.baseAPY,
   })
   
@@ -692,8 +883,10 @@ function ClosePositionButton({ position, crucible, onClose }: {
           }
           // Remove LP tokens
           const lpTokenSymbol = `${crucible.ctokenSymbol}/USDC LP`
-          const basePrice = crucible.baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
-          const cTokenAmount = position.baseAmount * 1.045 // Exchange rate
+          const basePrice = 200 // SOL price
+          // Use actual exchange rate (scaled by 1e6), default to 1.0
+          const currentExchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+          const cTokenAmount = position.baseAmount * currentExchangeRate
           const cTokenValueUSD = cTokenAmount * basePrice
           // For leveraged positions: totalUSDC should equal cToken value for equal value LP pair
           const totalUSDC = cTokenValueUSD
@@ -745,7 +938,9 @@ function ClosePositionButton({ position, crucible, onClose }: {
           addToBalance(crucible.baseTokenSymbol, lpResult.baseAmount) // Includes APY earnings
           addToBalance('USDC', lpResult.usdcAmount) // Return deposited USDC
           const lpTokenSymbol = `${crucible.ctokenSymbol}/USDC LP`
-          const cTokenAmount = lpResult.baseAmount * 1.045
+          // Use actual exchange rate (scaled by 1e6), default to 1.0
+          const lpExchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+          const cTokenAmount = lpResult.baseAmount * lpExchangeRate
           const lpTokenAmount = Math.sqrt(cTokenAmount * lpResult.usdcAmount)
           subtractFromBalance(lpTokenSymbol, lpTokenAmount)
           
@@ -789,7 +984,7 @@ function ClosePositionButton({ position, crucible, onClose }: {
     <button
       onClick={handleClose}
       disabled={loading}
-      className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-fogo-gray-700 disabled:text-fogo-gray-500 disabled:cursor-not-allowed text-white rounded text-sm font-medium transition-colors"
+      className="px-3 py-1 bg-red-600 hover:bg-red-700 disabled:bg-forge-gray-700 disabled:text-forge-gray-500 disabled:cursor-not-allowed text-white rounded text-sm font-medium transition-colors"
     >
       {loading ? 'Closing...' : 'Close'}
     </button>
@@ -810,7 +1005,8 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
     : position.baseAPY
 
   // Get current balances from userBalances
-  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / Number(1_000_000_000) : 1.045
+  // exchange_rate is scaled by 1_000_000 on-chain (1.0 = 1_000_000)
+  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1_000_000 : 1.0
   const ctokenBalance = userBalance?.ptokenBalance || BigInt(0)
   const baseBalance = userBalance?.estimatedBaseValue || BigInt(0)
   
@@ -833,17 +1029,17 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
     : 999 // No borrow = infinite health
 
   return (
-    <tr className="border-b border-fogo-gray-800 hover:bg-fogo-gray-800/30 transition-colors">
+    <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
       <td className="py-4 px-4">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-fogo-primary/20 rounded-full flex items-center justify-center">
-            <span className="text-fogo-primary text-lg font-heading">
+          <div className="w-10 h-10 bg-forge-primary/20 rounded-full flex items-center justify-center">
+            <span className="text-forge-primary text-lg font-heading">
               {position.ctokenSymbol.substring(1, 2).toUpperCase()}
             </span>
           </div>
           <div>
             <div className="text-white text-base font-heading">{position.ctokenSymbol}</div>
-            <div className="text-fogo-gray-500 text-xs font-satoshi">{position.baseTokenSymbol}</div>
+            <div className="text-forge-gray-500 text-xs font-satoshi">{position.baseTokenSymbol}</div>
           </div>
         </div>
       </td>
@@ -852,10 +1048,10 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
           <div className="text-white text-base font-heading">
             {collateralInBaseTokens > 0 ? collateralInBaseTokens.toFixed(2) : '0.00'} {position.baseTokenSymbol}
           </div>
-          <div className="text-fogo-gray-500 text-xs font-satoshi mt-1">
+          <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
             {ctokenBalanceDisplay > 0 ? `${ctokenBalanceDisplay.toFixed(2)} ${position.ctokenSymbol}` : 'No position'}
           </div>
-          <div className="text-fogo-gray-400 text-xs font-satoshi mt-0.5" title="Value of your cTokens in base tokens (collateral)">
+          <div className="text-forge-gray-400 text-xs font-satoshi mt-0.5" title="Value of your cTokens in base tokens (collateral)">
             ≈ ${collateralValueUSD.toFixed(2)} USD
           </div>
         </div>
@@ -864,7 +1060,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
         {borrowedUSDC > 0 ? (
           <span className="text-orange-400 text-base font-heading">{borrowedUSDC.toFixed(2)} USDC</span>
         ) : (
-          <span className="text-fogo-gray-500 font-satoshi" title="No borrowed funds">-</span>
+          <span className="text-forge-gray-500 font-satoshi" title="No borrowed funds">-</span>
         )}
       </td>
       <td className="text-right py-4 px-4">
@@ -876,7 +1072,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
             {leverage.leverage}x
           </span>
         ) : (
-          <span className="text-fogo-gray-500 font-satoshi" title="No leverage (standard position)">1x</span>
+          <span className="text-forge-gray-500 font-satoshi" title="No leverage (standard position)">1x</span>
         )}
       </td>
       <td className="text-right py-4 px-4">
@@ -896,7 +1092,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
               )}
             </>
           ) : (
-            <span className="text-fogo-gray-500 text-xs font-satoshi" title="No borrowed funds, position is safe">-</span>
+            <span className="text-forge-gray-500 text-xs font-satoshi" title="No borrowed funds, position is safe">-</span>
           )}
         </div>
       </td>
@@ -904,7 +1100,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
         <span className={`text-base font-heading ${
           effectiveAPY >= position.baseAPY * 1.5 ? 'text-green-400' :
           effectiveAPY >= position.baseAPY * 1.2 ? 'text-yellow-400' :
-          'text-fogo-primary'
+          'text-forge-primary'
         }`} title={leverage?.leverage && leverage.leverage > 1.0 ? `Effective APY with ${leverage.leverage}x leverage` : 'Base APY'}>
           {effectiveAPY.toFixed(2)}%
         </span>
@@ -913,7 +1109,7 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
         <button
           onClick={onSelect}
           disabled={ctokenBalance === BigInt(0)}
-          className="px-3 py-1 bg-fogo-primary hover:bg-fogo-secondary disabled:bg-fogo-gray-700 disabled:text-fogo-gray-500 disabled:cursor-not-allowed text-white rounded text-sm font-heading transition-colors"
+          className="px-3 py-1 bg-forge-primary hover:bg-forge-secondary disabled:bg-forge-gray-700 disabled:text-forge-gray-500 disabled:cursor-not-allowed text-white rounded text-sm font-heading transition-colors"
           title={ctokenBalance === BigInt(0) ? 'No position to manage' : 'View position details'}
         >
           Manage
@@ -934,15 +1130,16 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
   if (!userBalance || !crucible) return null
   
   // Calculate exchange rate outside IIFE so it's accessible
-  const exchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / Number(1_000_000_000) : 1.045
+  // exchange_rate is scaled by 1_000_000 on-chain (1.0 = 1_000_000)
+  const exchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1_000_000 : 1.0
 
   return (
-    <div className="panel-muted rounded-lg p-6 border border-fogo-gray-700">
+    <div className="panel-muted rounded-lg p-6 border border-forge-gray-700">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-heading text-white">{position.ctokenSymbol} Position</h3>
         <button
           onClick={onClose}
-          className="text-fogo-gray-400 hover:text-white transition-colors"
+          className="text-forge-gray-400 hover:text-white transition-colors"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -951,7 +1148,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
       </div>
 
       {(() => {
-        const baseTokenPrice = position.baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
+        const baseTokenPrice = 200 // SOL price
         const ctokenBalance = Number(userBalance.ptokenBalance) / 1e9
         const collateralValue = userBalance.baseDeposited * baseTokenPrice
         const borrowedUSDC = leverage?.borrowedAmount ? Number(leverage.borrowedAmount) / 1e6 : 0
@@ -962,39 +1159,39 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
         return (
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="panel-muted rounded-lg p-4">
-              <div className="text-fogo-gray-400 text-sm font-satoshi mb-1">cToken Balance</div>
+              <div className="text-forge-gray-400 text-sm font-satoshi mb-1">cToken Balance</div>
               <div className="text-white text-lg font-heading">
                 {ctokenBalance.toFixed(2)} {position.ctokenSymbol}
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
-              <div className="text-fogo-gray-400 text-sm font-satoshi mb-1">
+              <div className="text-forge-gray-400 text-sm font-satoshi mb-1">
                 Collateral
                 <span className="ml-1 text-xs" title="The base token value of your position">(ℹ️)</span>
               </div>
               <div className="text-white text-lg font-heading">
                 {userBalance.baseDeposited.toFixed(2)} {position.baseTokenSymbol}
               </div>
-              <div className="text-fogo-gray-500 text-xs font-satoshi mt-1">
+              <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
                 cToken Balance: {ctokenBalance.toFixed(2)} {position.ctokenSymbol}
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
-              <div className="text-fogo-gray-400 text-sm font-satoshi mb-1">Borrowed (USDC)</div>
+              <div className="text-forge-gray-400 text-sm font-satoshi mb-1">Borrowed (USDC)</div>
               <div className={`text-lg font-heading ${
-                borrowedUSDC > 0 ? 'text-orange-400' : 'text-fogo-gray-500'
+                borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'
               }`}>
                 {borrowedUSDC > 0 ? `${borrowedUSDC.toFixed(2)} USDC` : '-'}
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
-              <div className="text-fogo-gray-400 text-sm font-satoshi mb-1">Health Factor</div>
+              <div className="text-forge-gray-400 text-sm font-satoshi mb-1">Health Factor</div>
               <div className={`text-lg font-heading ${
                 healthFactor >= 2.0 ? 'text-green-400' :
                 healthFactor >= 1.5 ? 'text-yellow-400' :
                 healthFactor >= 1.0 ? 'text-orange-400' :
                 healthFactor < 999 ? 'text-red-400' :
-                'text-fogo-gray-500'
+                'text-forge-gray-500'
               }`}>
                 {healthFactor >= 999 ? '∞' : healthFactor.toFixed(2)}
               </div>
@@ -1003,13 +1200,13 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
               )}
             </div>
             <div className="panel-muted rounded-lg p-4">
-              <div className="text-fogo-gray-400 text-sm font-satoshi mb-1">Leverage</div>
+              <div className="text-forge-gray-400 text-sm font-satoshi mb-1">Leverage</div>
               <div className="text-white text-lg font-heading">
                 {leverage?.leverage || 1.0}x
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
-              <div className="text-fogo-gray-400 text-sm font-satoshi mb-1">Exchange Rate</div>
+              <div className="text-forge-gray-400 text-sm font-satoshi mb-1">Exchange Rate</div>
               <div className="text-white text-lg font-heading">
                 1 {position.ctokenSymbol} = {exchangeRate.toFixed(2)} {position.baseTokenSymbol}
               </div>
@@ -1021,7 +1218,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
       <div className="flex space-x-3">
         <button
           onClick={() => setShowWithdraw(true)}
-          className="flex-1 px-4 py-3 bg-fogo-primary-light hover:bg-fogo-primary text-white rounded-lg font-medium transition-colors shadow-[0_10px_30px_rgba(255,102,14,0.25)]"
+          className="flex-1 px-4 py-3 bg-forge-primary-light hover:bg-forge-primary text-white rounded-lg font-medium transition-colors shadow-[0_10px_30px_rgba(255,102,14,0.25)]"
         >
           Close Position
         </button>

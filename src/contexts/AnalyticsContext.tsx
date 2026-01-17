@@ -12,7 +12,7 @@ interface Transaction {
   apyRewards?: number; // APY rewards earned/withdrawn
   totalWithdrawal?: number; // Total amount including APY rewards
   usdValue?: number; // USD value of the transaction
-  pfogoAmount?: number; // pFOGO amount for unwrap transactions
+  pforgeAmount?: number; // pFORGE amount for unwrap transactions
   borrowedAmount?: number; // USDC amount borrowed (for leveraged deposits)
   leverage?: number; // Leverage multiplier used
   usdcReceived?: number; // USDC amount received when closing leveraged position
@@ -82,7 +82,7 @@ export const AnalyticsProvider: React.FC<AnalyticsProviderProps> = ({ children }
     setAnalytics(prev => {
       const newTransactions = [newTransaction, ...prev.transactions].slice(0, 100); // Keep last 100
       
-      const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FOGO: 0.5, FORGE: 0.002 } as any)[token] || 1;
+      const price = (token: string) => ({ SOL: 200, USDC: 1, ETH: 4000, BTC: 110000, FORGE: 0.002 } as any)[token] || 1;
       const toUsd = (tx: Transaction) => tx.amount * price(tx.token);
 
       const totalDeposits = newTransactions

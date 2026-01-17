@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer, MintTo};
 
-declare_id!("DWkDGw5Pvqgh3DN6HZwssn31AUAkuWLtjDnjyEUdgRHU");
+declare_id!("CtR5tkwzpUmyxMNnihkPdSZzVk5fws1LumXXGyU4phJa");
 
 #[program]
 pub mod forge_core {
@@ -113,8 +113,12 @@ pub struct InitializeProtocol<'info> {
     pub forge_protocol: Account<'info, ForgeProtocol>,
     #[account(mut)]
     pub authority: Signer<'info>,
-    /// CHECK: Treasury account for protocol fees
-    pub treasury: UncheckedAccount<'info>,
+    /// SECURITY FIX: Validate treasury is a proper TokenAccount
+    /// This prevents permanent fee lock if a non-token account is set
+    #[account(
+        constraint = treasury.owner == anchor_spl::token::ID @ ForgeError::InvalidConfig
+    )]
+    pub treasury: Account<'info, anchor_spl::token::TokenAccount>,
     pub system_program: Program<'info, System>,
 }
 
@@ -137,7 +141,13 @@ pub struct RegisterCrucible<'info> {
         bump
     )]
     pub crucible_registry: Account<'info, CrucibleRegistry>,
-    /// CHECK: Crucible account to register
+    /// CHECK: Crucible account validated by owner constraint below
+    /// SECURITY FIX: Validate crucible account is owned by crucibles program
+    /// This prevents registration of fake/malicious crucibles
+    /// Note: We validate the owner matches the crucibles program ID from protocol config
+    #[account(
+        constraint = *crucible.owner == forge_protocol.crucibles_program @ ForgeError::InvalidConfig
+    )]
     pub crucible: UncheckedAccount<'info>,
     /// CHECK: Base mint of the crucible
     pub base_mint: UncheckedAccount<'info>,
@@ -152,7 +162,10 @@ pub struct CollectFees<'info> {
     pub forge_protocol: Account<'info, ForgeProtocol>,
     #[account(mut)]
     pub fee_vault: Account<'info, TokenAccount>,
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = treasury.key() == forge_protocol.treasury @ ForgeError::InvalidConfig
+    )]
     pub treasury: Account<'info, TokenAccount>,
     pub authority: Signer<'info>,
     pub token_program: Program<'info, Token>,

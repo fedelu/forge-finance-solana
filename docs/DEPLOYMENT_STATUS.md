@@ -31,17 +31,16 @@
 
 ---
 
-## 🔥 Wallet & Session Status
+## 🔥 Wallet Status
 
 ### ✅ Implementation Status
 
-**Status**: ✅ **Phantom + Solana Devnet** (FOGO Sessions removed)
+**Status**: ✅ **Phantom + Solana Devnet**
 
 ### Current Implementation
 
 - ✅ Direct Phantom wallet integration on Solana devnet
 - ✅ Standard transaction signing via `@solana/web3.js`
-- ✅ Sessionless model (no external paymaster)
 
 ### 📁 Relevant Files
 
@@ -55,7 +54,7 @@
 ### ✅ Implemented Features
 
 #### Token Wrapping (cTokens)
-- ✅ Wrap FOGO → cFOGO
+- ✅ Wrap SOL → cSOL
 - ✅ Wrap FORGE → cFORGE
 - ✅ Unwrap cTokens back to base tokens
 - ✅ Real-time balance tracking
@@ -86,17 +85,15 @@
 
 ### 🔄 In Development
 
-- 🔄 Real smart contract deployment to FOGO testnet
-- 🔄 Paymaster integration for gasless transactions
-- 🔄 Full FOGO Sessions integration
+- 🔄 Real smart contract deployment to Solana devnet
+- 🔄 Production-ready error handling improvements
 
 ### ❌ Missing Features
 
-1. **Paymaster Integration** (see above)
-2. **Real Smart Contract Deployment** - Contracts configured but not deployed
-3. **Production-ready Error Handling** - Some error handling needs improvement
-4. **Comprehensive Testing** - Unit and integration tests needed
-5. **Mainnet Deployment** - Testnet only currently
+1. **Real Smart Contract Deployment** - Contracts configured but not deployed
+2. **Production-ready Error Handling** - Some error handling needs improvement
+3. **Comprehensive Testing** - Unit and integration tests needed
+4. **Mainnet Deployment** - Testnet only currently
 
 ---
 
@@ -129,22 +126,14 @@
 ## 📋 Deployment Checklist
 
 ### Smart Contracts
-- [ ] Deploy forge-core to FOGO testnet
-- [ ] Deploy forge-crucibles to FOGO testnet
-- [ ] Deploy lending program to FOGO testnet
-- [ ] Deploy lending-pool to FOGO testnet
-- [ ] Deploy lvf program to FOGO testnet
+- [ ] Deploy forge-core to Solana devnet
+- [ ] Deploy forge-crucibles to Solana devnet
+- [ ] Deploy lending program to Solana devnet
+- [ ] Deploy lending-pool to Solana devnet
+- [ ] Deploy lvf program to Solana devnet
 - [ ] Update program IDs in configuration files
-- [ ] Verify all contracts on FOGO explorer
+- [ ] Verify all contracts on Solana explorer
 - [ ] Test all contract interactions
-
-### FOGO Sessions
-- [ ] Register domain with FOGO team for paymaster
-- [ ] Enable paymaster in `src/lib/fogoSession.ts`
-- [ ] Update `NEXT_PUBLIC_PAYMASTER_URL` environment variable
-- [ ] Test paymaster integration
-- [ ] Test gasless transactions
-- [ ] Verify session persistence
 
 ### Testing
 - [ ] Unit tests for smart contracts
@@ -165,16 +154,14 @@
 ## 🚀 Next Steps
 
 ### Immediate (Priority 1)
-1. **Register domain with FOGO team** for paymaster access
-2. **Deploy smart contracts** to FOGO testnet
-3. **Update program IDs** in configuration files
-4. **Test all functionality** with real transactions
+1. **Deploy smart contracts** to Solana devnet
+2. **Update program IDs** in configuration files
+3. **Test all functionality** with real transactions
 
 ### Short-term (Priority 2)
-1. Enable paymaster integration
-2. Test gasless transactions
-3. Comprehensive testing suite
-4. Security audit
+1. Comprehensive testing suite
+2. Security audit
+3. Production-ready error handling
 
 ### Long-term (Priority 3)
 1. Mainnet deployment
@@ -186,11 +173,6 @@
 
 ## 📞 Contact & Support
 
-### FOGO Team
-- **Website**: [testnet.fogo.io](https://testnet.fogo.io)
-- **Explorer**: [explorer.fogo.io](https://explorer.fogo.io)
-- **Paymaster Registration**: Contact FOGO team for domain registration
-
 ### Development Team
 - **Repository**: [GitHub Repository](https://github.com/YOUR_USERNAME/forge-finance)
 - **Issues**: Report issues via GitHub Issues
@@ -200,10 +182,9 @@
 ## 📝 Notes
 
 - All smart contract program IDs are currently placeholders
-- FOGO Sessions is implemented but paymaster is disabled
 - Frontend is fully functional with mock data
 - All features are working in development mode
-- Production deployment requires smart contract deployment and paymaster integration
+- Production deployment requires smart contract deployment
 
 ---
 

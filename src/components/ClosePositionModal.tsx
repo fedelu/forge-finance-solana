@@ -14,7 +14,7 @@ interface ClosePositionModalProps {
   isOpen: boolean
   onClose: () => void
   crucibleAddress: string
-  baseTokenSymbol: 'SOL' | 'FORGE'
+  baseTokenSymbol: 'SOL'
   ctokenSymbol: string
   hasCTokenPosition: boolean
   hasLeveragedPosition?: boolean // Optional, will be calculated internally
@@ -112,7 +112,7 @@ export default function ClosePositionModal({
   }, [crucibleAddress, baseTokenSymbol, refetchLVF])
 
   const crucible = getCrucible(crucibleAddress)
-  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+        const baseTokenPrice = 200 // SOL price
   
   // Calculate leveraged position status internally - ULTRA LENIENT
   const hasLeveragedPosition = useMemo(() => {
@@ -170,7 +170,8 @@ export default function ClosePositionModal({
     const preview = calculateUnwrapPreview(crucibleAddress, ctokenAmount)
     const baseToReceive = parseFloat(preview.baseAmount)
     const feeAmount = (baseToReceive / (1 - UNWRAP_FEE_RATE)) * UNWRAP_FEE_RATE // Reverse calculate fee
-    const apyEarned = baseToReceive - (parseFloat(ctokenAmount) / 1.045) // APY = received - original deposit
+    // APY = base received - original deposit (at 1.0 exchange rate)
+    const apyEarned = baseToReceive - parseFloat(ctokenAmount)
     
     return {
       cTokenAmount: parseFloat(ctokenAmount),
@@ -197,7 +198,7 @@ export default function ClosePositionModal({
     
     // Calculate APY based on EXCHANGE RATE ratio (correlated with borrowing interest)
     // APY = ((exchange rate at sell / exchange rate at buy) - 1) * 100
-    const initialExchangeRate = 1.045 // Exchange rate at buy (when position was opened)
+    const initialExchangeRate = 1.0 // Exchange rate at buy (when position was opened)
     
     // Calculate DYNAMIC exchange rate based on time elapsed since position was opened
     // Use position timestamp to calculate actual exchange rate growth
@@ -206,36 +207,35 @@ export default function ClosePositionModal({
     const timeElapsedMs = Date.now() - positionTimestamp
     const timeElapsedMinutes = Math.max(0, timeElapsedMs / (1000 * 60))
     const timeElapsedMonths = timeElapsedMinutes // 1 minute = 1 month (for demo)
-    const yearsElapsed = timeElapsedMonths / 12
-    
-    // Get crucible APR for dynamic rate calculation
-    const crucibleAPR = crucible?.apr || 0.05 // Use crucible APR (e.g., 18% = 0.18)
-    
-    // Calculate accumulated exchange rate: initialRate * (1 + APR)^(years)
-    // This gives us the DYNAMIC exchange rate that grows over time
-    // The rate grows continuously as timeElapsedMs increases
-    const currentExchangeRateDecimal = initialExchangeRate * Math.pow(1 + crucibleAPR, yearsElapsed)
+    // Use actual on-chain exchange rate (fetch from program)
+    // Exchange rate grows as fees accrue on-chain
+    // TODO: Fetch actual current exchange rate from on-chain crucible account
+    const currentExchangeRateDecimal = initialExchangeRate // For now, use initial rate
+    // In production: fetch crucible.exchangeRate from on-chain and use that
     
     // Calculate APY percentage: ((exchange rate at sell / exchange rate at buy) - 1) * 100
     const apyPercentage = ((currentExchangeRateDecimal / initialExchangeRate) - 1) * 100
     
-    // Calculate exchange rate growth
+    // Calculate exchange rate growth (will be based on actual on-chain accrued fees)
     const exchangeRateGrowth = currentExchangeRateDecimal - initialExchangeRate
     
-    // Calculate borrowing interest CORRELATED with APY percentage
-    // Borrowing interest rate = APY% × 5%
-    // borrowingInterest = borrowedUSDC × (APY% × 5% / 100)
+    // Calculate borrowing interest using fixed 10% APY from lending-pool
+    // Formula: interest = borrowedAmount × (borrowRate / 100) × (secondsElapsed / secondsPerYear)
     const borrowedAmount = position.borrowedUSDC || 0
     let totalBorrowingInterest = 0
-    let borrowingInterestRatePercent = 0
+    const BORROW_RATE = 10 // 10% APY (fixed rate from lending-pool)
     
     if (borrowedAmount > 0) {
-      // Calculate borrowing interest rate: APY% × 5%
-      borrowingInterestRatePercent = apyPercentage * 0.05 // e.g., if APY is 2%, rate is 0.1%
+      // Calculate time elapsed (use position creation time if available, otherwise estimate)
+      const positionCreatedAt = position.timestamp ? new Date(position.timestamp).getTime() : Date.now() - (30 * 24 * 60 * 60 * 1000) // Default to 30 days ago
+      const now = Date.now()
+      const timeElapsedMs = now - positionCreatedAt
+      const timeElapsedSeconds = timeElapsedMs / 1000
       
-      // Calculate borrowing interest: borrowedUSDC × (APY% × 5% / 100)
-      // This is the same as: borrowedUSDC × (borrowingInterestRatePercent / 100)
-      totalBorrowingInterest = borrowedAmount * (borrowingInterestRatePercent / 100)
+      // Calculate interest: borrowedAmount × (borrowRate / 100) × (secondsElapsed / secondsPerYear)
+      const secondsPerYear = 365 * 24 * 60 * 60
+      const rateDecimal = BORROW_RATE / 100 // Convert 10 to 0.10
+      totalBorrowingInterest = borrowedAmount * rateDecimal * (timeElapsedSeconds / secondsPerYear)
     }
     
     // Yield earned in tokens (based on cTOKEN exchange rate growth)
@@ -275,7 +275,7 @@ export default function ClosePositionModal({
       proportionalBorrowingInterest,
       proportionalBorrowedUSDC: proportionalBorrowedUSDC + (proportionalBorrowingInterest * proportion), // Borrowed + interest
       apyPercentage, // Include APY percentage
-      borrowingInterestRatePercent, // Include borrowing interest rate percentage
+      borrowingInterestRatePercent: BORROW_RATE, // Fixed 10% APY from lending-pool
       principalFeeTokens,
       yieldFeeTokens,
     }
@@ -588,7 +588,7 @@ export default function ClosePositionModal({
         
         // Record transaction
         // Calculate the original position value that was closed (proportional for partial close)
-        const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+        const baseTokenPrice = 200 // SOL price
         const collateralWithdrawn = isPartialClose ? unwrapAmount : availableLeveragedPosition.collateral
         const collateralValueUSD = collateralWithdrawn * baseTokenPrice
         const depositedUSDC = availableLeveragedPosition.depositUSDC || 0
@@ -687,19 +687,19 @@ export default function ClosePositionModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="panel rounded-3xl border border-fogo-primary/20 shadow-2xl shadow-fogo-primary/10 w-full max-w-lg max-h-[90vh] overflow-y-auto backdrop-blur-xl">
+        <div className="panel rounded-3xl border border-forge-primary/20 shadow-2xl shadow-forge-primary/10 w-full max-w-lg max-h-[90vh] overflow-y-auto backdrop-blur-xl">
         {/* Header */}
-        <div className="relative bg-gradient-to-r from-fogo-primary/20 via-fogo-primary/10 to-transparent p-6 border-b border-fogo-gray-700/50">
+        <div className="relative bg-gradient-to-r from-forge-primary/20 via-forge-primary/10 to-transparent p-6 border-b border-forge-gray-700/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-fogo-primary/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                <ArrowDownIcon className="h-6 w-6 text-fogo-primary" />
+              <div className="w-10 h-10 bg-forge-primary/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                <ArrowDownIcon className="h-6 w-6 text-forge-primary" />
               </div>
               <h2 className="text-2xl font-heading text-white">Close Position</h2>
             </div>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-fogo-gray-700/50 rounded-xl text-fogo-gray-400 hover:text-white transition-all duration-200 hover:scale-110"
+              className="p-2 hover:bg-forge-gray-700/50 rounded-xl text-forge-gray-400 hover:text-white transition-all duration-200 hover:scale-110"
             >
               <XMarkIcon className="h-6 w-6" />
             </button>
@@ -707,13 +707,13 @@ export default function ClosePositionModal({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-fogo-gray-700">
+        <div className="flex border-b border-forge-gray-700">
           <button
             onClick={() => setActiveTab('ctoken')}
             className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
               activeTab === 'ctoken'
-                ? 'text-fogo-primary border-b-2 border-fogo-primary panel-muted'
-                : 'text-fogo-gray-400 hover:text-fogo-gray-300'
+                ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
+                : 'text-forge-gray-400 hover:text-forge-gray-300'
             }`}
             disabled={!hasCTokenPosition}
           >
@@ -723,8 +723,8 @@ export default function ClosePositionModal({
             onClick={() => setActiveTab('lp')}
             className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
               activeTab === 'lp'
-                ? 'text-fogo-primary border-b-2 border-fogo-primary panel-muted'
-                : 'text-fogo-gray-400 hover:text-fogo-gray-300'
+                ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
+                : 'text-forge-gray-400 hover:text-forge-gray-300'
             }`}
             disabled={!hasLeveragedPosition}
           >
@@ -738,7 +738,7 @@ export default function ClosePositionModal({
           {activeTab === 'ctoken' && hasCTokenPosition && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-fogo-gray-300 mb-2">
+                <label className="block text-sm font-medium text-forge-gray-300 mb-2">
                   Amount to Unwrap ({ctokenSymbol})
                 </label>
                 <div className="relative">
@@ -747,37 +747,37 @@ export default function ClosePositionModal({
                     value={ctokenAmount}
                     onChange={(e) => setCTokenAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full px-4 py-3 pr-12 panel-muted rounded-xl text-white placeholder-fogo-gray-500 focus:outline-none focus:border-fogo-primary"
+                    className="w-full px-4 py-3 pr-12 panel-muted rounded-xl text-white placeholder-forge-gray-500 focus:outline-none focus:border-forge-primary"
                   />
                   <button
                     onClick={() => setCTokenAmount(availableCTokens.toString())}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fogo-primary hover:text-fogo-primary-light z-10"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-forge-primary hover:text-forge-primary-light z-10"
                   >
                     MAX
                   </button>
                 </div>
-                <div className="mt-1 text-xs text-fogo-gray-400">
+                <div className="mt-1 text-xs text-forge-gray-400">
                   Available: {availableCTokens.toFixed(2)} {ctokenSymbol}
                 </div>
               </div>
 
               {cTokenUnwrapPreview && (
-                <div className="panel-muted rounded-xl p-4 border border-fogo-gray-700 space-y-2">
+                <div className="panel-muted rounded-xl p-4 border border-forge-gray-700 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-fogo-gray-400">You will receive:</span>
+                    <span className="text-forge-gray-400">You will receive:</span>
                     <span className="text-white font-medium">
                       {formatNumberWithCommas(cTokenUnwrapPreview.netAmount)} {baseTokenSymbol}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-fogo-gray-400">Yield Earned:</span>
+                    <span className="text-forge-gray-400">Yield Earned:</span>
                     <span className="text-green-400 font-medium">
                       +{formatNumberWithCommas(cTokenUnwrapPreview.apyEarned)} {baseTokenSymbol}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-fogo-gray-400">Transaction Fee:</span>
-                    <span className="text-fogo-gray-400">
+                    <span className="text-forge-gray-400">Transaction Fee:</span>
+                    <span className="text-forge-gray-400">
                       -{formatNumberWithCommas(cTokenUnwrapPreview.feeAmount)} {baseTokenSymbol} ({(UNWRAP_FEE_RATE * 100).toFixed(2)}%)
                     </span>
                   </div>
@@ -793,7 +793,7 @@ export default function ClosePositionModal({
               <button
                 onClick={handleCTokenUnwrap}
                 disabled={loading || !ctokenAmount || parseFloat(ctokenAmount) <= 0}
-                className="w-full py-3 bg-gradient-to-r from-fogo-primary to-fogo-secondary text-white rounded-xl font-medium hover:from-fogo-primary-dark hover:to-fogo-secondary-dark transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 bg-gradient-to-r from-forge-primary to-forge-secondary text-white rounded-xl font-medium hover:from-forge-primary-dark hover:to-forge-secondary-dark transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Unwrapping...' : `Unwrap ${ctokenSymbol}`}
               </button>
@@ -804,7 +804,7 @@ export default function ClosePositionModal({
           {activeTab === 'lp' && hasLeveragedPosition && availableLeveragedPosition && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-fogo-gray-300 mb-2">
+                <label className="block text-sm font-medium text-forge-gray-300 mb-2">
                   Amount to Unwrap (c{baseTokenSymbol})
                 </label>
                 <div className="relative">
@@ -813,64 +813,64 @@ export default function ClosePositionModal({
                     value={lpTokenAmount}
                     onChange={(e) => setLpTokenAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full px-4 py-3 pr-12 panel-muted rounded-xl text-white placeholder-fogo-gray-500 focus:outline-none focus:border-fogo-primary"
+                    className="w-full px-4 py-3 pr-12 panel-muted rounded-xl text-white placeholder-forge-gray-500 focus:outline-none focus:border-forge-primary"
                   />
                   <button
                     onClick={() => setLpTokenAmount((availableLeveragedPosition.collateral || 0).toString())}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fogo-primary hover:text-fogo-primary-light z-10"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-forge-primary hover:text-forge-primary-light z-10"
                   >
                     MAX
                   </button>
                 </div>
-                <div className="mt-1 text-xs text-fogo-gray-400 space-y-1">
+                <div className="mt-1 text-xs text-forge-gray-400 space-y-1">
                   <div>Available: {(availableLeveragedPosition.collateral || 0).toFixed(2)} c{baseTokenSymbol}</div>
                   <div>Available: {(availableLeveragedPosition.depositUSDC || 0).toFixed(2)} USDC</div>
                 </div>
               </div>
 
               {lpTokenUnwrapPreview && (
-                <div className="panel-muted rounded-xl p-4 border border-fogo-gray-700 space-y-3">
-                  <div className="text-sm font-medium text-fogo-gray-300 mb-2">You will receive:</div>
+                <div className="panel-muted rounded-xl p-4 border border-forge-gray-700 space-y-3">
+                  <div className="text-sm font-medium text-forge-gray-300 mb-2">You will receive:</div>
                   
                   <div className="flex justify-between text-sm">
-                    <span className="text-fogo-gray-400">Tokens:</span>
+                    <span className="text-forge-gray-400">Tokens:</span>
                     <span className="text-white font-medium">
                       {formatNumberWithCommas(lpTokenUnwrapPreview.netTokensToReceive)} {baseTokenSymbol}
                     </span>
                   </div>
                   
                   <div className="flex justify-between text-sm">
-                    <span className="text-fogo-gray-400">USDC:</span>
+                    <span className="text-forge-gray-400">USDC:</span>
                     <span className="text-white font-medium">
                       {formatNumberWithCommas(lpTokenUnwrapPreview.proportionalDepositedUSDC)} USDC
                     </span>
                   </div>
 
-                  <div className="pt-2 border-t border-fogo-gray-700 space-y-2">
+                  <div className="pt-2 border-t border-forge-gray-700 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-fogo-gray-400">APY Generated:</span>
+                      <span className="text-forge-gray-400">APY Generated:</span>
                       <span className="text-green-400 font-medium">
                         {lpTokenUnwrapPreview.apyPercentage?.toFixed(2) || '0.00'}%
                       </span>
                     </div>
                     
                     <div className="flex justify-between text-sm">
-                      <span className="text-fogo-gray-400">Yield Earned (Tokens):</span>
+                      <span className="text-forge-gray-400">Yield Earned (Tokens):</span>
                       <span className="text-green-400 font-medium">
                         +{formatNumberWithCommas(lpTokenUnwrapPreview.apyEarnedTokens)} {baseTokenSymbol}
                       </span>
                     </div>
                     
                     <div className="flex justify-between text-sm">
-                      <span className="text-fogo-gray-400">Forge Principal Fee ({(INFERNO_CLOSE_FEE_RATE * 100).toFixed(2)}%):</span>
-                      <span className="text-fogo-gray-400">
+                      <span className="text-forge-gray-400">Forge Principal Fee ({(INFERNO_CLOSE_FEE_RATE * 100).toFixed(2)}%):</span>
+                      <span className="text-forge-gray-400">
                         -{formatNumberWithCommas(lpTokenUnwrapPreview.principalFeeTokens || 0)} {baseTokenSymbol}
                       </span>
                     </div>
                     
                     <div className="flex justify-between text-sm">
-                      <span className="text-fogo-gray-400">Forge Yield Fee ({(INFERNO_YIELD_FEE_RATE * 100).toFixed(0)}%):</span>
-                      <span className="text-fogo-gray-400">
+                      <span className="text-forge-gray-400">Forge Yield Fee ({(INFERNO_YIELD_FEE_RATE * 100).toFixed(0)}%):</span>
+                      <span className="text-forge-gray-400">
                         -{formatNumberWithCommas(lpTokenUnwrapPreview.yieldFeeTokens || 0)} {baseTokenSymbol}
                       </span>
                     </div>
@@ -878,13 +878,13 @@ export default function ClosePositionModal({
                     {(availableLeveragedPosition.borrowedUSDC || 0) > 0 && (
                       <>
                         <div className="flex justify-between text-sm">
-                          <span className="text-fogo-gray-400">Borrowing Interest Rate:</span>
+                          <span className="text-forge-gray-400">Borrowing Interest Rate:</span>
                           <span className="text-orange-400 font-medium">
-                            {lpTokenUnwrapPreview.borrowingInterestRatePercent?.toFixed(2) || '0.00'}%
+                            {BORROW_RATE.toFixed(2)}% APY
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-fogo-gray-400">Borrowing Interest:</span>
+                          <span className="text-forge-gray-400">Borrowing Interest:</span>
                           <span className="text-orange-400 font-medium">
                             -{formatNumberWithCommas(Math.max(0, lpTokenUnwrapPreview.proportionalBorrowingInterest))} USDC
                           </span>
@@ -892,9 +892,9 @@ export default function ClosePositionModal({
                       </>
                     )}
                     
-                    <div className="flex justify-between text-sm pt-2 border-t border-fogo-gray-700">
-                      <span className="text-fogo-gray-400">Repaid to Lending Pool:</span>
-                      <span className="text-fogo-gray-400">
+                    <div className="flex justify-between text-sm pt-2 border-t border-forge-gray-700">
+                      <span className="text-forge-gray-400">Repaid to Lending Pool:</span>
+                      <span className="text-forge-gray-400">
                         {formatNumberWithCommas(lpTokenUnwrapPreview.proportionalBorrowedUSDC)} USDC
                       </span>
                     </div>
@@ -920,7 +920,7 @@ export default function ClosePositionModal({
 
           {/* No positions message */}
           {!hasCTokenPosition && !hasLeveragedPosition && (
-            <div className="text-center py-8 text-fogo-gray-400">
+            <div className="text-center py-8 text-forge-gray-400">
               No positions available to close
             </div>
           )}

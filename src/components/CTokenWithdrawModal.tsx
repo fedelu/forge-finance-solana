@@ -1,5 +1,9 @@
 import React, { useState, useMemo } from 'react'
 import { XMarkIcon, BoltIcon } from '@heroicons/react/24/outline'
+import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID, NATIVE_MINT, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getAccount, createCloseAccountInstruction } from '@solana/spl-token'
+import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
+import { Program, BN } from '@coral-xyz/anchor'
 import { useCToken } from '../hooks/useCToken'
 import { useCrucible } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
@@ -8,6 +12,9 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useWallet } from '../contexts/WalletContext'
 import { formatNumberWithCommas } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
+import { getCruciblesProgram } from '../utils/anchorProgram'
+import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
+import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet'
 
 interface CTokenWithdrawModalProps {
   isOpen: boolean
@@ -34,19 +41,20 @@ export default function CTokenWithdrawModal({
   const { withdraw, loading } = useCToken(crucibleAddress, ctokenMint)
   const { unwrapTokens, getCrucible } = useCrucible()
   const { addToBalance, subtractFromBalance } = useBalance()
-  const { connected, publicKey } = useWallet()
+  const { connected, publicKey, connection } = useWallet()
+  const { sendTransaction: adapterSendTransaction } = useSolanaWallet()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
   
   // Check for LP and leveraged positions for this crucible
   const { positions: lpPositions, closePosition: closeLPPosition, loading: lpLoading } = useLP({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL',
     baseAPY: 0, // Not needed for closing
   })
   
   const { positions: lvfPositions, closePosition: closeLVFPosition, loading: lvfLoading } = useLVFPosition({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL',
   })
   
   // Check if user has any LP positions for this crucible
@@ -79,7 +87,8 @@ export default function CTokenWithdrawModal({
           // Remove LP tokens
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
-          const cTokenAmount = result.baseAmount * 1.045
+          // Exchange rate from prop (passed from CrucibleManager)
+          const cTokenAmount = result.baseAmount * exchangeRate
           const lpTokenAmount = Math.sqrt(cTokenAmount * result.usdcAmount)
           subtractFromBalance(lpTokenSymbol, lpTokenAmount)
           
@@ -123,11 +132,11 @@ export default function CTokenWithdrawModal({
           // Remove LP tokens from wallet (if they were added when opening)
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
-          const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
+          const baseTokenPrice = 200 // SOL price
           const position = lvfPositions.find(p => p.id === positionId)
           if (position) {
             const collateralValue = position.collateral * baseTokenPrice
-            const cTokenAmount = position.collateral * 1.045 // Exchange rate
+            const cTokenAmount = position.collateral * exchangeRate // Use actual exchange rate
             
             // Calculate total USDC used in the LP position
             let totalUSDC = position.borrowedUSDC
@@ -184,42 +193,90 @@ export default function CTokenWithdrawModal({
 
   const handleWithdraw = async () => {
     if (!amount || parseFloat(amount) <= 0) return
+    if (!connected || !publicKey) {
+      alert('⚠️ Wallet not connected!\n\nPlease connect your wallet first.')
+      return
+    }
 
     try {
-      // Call unwrapTokens which handles the unwrapping, fee calculation, APY earnings, and updates
-      const result = await unwrapTokens(crucibleAddress, amount)
+      const ctokenAmount = parseFloat(amount)
+      const ctokenAmountLamports = Math.floor(ctokenAmount * 1e9) // Assuming 9 decimals for cToken
       
-      // Update wallet balances - add base tokens received
-      // Note: unwrapTokens already updates Crucible userBalances internally,
-      // so we only need to update the wallet's base token balance
-      if (result && result.baseAmount) {
-        addToBalance(baseTokenSymbol, result.baseAmount)
+      // For SOL withdrawals: Use real withdraw function
+      if (baseTokenSymbol === 'SOL' && publicKey) {
+        try {
+          const ctokenAmountBigInt = BigInt(ctokenAmountLamports)
+          const withdrawResult = await withdraw(ctokenAmountBigInt, exchangeRate)
+          
+          if (withdrawResult) {
+            addToBalance(baseTokenSymbol, withdrawResult.baseAmount)
+            
+            const unwrapSummary = [
+              '🔥 Forge Position Update',
+              '',
+              `${ctokenSymbol} position closed.`,
+              '',
+              `• Released: ${formatNumberWithCommas(withdrawResult.baseAmount, 4)} ${baseTokenSymbol}`,
+            ]
+
+            if (withdrawResult.fee && withdrawResult.fee > 0) {
+              unwrapSummary.push(`• Forge Safety Fee (${withdrawResult.feePercent.toFixed(2)}%): ${formatNumberWithCommas(withdrawResult.fee, 4)} ${baseTokenSymbol}`)
+            }
+
+            unwrapSummary.push('', 'Balances update instantly in your Forge wallet.')
+
+            alert(unwrapSummary.join('\n'))
+          }
+          
+          // Dispatch event to refresh portfolio
+          window.dispatchEvent(new CustomEvent('wrapPositionClosed', { 
+            detail: { crucibleAddress, baseTokenSymbol } 
+          }))
+          
+          onClose()
+          setAmount('')
+          return
+        } catch (error: any) {
+          console.error('Transaction failed:', error)
+          alert(`❌ Transaction Failed: ${error.message || 'Unknown error'}\n\nPlease try again.`)
+          return
+        }
+      }
+      
+      // Fallback for non-SOL tokens or if wallet not connected - use real withdraw
+      try {
+        const ctokenAmountBigInt = parseFloat(amount) > 0 ? BigInt(Math.floor(parseFloat(amount) * 1e9)) : BigInt(0)
+        const withdrawResult = await withdraw(ctokenAmountBigInt, exchangeRate)
         
-        const unwrapSummary = [
-          '🔥 Forge Position Update',
-          '',
-          `${ctokenSymbol} position closed.`,
-          '',
-          `• Released: ${formatNumberWithCommas(result.baseAmount, 4)} ${baseTokenSymbol}`,
-        ]
+        if (withdrawResult) {
+          addToBalance(baseTokenSymbol, withdrawResult.baseAmount)
+          
+          const unwrapSummary = [
+            '🔥 Forge Position Update',
+            '',
+            `${ctokenSymbol} position closed.`,
+            '',
+            `• Released: ${formatNumberWithCommas(withdrawResult.baseAmount, 4)} ${baseTokenSymbol}`,
+          ]
 
-        if (result.apyEarned && result.apyEarned > 0) {
-          unwrapSummary.push(`• Net Yield: +${formatNumberWithCommas(result.apyEarned, 4)} ${baseTokenSymbol}`)
+          if (withdrawResult.fee && withdrawResult.fee > 0) {
+            unwrapSummary.push(`• Forge Safety Fee (${withdrawResult.feePercent.toFixed(2)}%): ${formatNumberWithCommas(withdrawResult.fee, 4)} ${baseTokenSymbol}`)
+          }
+
+          unwrapSummary.push('', 'Balances update instantly in your Forge wallet.')
+
+          alert(unwrapSummary.join('\n'))
+        } else {
+          // Fallback calculation if result is null
+          const baseAmountBeforeFee = parseFloat(amount) * exchangeRate
+          const feeAmount = baseAmountBeforeFee * UNWRAP_FEE_RATE
+          const netAmount = baseAmountBeforeFee - feeAmount
+          addToBalance(baseTokenSymbol, netAmount)
         }
-        if (result.feeAmount && result.feeAmount > 0) {
-          unwrapSummary.push(`• Forge Safety Fee (${(UNWRAP_FEE_RATE * 100).toFixed(2)}%): ${formatNumberWithCommas(result.feeAmount, 4)} ${baseTokenSymbol}`)
-        }
-
-        unwrapSummary.push('', 'Balances update instantly in your Forge wallet.')
-
-        alert(unwrapSummary.join('\n'))
-      } else {
-        // Fallback calculation if result is null
-        const ctokenAmount = parseFloat(amount)
-        const baseAmountBeforeFee = ctokenAmount * exchangeRate
-        const feeAmount = baseAmountBeforeFee * UNWRAP_FEE_RATE
-        const netAmount = baseAmountBeforeFee - feeAmount
-        addToBalance(baseTokenSymbol, netAmount)
+      } catch (error: any) {
+        console.error('Withdraw failed:', error)
+        alert(`❌ Withdraw Failed: ${error.message || 'Unknown error'}`)
+        return
       }
       
       // Dispatch event to refresh portfolio
@@ -261,19 +318,19 @@ export default function CTokenWithdrawModal({
       <div className="panel rounded-3xl w-full max-w-md p-6 relative">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-fogo-gray-400 hover:text-white transition-colors"
+          className="absolute top-4 right-4 text-forge-gray-400 hover:text-white transition-colors"
         >
           <XMarkIcon className="w-6 h-6" />
         </button>
 
         <h2 className="text-2xl font-bold text-white mb-2">Close Position</h2>
-        <p className="text-fogo-gray-400 text-sm mb-6">
+        <p className="text-forge-gray-400 text-sm mb-6">
           Burn {ctokenSymbol} to withdraw {baseTokenSymbol}. You'll receive the current exchange rate value.
         </p>
 
         {/* Amount Input */}
         <div className="mb-4">
-            <label className="block text-sm font-medium text-fogo-gray-300 mb-2">
+            <label className="block text-sm font-medium text-forge-gray-300 mb-2">
               Withdraw Amount ({ctokenSymbol})
             </label>
             <div className="flex space-x-2">
@@ -284,18 +341,18 @@ export default function CTokenWithdrawModal({
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
                   max={availableBalance > 0 ? availableBalance.toString() : undefined}
-                className="w-full px-4 py-3 pr-12 panel-muted rounded-lg text-white placeholder-fogo-gray-500 focus:outline-none focus:ring-2 focus:ring-fogo-primary"
+                className="w-full px-4 py-3 pr-12 panel-muted rounded-lg text-white placeholder-forge-gray-500 focus:outline-none focus:ring-2 focus:ring-forge-primary"
                 />
               </div>
               <button
                 onClick={handleMax}
-                className="px-4 py-3 bg-fogo-gray-700 hover:bg-fogo-gray-600 text-white rounded-lg font-medium transition-colors"
+                className="px-4 py-3 bg-forge-gray-700 hover:bg-forge-gray-600 text-white rounded-lg font-medium transition-colors"
               >
                 MAX
               </button>
             </div>
             {availableBalance > 0 && (
-              <p className="text-xs text-fogo-gray-500 mt-1">
+              <p className="text-xs text-forge-gray-500 mt-1">
                 Available: {availableBalance.toFixed(2)} {ctokenSymbol}
               </p>
             )}
@@ -322,7 +379,7 @@ export default function CTokenWithdrawModal({
                       <div className="text-white text-sm font-medium">
                         {displayPairSymbol}/USDC {isLeveraged && leverage && `${leverage}x`}
                       </div>
-                      <div className="text-xs text-fogo-gray-400 mt-1">
+                      <div className="text-xs text-forge-gray-400 mt-1">
                         {baseAmount?.toFixed(2) || '0.00'} {baseTokenSymbol} + {usdcAmount?.toFixed(2) || '0.00'} USDC
                       </div>
                     </div>
@@ -341,30 +398,30 @@ export default function CTokenWithdrawModal({
         )}
 
         {/* Preview */}
-        <div className="panel-muted rounded-lg p-4 mb-4 border border-fogo-gray-700">
+        <div className="panel-muted rounded-lg p-4 mb-4 border border-forge-gray-700">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-fogo-gray-400 font-satoshi">You'll receive</span>
+              <span className="text-forge-gray-400 font-satoshi">You'll receive</span>
               <span className="text-white text-lg font-heading">
                 {estimatedBaseAmount} {baseTokenSymbol}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-fogo-gray-400 font-satoshi">Exchange Rate</span>
+              <span className="text-forge-gray-400 font-satoshi">Exchange Rate</span>
               <span className="text-white text-sm font-heading">
                 1 {ctokenSymbol} = {exchangeRate.toFixed(2)} {baseTokenSymbol}
               </span>
             </div>
-            <div className="flex justify-between text-xs pt-2 border-t border-fogo-gray-700">
-              <span className="text-fogo-gray-500 font-satoshi">Withdrawal Fee ({(UNWRAP_FEE_RATE * 100).toFixed(2)}%)</span>
+            <div className="flex justify-between text-xs pt-2 border-t border-forge-gray-700">
+              <span className="text-forge-gray-500 font-satoshi">Withdrawal Fee ({(UNWRAP_FEE_RATE * 100).toFixed(2)}%)</span>
               <span className="text-red-400 font-heading">
                 -{withdrawalFee.toFixed(2)} {baseTokenSymbol}
               </span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-fogo-gray-500 font-satoshi">Yield Earned</span>
+              <span className="text-forge-gray-500 font-satoshi">Yield Earned</span>
               <span className="text-green-400 font-heading">
-                +{((exchangeRate - 1.045) * 100).toFixed(2)}%
+                +{((exchangeRate - 1.0) * 100).toFixed(2)}%
               </span>
             </div>
           </div>
@@ -374,14 +431,14 @@ export default function CTokenWithdrawModal({
         <div className="flex space-x-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-3 bg-fogo-gray-700 hover:bg-fogo-gray-600 text-white rounded-lg font-medium transition-colors"
+            className="flex-1 px-4 py-3 bg-forge-gray-700 hover:bg-forge-gray-600 text-white rounded-lg font-medium transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleWithdraw}
             disabled={withdrawDisabled}
-            className="flex-1 px-4 py-3 bg-fogo-primary-light hover:bg-fogo-primary text-white rounded-lg font-medium transition-colors shadow-[0_10px_30px_rgba(255,102,14,0.25)] disabled:bg-fogo-primary/40 disabled:hover:bg-fogo-primary/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-3 bg-forge-primary-light hover:bg-forge-primary text-white rounded-lg font-medium transition-colors shadow-[0_10px_30px_rgba(255,102,14,0.25)] disabled:bg-forge-primary/40 disabled:hover:bg-forge-primary/40 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Processing...' : 'Close Position'}
           </button>

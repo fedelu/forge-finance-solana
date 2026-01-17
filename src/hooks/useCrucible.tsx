@@ -1,11 +1,12 @@
-import React, { createContext, useContext, ReactNode, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, ReactNode, useState, useCallback, useMemo, useEffect } from 'react';
+import { PublicKey, Connection } from '@solana/web3.js';
 import { 
   computePMint, 
-  computeFogoOut, 
+  computeForgeOut, 
   calculateAPY, 
   formatAmount, 
   parseAmount,
-  getEstimatedFogoValue,
+  getEstimatedForgeValue,
   getExchangeRateDecimal,
   RATE_SCALE 
 } from '../utils/math';
@@ -15,13 +16,19 @@ import {
   UNWRAP_FEE_RATE,
   INFERNO_OPEN_FEE_RATE,
 } from '../config/fees';
+import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram';
+import { deriveCruciblePDA } from '../utils/cruciblePdas';
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet';
+import { useWallet } from '../contexts/WalletContext';
+import { fetchCTokenBalance, fetchAllUserPositions, type AllUserPositions } from '../utils/positionFetcher';
+import { fetchCrucibleDirect, calculateTVL, getExchangeRateDecimal as getExchangeRateFromCrucible, createDevnetConnection, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate, calculateYieldPercentage } from '../utils/crucibleFetcher';
 
 export interface CrucibleData {
   id: string;
   name: string;
   symbol: string;
-  baseToken: 'SOL' | 'FORGE';
-  ptokenSymbol: 'cSOL' | 'cFORGE';
+  baseToken: 'SOL';
+  ptokenSymbol: 'cSOL';
   tvl: number;
   apr: number;
   status: 'active' | 'paused' | 'maintenance';
@@ -63,63 +70,40 @@ interface CrucibleHookReturn {
   }>;
 }
 
-// Calculate volatility farming metrics for each crucible
-const fogoMetrics = calculateVolatilityFarmingMetrics(CRUCIBLE_CONFIGS[0], DEFAULT_CONFIG);
-const forgeMetrics = calculateVolatilityFarmingMetrics(CRUCIBLE_CONFIGS[1], DEFAULT_CONFIG);
+// Calculate volatility farming metrics for SOL crucible
+const solMetrics = calculateVolatilityFarmingMetrics(CRUCIBLE_CONFIGS[0], DEFAULT_CONFIG);
 
-// Mock crucible data with volatility farming calculations
-  const mockCrucibles: CrucibleData[] = [
-    {
-      id: 'sol-crucible',
-      name: 'Solana',
-      symbol: 'SOL',
-      baseToken: 'SOL',
-      ptokenSymbol: 'cSOL',
-      tvl: 3_225_000, // SOL crucible TVL for cToken price calculation
-      apr: fogoMetrics.apyCompounded, // Compounded APY from volatility farming
-      status: 'active',
-      userDeposit: 0,
-      userShares: 0,
-      icon: '/usd-coin-usdc-logo-last.png',
-      ptokenMint: 'mockPsolMint1',
-      exchangeRate: BigInt(Math.floor(Number(RATE_SCALE) * 1.045)), // Initial exchange rate: 1 cSOL = 1.045 SOL (4.5% initial yield)
-      totalWrapped: BigInt(6450000000000), // 6,450,000 cSOL emitted
-      userPtokenBalance: BigInt(0),
-      estimatedBaseValue: BigInt(0),
-      currentAPY: fogoMetrics.apyCompounded * 100, // Convert to percentage
-      totalFeesCollected: fogoMetrics.dailyTransactionFees * 365, // Annual fees
-      apyEarnedByUsers: fogoMetrics.crucibleHoldersShare * 365, // Annual crucible holders yield
-      totalDeposited: 0,
-      totalWithdrawn: 0
-    },
-    {
-      id: 'forge-crucible',
-      name: 'Forge',
-      symbol: 'FORGE',
-      baseToken: 'FORGE',
-      ptokenSymbol: 'cFORGE',
-      tvl: 1_075_000, // 25% of protocol TVL
-      apr: forgeMetrics.apyCompounded, // Compounded APY from volatility farming
-      status: 'active',
-      userDeposit: 0,
-      userShares: 0,
-      icon: '/forgo logo straight.png',
-      ptokenMint: 'mockPforgeMint1',
-      exchangeRate: BigInt(Math.floor(Number(RATE_SCALE) / (0.002 / 0.0025))), // Inverted to get fewer cFORGE since cFORGE costs more: RATE_SCALE / (FORGE price / cFORGE price) = RATE_SCALE / 0.8
-      totalWrapped: BigInt(537500000000000), // 537,500,000 cFORGE emitted
-      userPtokenBalance: BigInt(0),
-      estimatedBaseValue: BigInt(0),
-      currentAPY: forgeMetrics.apyCompounded * 100, // Convert to percentage
-      totalFeesCollected: forgeMetrics.dailyTransactionFees * 365, // Annual fees
-      apyEarnedByUsers: forgeMetrics.crucibleHoldersShare * 365, // Annual crucible holders yield
-      totalDeposited: 0,
-      totalWithdrawn: 0
-    }
-  ];
+// Initial crucible data - will be populated from on-chain
+// All values start at 0/empty and get fetched from the blockchain
+const initialCrucibles: CrucibleData[] = [
+  {
+    id: 'sol-crucible',
+    name: 'Solana',
+    symbol: 'SOL',
+    baseToken: 'SOL',
+    ptokenSymbol: 'cSOL',
+    tvl: 0, // Will be fetched from on-chain
+    apr: solMetrics.apyCompounded, // Compounded APY from volatility farming
+    status: 'active',
+    userDeposit: 0,
+    userShares: 0,
+    icon: '/solana-sol-logo.png',
+    ptokenMint: DEPLOYED_ACCOUNTS.CSOL_MINT, // Deployed cSOL mint on devnet
+    exchangeRate: BigInt(1_000_000), // Initial exchange rate: 1.0 (will be fetched from on-chain)
+    totalWrapped: BigInt(0), // Will be fetched from on-chain
+    userPtokenBalance: BigInt(0),
+    estimatedBaseValue: BigInt(0),
+    currentAPY: solMetrics.apyCompounded * 100, // Convert to percentage
+    totalFeesCollected: 0, // Will be fetched from on-chain
+    apyEarnedByUsers: solMetrics.crucibleHoldersShare * 365, // Annual crucible holders yield
+    totalDeposited: 0,
+    totalWithdrawn: 0
+  }
+];
 
 // Create context with default values
 const CrucibleContext = createContext<CrucibleHookReturn>({
-  crucibles: mockCrucibles,
+  crucibles: initialCrucibles,
   loading: false,
   error: null,
   wrapTokens: async () => {},
@@ -140,6 +124,11 @@ interface CrucibleProviderProps {
 }
 
 export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) => {
+  const { connection, publicKey } = useWallet()
+  
+  // Loading state - true until first on-chain fetch completes
+  const [loading, setLoading] = useState(true)
+  
   // State to track user interactions
   const [userBalances, setUserBalances] = useState<Record<string, {
     ptokenBalance: bigint;
@@ -149,24 +138,164 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     depositTimestamp?: number; // Timestamp when position was opened
   }>>({});
   
+  // State for on-chain crucible data
+  const [onChainCrucibleData, setOnChainCrucibleData] = useState<CrucibleData | null>(null)
+  
   // State to trigger re-renders when crucible data changes
   const [crucibleUpdateTrigger, setCrucibleUpdateTrigger] = useState(0);
   
-  // Trigger periodic updates to simulate exchange rate growth (every 5 seconds)
-  React.useEffect(() => {
+  // Fetch crucible data from on-chain using direct fetcher (bypasses Anchor IDL issues)
+  const fetchCrucibleData = useCallback(async () => {
+    // Use provided connection or create a devnet connection for read-only fetch
+    const conn = connection || createDevnetConnection()
+    
+    try {
+      console.log('🔄 Fetching crucible data from on-chain...')
+      
+      // Use direct fetcher - bypasses Anchor IDL issues entirely
+      const crucibleAccount = await fetchCrucibleDirect(conn)
+      
+      if (!crucibleAccount) {
+        console.log('⚠️ Crucible account not found on-chain (may not be initialized yet)')
+        return
+      }
+      
+      // Fetch vault balance and cToken supply to calculate REAL exchange rate
+      const vaultBalance = await fetchVaultBalance(conn, DEPLOYED_ACCOUNTS.SOL_VAULT)
+      const ctokenSupply = await fetchCTokenSupply(conn, DEPLOYED_ACCOUNTS.CSOL_MINT)
+      
+      // Calculate REAL exchange rate from vault balance / ctoken supply
+      // This is the actual yield-generating rate, not the stored initial rate
+      const realExchangeRate = calculateRealExchangeRate(vaultBalance, ctokenSupply)
+      const yieldPercentage = calculateYieldPercentage(realExchangeRate)
+      
+      // Calculate TVL from vault balance (actual SOL in the vault)
+      const solPriceUSD = 200
+      const tvlFromVault = Number(vaultBalance) / 1e9 * solPriceUSD
+      const tvlFromDeposited = calculateTVL(crucibleAccount, solPriceUSD)
+      
+      // Use vault balance for TVL (more accurate as it includes fees)
+      const tvl = tvlFromVault > 0 ? tvlFromVault : tvlFromDeposited
+      
+      // Calculate APY metrics (handle NaN/Infinity from division by zero when TVL is 0)
+      const solMetrics = calculateVolatilityFarmingMetrics(CRUCIBLE_CONFIGS[0], DEFAULT_CONFIG)
+      const safeApyCompounded = isNaN(solMetrics.apyCompounded) || !isFinite(solMetrics.apyCompounded) 
+        ? 0.08 // Default 8% APY when can't calculate
+        : solMetrics.apyCompounded
+      
+      // Calculate real exchange rate as BigInt scaled by 1_000_000
+      const realExchangeRateBigInt = ctokenSupply > BigInt(0) 
+        ? (vaultBalance * BigInt(1_000_000)) / ctokenSupply 
+        : BigInt(1_000_000)
+      
+      // Calculate effective APR from yield percentage (use real yield if available)
+      const effectiveApr = yieldPercentage > 0 ? yieldPercentage / 100 : safeApyCompounded
+      
+      const crucibleData: CrucibleData = {
+        id: 'sol-crucible',
+        name: 'Solana',
+        symbol: 'SOL',
+        baseToken: 'SOL',
+        ptokenSymbol: 'cSOL',
+        tvl: tvl, // Real TVL from vault balance
+        apr: effectiveApr, // Use effective APR (real yield or estimated)
+        status: crucibleAccount.paused ? 'paused' : 'active',
+        userDeposit: 0,
+        userShares: 0,
+        icon: '/solana-sol-logo.png',
+        ptokenMint: crucibleAccount.ctokenMint.toString(),
+        exchangeRate: realExchangeRateBigInt, // Use REAL calculated exchange rate
+        totalWrapped: ctokenSupply, // Use fetched supply
+        userPtokenBalance: BigInt(0),
+        estimatedBaseValue: BigInt(0),
+        currentAPY: yieldPercentage > 0 ? yieldPercentage : safeApyCompounded * 100, // Show real yield % if available
+        totalFeesCollected: Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD, // Convert to USD
+        apyEarnedByUsers: yieldPercentage > 0 ? yieldPercentage : (isNaN(solMetrics.crucibleHoldersShare) ? 0 : solMetrics.crucibleHoldersShare * 365),
+        totalDeposited: 0,
+        totalWithdrawn: 0,
+      }
+      
+      console.log('✅ On-chain crucible data:', {
+        tvl: crucibleData.tvl,
+        vaultBalance: Number(vaultBalance) / 1e9,
+        ctokenSupply: Number(ctokenSupply) / 1e9,
+        realExchangeRate: realExchangeRate,
+        yieldPercentage: yieldPercentage.toFixed(2) + '%',
+        storedExchangeRate: Number(crucibleAccount.exchangeRate) / 1e6,
+        totalBaseDeposited: Number(crucibleAccount.totalBaseDeposited) / 1e9,
+        totalFeesAccrued: Number(crucibleAccount.totalFeesAccrued) / 1e9,
+        paused: crucibleAccount.paused,
+      })
+      
+      setOnChainCrucibleData(crucibleData)
+      setLoading(false) // First fetch complete
+      
+      // Fetch user's cToken balance from on-chain if wallet connected
+      if (publicKey && conn) {
+        try {
+          const cruciblePDA = new PublicKey(DEPLOYED_ACCOUNTS.SOL_CRUCIBLE)
+          const cTokenBalance = await fetchCTokenBalance(conn, publicKey, cruciblePDA)
+          
+          if (cTokenBalance && cTokenBalance.balance > BigInt(0)) {
+            console.log('✅ Fetched user cToken balance from on-chain:', {
+              balance: cTokenBalance.balance.toString(),
+              estimatedBaseValue: cTokenBalance.estimatedBaseValue.toString(),
+            })
+            
+            // Update userBalances with on-chain data
+            setUserBalances(prev => {
+              const current = prev['sol-crucible'] || {
+                ptokenBalance: BigInt(0),
+                baseDeposited: 0,
+                estimatedBaseValue: BigInt(0),
+                apyEarnedUSD: 0,
+                depositTimestamp: undefined
+              }
+              
+              // Calculate base deposited from cToken balance and exchange rate
+              const baseDeposited = Number(cTokenBalance.estimatedBaseValue) / 1e9
+              
+              return {
+                ...prev,
+                ['sol-crucible']: {
+                  ptokenBalance: cTokenBalance.balance,
+                  baseDeposited: baseDeposited,
+                  estimatedBaseValue: cTokenBalance.estimatedBaseValue,
+                  apyEarnedUSD: current.apyEarnedUSD, // Preserve any locally tracked APY
+                  depositTimestamp: current.depositTimestamp // Preserve timestamp
+                }
+              }
+            })
+          }
+        } catch (balanceError) {
+          // User might not have any cTokens, that's okay
+          console.log('No cToken balance found for user (this is normal if no position exists)')
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching crucible data:', error)
+      // No mock fallback - show real state (empty/loading)
+      setLoading(false) // Even on error, stop loading
+    }
+  }, [connection, publicKey])
+  
+  // Fetch crucible data on mount and when connection changes
+  useEffect(() => {
+    fetchCrucibleData()
     const interval = setInterval(() => {
-      setCrucibleUpdateTrigger(prev => prev + 1);
-    }, 5000); // Update every 5 seconds
+      fetchCrucibleData()
+      setCrucibleUpdateTrigger(prev => prev + 1)
+    }, 30000) // Fetch every 30 seconds
     
-    return () => clearInterval(interval);
-  }, []);
+    return () => clearInterval(interval)
+  }, [fetchCrucibleData])
 
-  // Simulate exchange rate growth over time (1 minute = 1 month)
+  // Get updated crucibles - use on-chain data if available, otherwise use mock
   const getUpdatedCrucibles = (): CrucibleData[] => {
-    // Use the trigger to ensure re-renders when user balances change
-    crucibleUpdateTrigger; // This ensures the function re-runs when trigger changes
+    // Use on-chain data if available, otherwise fall back to mock
+    const crucibleToUse = onChainCrucibleData || initialCrucibles[0]
     
-    return mockCrucibles.map(crucible => {
+    return [crucibleToUse].map(crucible => {
       const userBalance = userBalances[crucible.id] || {
         ptokenBalance: BigInt(0),
         baseDeposited: 0,
@@ -174,31 +303,18 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         apyEarnedUSD: 0
       };
       
-      // Calculate dynamic exchange rate based on time position was open
+      // Use actual on-chain exchange rate (no frontend simulation)
+      // Exchange rate grows as fees accrue on-chain
       let dynamicExchangeRate = crucible.exchangeRate || RATE_SCALE;
-      if (userBalance.depositTimestamp) {
-        const now = Date.now();
-        const timeOpenMs = now - userBalance.depositTimestamp;
-        const timeOpenMinutes = timeOpenMs / (1000 * 60); // Convert to minutes
-        const timeOpenMonths = timeOpenMinutes; // 1 minute = 1 month
-        
-        // Calculate accumulated yield: P(t) = P(0) * (1 + APY)^(t/12)
-        // Start with 1.045 (4.5% initial yield)
-        const initialRate = 1.045;
-        const apy = crucible.apr; // e.g., 0.18 for 18%
-        const yearsElapsed = timeOpenMonths / 12;
-        const accumulatedRate = initialRate * Math.pow(1 + apy, yearsElapsed);
-        dynamicExchangeRate = BigInt(Math.floor(Number(RATE_SCALE) * accumulatedRate));
-      }
       
       return {
         ...crucible,
         exchangeRate: dynamicExchangeRate,
-        currentAPY: crucible.apr * 100, // Use the static APR as APY (18% and 32%)
+        currentAPY: crucible.apr * 100,
         userPtokenBalance: userBalance.ptokenBalance,
         userDeposit: userBalance.baseDeposited,
         estimatedBaseValue: userBalance.estimatedBaseValue,
-        apyEarnedByUsers: crucible.apyEarnedByUsers || 0 // Use crucible's total APY earned by all users
+        apyEarnedByUsers: crucible.apyEarnedByUsers || 0
       };
     });
   };
@@ -217,13 +333,13 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       const ptokenAmount = computePMint(netAmountBigInt, crucible.exchangeRate);
 
       // Update crucible stats with fee collection
-      const crucibleIndex = mockCrucibles.findIndex(c => c.id === crucibleId);
+      const crucibleIndex = initialCrucibles.findIndex(c => c.id === crucibleId);
       if (crucibleIndex !== -1) {
-        mockCrucibles[crucibleIndex] = {
-          ...mockCrucibles[crucibleIndex],
+        initialCrucibles[crucibleIndex] = {
+          ...initialCrucibles[crucibleIndex],
           // Don't update exchangeRate here - it's calculated dynamically in getUpdatedCrucibles
-          totalWrapped: (mockCrucibles[crucibleIndex].totalWrapped || BigInt(0)) + ptokenAmount,
-          tvl: mockCrucibles[crucibleIndex].tvl + baseDeposited, // TVL includes fees
+          totalWrapped: (initialCrucibles[crucibleIndex].totalWrapped || BigInt(0)) + ptokenAmount,
+          tvl: initialCrucibles[crucibleIndex].tvl + baseDeposited, // TVL includes fees
         };
       }
       
@@ -263,7 +379,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     const crucible = getUpdatedCrucibles().find(c => c.id === crucibleId);
     if (crucible && crucible.exchangeRate) {
       const ptokenAmount = parseAmount(amount);
-      const baseAmount = computeFogoOut(ptokenAmount, crucible.exchangeRate);
+      const baseAmount = computeForgeOut(ptokenAmount, crucible.exchangeRate);
       const baseToWithdraw = Number(formatAmount(baseAmount));
       
       // Calculate unwrap fee
@@ -279,13 +395,13 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       const totalBurnedUSD = apyEarnedUSD / 10;
 
       // Update crucible stats with fee collection and burned tokens
-      const crucibleIndex = mockCrucibles.findIndex(c => c.id === crucibleId);
+      const crucibleIndex = initialCrucibles.findIndex(c => c.id === crucibleId);
       if (crucibleIndex !== -1) {
-        mockCrucibles[crucibleIndex] = {
-          ...mockCrucibles[crucibleIndex],
+        initialCrucibles[crucibleIndex] = {
+          ...initialCrucibles[crucibleIndex],
           totalFeesCollected: totalFees,
-          totalWrapped: (mockCrucibles[crucibleIndex].totalWrapped || BigInt(0)) - ptokenAmount,
-          tvl: mockCrucibles[crucibleIndex].tvl - baseToWithdraw,
+          totalWrapped: (initialCrucibles[crucibleIndex].totalWrapped || BigInt(0)) - ptokenAmount,
+          tvl: initialCrucibles[crucibleIndex].tvl - baseToWithdraw,
           apyEarnedByUsers: apyEarnedUSD
         };
       }
@@ -323,7 +439,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     const crucible = getUpdatedCrucibles().find(c => c.id === crucibleId);
     if (crucible && crucible.exchangeRate) {
       const ptokenAmount = parseAmount(amount);
-      const baseAmount = computeFogoOut(ptokenAmount, crucible.exchangeRate);
+      const baseAmount = computeForgeOut(ptokenAmount, crucible.exchangeRate);
       const baseToWithdraw = Number(formatAmount(baseAmount));
       
       // Calculate unwrap fee
@@ -331,18 +447,18 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       const netAmount = baseToWithdraw - feeAmount;
 
       // Update crucible stats - burn tokens
-      const crucibleIndex = mockCrucibles.findIndex(c => c.id === crucibleId);
+      const crucibleIndex = initialCrucibles.findIndex(c => c.id === crucibleId);
       if (crucibleIndex !== -1) {
-        mockCrucibles[crucibleIndex] = {
-          ...mockCrucibles[crucibleIndex],
-          totalWrapped: (mockCrucibles[crucibleIndex].totalWrapped || BigInt(0)) - ptokenAmount, // Burn the cTokens
-          tvl: mockCrucibles[crucibleIndex].tvl - baseToWithdraw, // Decrease TVL by the full amount withdrawn
+        initialCrucibles[crucibleIndex] = {
+          ...initialCrucibles[crucibleIndex],
+          totalWrapped: (initialCrucibles[crucibleIndex].totalWrapped || BigInt(0)) - ptokenAmount, // Burn the cTokens
+          tvl: initialCrucibles[crucibleIndex].tvl - baseToWithdraw, // Decrease TVL by the full amount withdrawn
         };
       }
       
       // Calculate APY earnings based on exchange rate growth
-      // The difference between current exchange rate and initial rate (1.045) is the APY earned
-      const initialExchangeRate = 1.045 // Initial rate when position was opened
+      // The difference between current exchange rate and initial rate (1.0) is the APY earned
+      const initialExchangeRate = 1.0 // Initial rate when position was opened
       const currentExchangeRate = Number(crucible.exchangeRate) / Number(RATE_SCALE)
       const exchangeRateGrowth = currentExchangeRate - initialExchangeRate
       const apyEarnedTokens = baseToWithdraw * (exchangeRateGrowth / currentExchangeRate) // APY earned in base tokens
@@ -375,7 +491,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
           ? BigInt(Math.floor(Number(current.estimatedBaseValue) * (1 - proportionUnwrapped)))
           : BigInt(0)
         
-        const baseTokenPrice = crucible.baseToken === 'FORGE' ? 0.002 : 200; // Approx prices for demo
+        const baseTokenPrice = 200; // SOL price
         return {
           ...prev,
           [crucibleId]: {
@@ -425,7 +541,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     // Calculate cTokens based on net amount (after fee deduction)
     const netAmountBigInt = parseAmount(netAmount.toString());
     const ptokenAmount = computePMint(netAmountBigInt, crucible.exchangeRate);
-    const estimatedValue = getEstimatedFogoValue(ptokenAmount, crucible.exchangeRate);
+    const estimatedValue = getEstimatedForgeValue(ptokenAmount, crucible.exchangeRate);
 
     return {
       ptokenAmount: formatAmount(ptokenAmount),
@@ -440,7 +556,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     }
 
     const amount = parseAmount(ptokenAmount);
-    const baseAmount = computeFogoOut(amount, crucible.exchangeRate);
+    const baseAmount = computeForgeOut(amount, crucible.exchangeRate);
     const baseToWithdraw = Number(formatAmount(baseAmount));
     
     // Calculate unwrap fee
@@ -455,15 +571,15 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
 
   // Update crucible TVL directly (for leveraged positions)
   const updateCrucibleTVL = useCallback((crucibleId: string, amountUSD: number) => {
-    const crucibleIndex = mockCrucibles.findIndex(c => c.id === crucibleId);
+    const crucibleIndex = initialCrucibles.findIndex(c => c.id === crucibleId);
     if (crucibleIndex >= 0) {
-      mockCrucibles[crucibleIndex] = {
-        ...mockCrucibles[crucibleIndex],
-        tvl: Math.max(0, mockCrucibles[crucibleIndex].tvl + amountUSD)
+      initialCrucibles[crucibleIndex] = {
+        ...initialCrucibles[crucibleIndex],
+        tvl: Math.max(0, initialCrucibles[crucibleIndex].tvl + amountUSD)
       };
       // Trigger re-render
       setCrucibleUpdateTrigger(prev => prev + 1);
-      console.log(`✅ Updated crucible TVL for ${crucibleId}: ${mockCrucibles[crucibleIndex].tvl}`);
+      console.log(`✅ Updated crucible TVL for ${crucibleId}: ${initialCrucibles[crucibleIndex].tvl}`);
     }
   }, []);
 
@@ -507,12 +623,12 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     });
 
     // Update crucible stats (same as wrapTokens)
-    const crucibleIndex = mockCrucibles.findIndex(c => c.id === crucibleId);
+    const crucibleIndex = initialCrucibles.findIndex(c => c.id === crucibleId);
     if (crucibleIndex >= 0) {
-      mockCrucibles[crucibleIndex] = {
-        ...mockCrucibles[crucibleIndex],
-        totalWrapped: (mockCrucibles[crucibleIndex].totalWrapped || BigInt(0)) + ptokenAmount,
-        tvl: mockCrucibles[crucibleIndex].tvl + baseAmount,
+      initialCrucibles[crucibleIndex] = {
+        ...initialCrucibles[crucibleIndex],
+        totalWrapped: (initialCrucibles[crucibleIndex].totalWrapped || BigInt(0)) + ptokenAmount,
+        tvl: initialCrucibles[crucibleIndex].tvl + baseAmount,
       };
     }
 
@@ -520,11 +636,12 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     setCrucibleUpdateTrigger(prev => prev + 1);
   }, []);
 
-  const crucibles = useMemo(() => getUpdatedCrucibles(), [crucibleUpdateTrigger, userBalances])
+  // CRITICAL: Include onChainCrucibleData in dependencies so crucibles updates when on-chain data is fetched
+  const crucibles = useMemo(() => getUpdatedCrucibles(), [crucibleUpdateTrigger, userBalances, onChainCrucibleData])
 
   const value: CrucibleHookReturn = useMemo(() => ({
     crucibles,
-    loading: false,
+    loading,
     error: null,
     wrapTokens,
     unwrapTokens,
@@ -536,7 +653,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     trackLeveragedPosition,
     updateCrucibleTVL,
     userBalances
-  }), [crucibles, wrapTokens, unwrapTokens, unwrapTokensToUSDC, refreshCrucibleData, getCrucible, calculateWrapPreview, calculateUnwrapPreview, trackLeveragedPosition, updateCrucibleTVL, userBalances])
+  }), [crucibles, loading, wrapTokens, unwrapTokens, unwrapTokensToUSDC, refreshCrucibleData, getCrucible, calculateWrapPreview, calculateUnwrapPreview, trackLeveragedPosition, updateCrucibleTVL, userBalances])
 
   return (
     <CrucibleContext.Provider value={value}>

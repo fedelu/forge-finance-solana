@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { PublicKey, Transaction } from '@solana/web3.js'
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token'
+import { PublicKey, Transaction, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, NATIVE_MINT } from '@solana/spl-token'
+import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
-// Removed useSession - using useWallet directly
+import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram'
+import { deriveCruciblePDA, deriveVaultPDA } from '../utils/cruciblePdas'
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
 import { UNWRAP_FEE_RATE } from '../config/fees'
 
 interface CTokenBalance {
@@ -23,7 +26,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
   // React hooks must be called unconditionally at the top level
   // Try to get contexts, but accept publicKey as parameter if provided
   let walletContext: any = null
-  const sessionContext: any = null // Removed FOGO Sessions - using Solana devnet directly
+  const sessionContext: any = null // Using Solana devnet directly
   
   try {
     walletContext = useWallet()
@@ -79,30 +82,75 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
   // Use ref to store latest fetchBalance callback
   const fetchBalanceRef = useRef<(() => Promise<void>) | null>(null)
 
-  // Fetch cToken balance and exchange rate
+  // Fetch cToken balance and exchange rate from on-chain
   const fetchBalance = useCallback(async () => {
-    if (!publicKey || !crucibleAddress || !ctokenMint) return
+    if (!publicKey || !crucibleAddress || !ctokenMint || !connection) return
 
     try {
       setLoading(true)
-      // In production, fetch from on-chain
-      // For now, mock the data structure
-      // Initial exchange rate is 1.045 (1 cToken = 1.045 base tokens)
-      const initialExchangeRate = 1.045
-      const mockCTokenBalance = BigInt(1000 * 1e6) // 1000 cTokens (6 decimals)
+      
+      // Get Anchor program instance
+      const anchorWallet: AnchorWallet = {
+        publicKey: publicKey,
+        signTransaction: walletContext?.signTransaction || (async (tx: Transaction) => tx),
+        signAllTransactions: walletContext?.signAllTransactions || (async (txs: Transaction[]) => txs),
+      }
+      const program = getCruciblesProgram(connection, anchorWallet)
+      
+      // Derive crucible PDA from base mint (WSOL for SOL)
+      const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
+      const [cruciblePDA] = deriveCruciblePDA(baseMint)
+      
+      // Fetch crucible account to get exchange rate
+      let exchangeRate = 1.0 // Default fallback (initial exchange rate is 1.0)
+      try {
+        const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
+        // Exchange rate is scaled by 1_000_000, convert to decimal
+        exchangeRate = Number(crucibleAccount.exchangeRate) / 1_000_000
+      } catch (error) {
+        console.warn('Could not fetch crucible account, using default exchange rate:', error)
+      }
+      
+      // Fetch user's cToken balance
+      const ctokenMintPubkey = new PublicKey(ctokenMint)
+      const userCtokenAccount = await getAssociatedTokenAddress(
+        ctokenMintPubkey,
+        publicKey
+      )
+      
+      let ctokenBalance = BigInt(0)
+      try {
+        const balance = await connection.getTokenAccountBalance(userCtokenAccount)
+        ctokenBalance = BigInt(balance.value.amount)
+      } catch (error) {
+        // Account might not exist yet, balance is 0
+        console.log('cToken account does not exist yet, balance is 0')
+      }
+      
+      // Calculate base balance from cToken balance and exchange rate
+      const baseBalance = BigInt(Math.floor(Number(ctokenBalance) * exchangeRate))
+      const estimatedValue = baseBalance
       
       setBalance({
-        ctokenBalance: mockCTokenBalance,
-        baseBalance: BigInt(Math.floor(Number(mockCTokenBalance) * initialExchangeRate)),
-        exchangeRate: initialExchangeRate,
-        estimatedValue: BigInt(Math.floor(Number(mockCTokenBalance) * initialExchangeRate)),
+        ctokenBalance,
+        baseBalance,
+        exchangeRate,
+        estimatedValue,
       })
     } catch (error) {
       console.error('Error fetching cToken balance:', error)
+      // Fallback if on-chain fetch fails - show zero balances with initial exchange rate
+      const initialExchangeRate = 1.0
+      setBalance({
+        ctokenBalance: BigInt(0),
+        baseBalance: BigInt(0),
+        exchangeRate: initialExchangeRate,
+        estimatedValue: BigInt(0),
+      })
     } finally {
       setLoading(false)
     }
-  }, [publicKey, crucibleAddress, ctokenMint])
+  }, [publicKey, crucibleAddress, ctokenMint, connection, walletContext])
 
   // Mint cToken by depositing base tokens
   const deposit = useCallback(async (amount: bigint, leverageMultiplier: number = 1.0) => {
@@ -186,6 +234,10 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       throw new Error('Amount must be greater than 0')
     }
 
+    if (!connection || !sendTransaction) {
+      throw new Error('Connection or sendTransaction not available')
+    }
+
     setLoading(true)
     try {
       // Calculate total deposit (base + borrowed if leveraged)
@@ -193,21 +245,66 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         ? BigInt(Math.floor(Number(amount) * (leverageMultiplier - 1.0)))
         : BigInt(0)
 
-      // TODO: In production, create and send mint_ctoken instruction
-      // For now, simulate the operation with proper error handling
+      // Get Anchor program instance
+      const anchorWallet: AnchorWallet = {
+        publicKey: currentPublicKey,
+        signTransaction: walletContext?.signTransaction || (async (tx: Transaction) => tx),
+        signAllTransactions: walletContext?.signAllTransactions || (async (txs: Transaction[]) => txs),
+      }
+      const program = getCruciblesProgram(connection, anchorWallet)
+      
+      // Derive PDAs
+      const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
+      const [cruciblePDA, crucibleBump] = deriveCruciblePDA(baseMint)
+      const [vaultPDA, vaultBump] = deriveVaultPDA(cruciblePDA)
+      const ctokenMintPubkey = new PublicKey(ctokenMint)
+      
+      // Fetch crucible account to get treasury address
+      let treasuryAccount: PublicKey
       try {
-        // Simulate transaction delay
-        await new Promise((resolve, reject) => {
-          setTimeout(() => {
-            // Simulate occasional failures for demo purposes
-            if (Math.random() < 0.1) {
-              reject(new Error('Transaction simulation failed. Please try again.'))
-            } else {
-              resolve(null)
-            }
-          }, 1500)
-        })
-
+        const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
+        treasuryAccount = crucibleAccount.treasury as PublicKey
+      } catch (error) {
+        throw new Error(`Failed to fetch crucible account: ${error}`)
+      }
+      
+      // Get user token accounts
+      const userTokenAccount = await getAssociatedTokenAddress(
+        baseMint,
+        currentPublicKey
+      )
+      const userCtokenAccount = await getAssociatedTokenAddress(
+        ctokenMintPubkey,
+        currentPublicKey
+      )
+      
+      // Call mintCtoken instruction
+      try {
+        const txSignature = await program.methods
+          .mintCtoken(new BN(amount.toString()))
+          .accounts({
+            user: currentPublicKey,
+            crucible: cruciblePDA,
+            baseMint: baseMint,
+            ctokenMint: ctokenMintPubkey,
+            userTokenAccount: userTokenAccount,
+            userCtokenAccount: userCtokenAccount,
+            vault: vaultPDA,
+            crucibleAuthority: cruciblePDA,
+            treasury: treasuryAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .rpc()
+        
+        console.log('✅ Mint cToken transaction sent:', txSignature)
+        
+        // Wait for confirmation
+        await connection.confirmTransaction(txSignature, 'confirmed')
+        console.log('✅ Transaction confirmed')
+        
         // Update leverage position if applicable
         if (leverageMultiplier > 1.0) {
           setLeverage({
@@ -218,13 +315,24 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           })
         }
 
+        // Refresh balance
         await fetchBalance()
         
         // Return borrowed amount for transaction tracking
         return { borrowedAmount: Number(borrowedAmount) / 1e6 } // Return in USDC units
       } catch (txError: any) {
         console.error('Transaction error:', txError)
-        throw new Error(txError.message || 'Transaction failed. Please try again.')
+        // Parse Anchor error if available
+        let errorMessage = 'Transaction failed. Please try again.'
+        if (txError.logs) {
+          const errorLog = txError.logs.find((log: string) => log.includes('Error'))
+          if (errorLog) {
+            errorMessage = errorLog
+          }
+        } else if (txError.message) {
+          errorMessage = txError.message
+        }
+        throw new Error(errorMessage)
       }
     } catch (error: any) {
       console.error('Error depositing:', error)
@@ -232,7 +340,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
     } finally {
       setLoading(false)
     }
-  }, [providedPublicKey, publicKey, sessionContext, walletContext, crucibleAddress, ctokenMint, sendTransaction, fetchBalance])
+  }, [providedPublicKey, publicKey, sessionContext, walletContext, crucibleAddress, ctokenMint, connection, sendTransaction, fetchBalance])
 
   // Burn cToken and withdraw base tokens
   const withdraw = useCallback(async (ctokenAmount: bigint, exchangeRate?: number) => {
@@ -241,7 +349,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       throw new Error('Wallet not connected. Please connect your wallet first.')
     }
     
-    if (!crucibleAddress) {
+    if (!crucibleAddress || !ctokenMint) {
       throw new Error('Crucible information missing')
     }
 
@@ -249,39 +357,109 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       throw new Error('Amount must be greater than 0')
     }
 
+    if (!connection) {
+      throw new Error('Connection not available')
+    }
+
     setLoading(true)
     try {
       // Calculate base tokens to return based on exchange rate
-      // Use provided exchange rate or fetch from balance
-      const currentExchangeRate = exchangeRate || balance?.exchangeRate || 1.045
+      // Use provided exchange rate or fetch from balance (initial rate is 1.0)
+      const currentExchangeRate = exchangeRate || balance?.exchangeRate || 1.0
       const baseAmountBeforeFee = Number(ctokenAmount) * currentExchangeRate
       
-      // Calculate Forge unwrap fee
+      // Calculate unwrap fee (handled by smart contract, but we calculate for display)
       const withdrawalFeePercent = UNWRAP_FEE_RATE
       const withdrawalFee = baseAmountBeforeFee * withdrawalFeePercent
       const baseAmountAfterFee = baseAmountBeforeFee - withdrawalFee
 
-      // TODO: In production, create and send burn_ctoken instruction
-      // const transaction = new Transaction()
-      // transaction.add(burnCTokenInstruction(...))
-      // const signature = await sendTransaction(transaction, connection)
-      // await connection.confirmTransaction(signature)
-
-      // For now, simulate
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Clear leverage if withdrawing everything
-      if (balance && ctokenAmount >= balance.ctokenBalance) {
-        setLeverage(null)
+      // Get Anchor program instance
+      const anchorWallet: AnchorWallet = {
+        publicKey: publicKey,
+        signTransaction: walletContext?.signTransaction || (async (tx: Transaction) => tx),
+        signAllTransactions: walletContext?.signAllTransactions || (async (txs: Transaction[]) => txs),
       }
-
-      await fetchBalance()
+      const program = getCruciblesProgram(connection, anchorWallet)
       
-      // Return fee information for display
-      return {
-        baseAmount: baseAmountAfterFee,
-        fee: withdrawalFee,
-        feePercent: withdrawalFeePercent * 100
+      // Derive PDAs
+      const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
+      const [cruciblePDA] = deriveCruciblePDA(baseMint)
+      const [vaultPDA] = deriveVaultPDA(cruciblePDA)
+      const ctokenMintPubkey = new PublicKey(ctokenMint)
+      
+      // Fetch crucible account to get treasury address
+      let treasuryAccount: PublicKey
+      try {
+        const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
+        treasuryAccount = crucibleAccount.treasury as PublicKey
+      } catch (error) {
+        // Fallback to deployed treasury if crucible fetch fails
+        treasuryAccount = new PublicKey(DEPLOYED_ACCOUNTS.WSOL_TREASURY)
+        console.warn('Could not fetch crucible account, using deployed treasury:', treasuryAccount.toBase58())
+      }
+      
+      // Get user token accounts
+      const userCtokenAccount = await getAssociatedTokenAddress(
+        ctokenMintPubkey,
+        publicKey
+      )
+      const userTokenAccount = await getAssociatedTokenAddress(
+        baseMint,
+        publicKey
+      )
+      
+      // Call burnCtoken instruction
+      try {
+        const txSignature = await program.methods
+          .burnCtoken(new BN(ctokenAmount.toString()))
+          .accounts({
+            user: publicKey,
+            crucible: cruciblePDA,
+            baseMint: baseMint,
+            ctokenMint: ctokenMintPubkey,
+            userCtokenAccount: userCtokenAccount,
+            vault: vaultPDA,
+            userTokenAccount: userTokenAccount,
+            crucibleAuthority: cruciblePDA,
+            treasury: treasuryAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+        
+        console.log('✅ Burn cToken transaction sent:', txSignature)
+        
+        // Wait for confirmation
+        await connection.confirmTransaction(txSignature, 'confirmed')
+        console.log('✅ Transaction confirmed')
+
+        // Clear leverage if withdrawing everything
+        if (balance && ctokenAmount >= balance.ctokenBalance) {
+          setLeverage(null)
+        }
+
+        // Refresh balance
+        await fetchBalance()
+        
+        // Return fee information for display
+        return {
+          baseAmount: baseAmountAfterFee,
+          fee: withdrawalFee,
+          feePercent: withdrawalFeePercent * 100
+        }
+      } catch (txError: any) {
+        console.error('Transaction error:', txError)
+        // Parse Anchor error if available
+        let errorMessage = 'Transaction failed. Please try again.'
+        if (txError.logs) {
+          const errorLog = txError.logs.find((log: string) => log.includes('Error'))
+          if (errorLog) {
+            errorMessage = errorLog
+          }
+        } else if (txError.message) {
+          errorMessage = txError.message
+        }
+        throw new Error(errorMessage)
       }
     } catch (error) {
       console.error('Error withdrawing:', error)
@@ -289,7 +467,7 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
     } finally {
       setLoading(false)
     }
-  }, [publicKey, crucibleAddress, balance, sendTransaction, fetchBalance])
+  }, [publicKey, crucibleAddress, ctokenMint, balance, connection, walletContext, fetchBalance])
 
   // Calculate effective APY with leverage
   // Leveraged positions have 3x the APY of normal positions

@@ -39,7 +39,7 @@ The protocol captures fees from wrapping/unwrapping assets, trading activity, an
 
 ### What is Forge Protocol?
 
-**Forge Protocol** is a permissionless, modular DeFi protocol that allows any SPL token to become the foundation of a self-sustaining financial system. The protocol enables the creation of vaults called **"Crucibles"** which provide depositors with synthetic wrapped versions of deposited assets (cTokens like cSOL, cFORGE).
+**Forge Protocol** is a permissionless, modular DeFi protocol that allows any SPL token to become the foundation of a self-sustaining financial system. The protocol enables the creation of vaults called **"Crucibles"** which provide depositors with synthetic wrapped versions of deposited assets (cTokens like cSOL).
 
 Crucibles unlock yield opportunities through internal protocol mechanics such as:
 - **Volatility Farming**: Earn yield from market volatility and trading activity
@@ -169,7 +169,7 @@ User Unwraps → Receives Base Token + Yield
 **What it is**: Deposit assets into a "Crucible" to receive yield-bearing cTokens. This is the foundation of **Volatility Farming** - earning yield from market volatility and trading activity.
 
 **How it works**:
-- Deposit SOL or FORGE tokens into a Crucible
+- Deposit SOL tokens into a Crucible
 - Receive cSOL or cFORGE tokens (cTokens) representing your share
 - cTokens are backed 1:1 by underlying assets at creation
 - Exchange rate increases over time as fees accumulate from volatility-driven arbitrage

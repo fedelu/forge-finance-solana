@@ -36,10 +36,10 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
   const [isClient, setIsClient] = useState(false)
   
   // Only use context hooks on client side
-  const crucibles = isClient ? useCrucible().crucibles : []
+  const { crucibles, loading: cruciblesLoading } = isClient ? useCrucible() : { crucibles: [], loading: true }
   const analytics = isClient ? useAnalytics().analytics : { totalVolume: 0, transactionCount: 0 }
   
-  console.log('SimpleStats: isClient:', isClient);
+  console.log('SimpleStats: isClient:', isClient, 'loading:', cruciblesLoading);
   console.log('SimpleStats: crucibles:', crucibles);
   console.log('SimpleStats: analytics:', analytics);
   
@@ -50,28 +50,28 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
   // Calculate stats with real data when client-side, static data for SSR
   const stats = useMemo(() => {
     if (!isClient) {
-      // Static data for SSR
+      // Static data for SSR - use zeros, will be populated on client
       return {
-        totalCrucibles: 10,
-        totalTVL: 1000000,
-        totalUsers: 500,
-        averageAPR: 8.5,
-        priceChange24h: 2.3,
-        volume24h: 250000,
-        tvlChange: 5.2,
-        userChange: 12.5,
-        aprChange: -0.8,
-        volumeChange: 15.3
+        totalCrucibles: 1,
+        totalTVL: 0, // Will be fetched from on-chain
+        totalUsers: 0,
+        averageAPR: 0,
+        priceChange24h: 0,
+        volume24h: 0,
+        tvlChange: 0,
+        userChange: 0,
+        aprChange: 0,
+        volumeChange: 0
       }
     }
     
-    // Real data when client-side
+    // Real data when client-side - no more mock percentages
     const totalCrucibles = crucibles.length
     const totalTVL = crucibles.reduce((sum, crucible) => sum + crucible.tvl, 0)
-    const totalUsers = Math.max(100, analytics.transactionCount * 2)
+    const totalUsers = analytics.transactionCount > 0 ? analytics.transactionCount : 0 // Real user count from transactions
     const averageAPR = crucibles.length > 0 
       ? crucibles.reduce((sum, crucible) => sum + crucible.apr, 0) / crucibles.length 
-      : 8.5
+      : 0 // Show 0 if no data, not fake 8.5
     // Compute 24h volume - dynamic based on recent deposits
     const now = Date.now()
     const txs = (analytics as any).transactions || []
@@ -79,10 +79,11 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
       .filter((tx: any) => now - tx.timestamp <= 24 * 60 * 60 * 1000) // Last 24 hours
       .filter((tx: any) => tx.type === 'deposit') // Only deposits
       .reduce((sum: number, tx: any) => sum + (tx.amount * 0.5), 0) // FOGO price = $0.5
-    const priceChange24h = 0.05 // Mock for now
-    const tvlChange = 5.2 // Mock for now
-    const userChange = 12 // Mock for now
-    const aprChange = 0.2 // Mock for now
+    // Real change calculations - 0 if no data available (no more fake percentages)
+    const priceChange24h = 0 // Will be calculated from price feed when available
+    const tvlChange = 0 // Will be calculated from historical TVL when available
+    const userChange = 0 // Will be calculated from user growth when available
+    const aprChange = 0 // Will be calculated from APR history when available
     
     // Calculate 24h volume change dynamically
     const previous24hVolume = txs
@@ -157,11 +158,11 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
     
     return (
       <div
-        className="panel-muted backdrop-blur-sm rounded-2xl p-8 border border-fogo-gray-700/50 shadow-fogo hover:shadow-fogo-lg transition-all duration-300 hover:scale-105 hover:-translate-y-1 min-h-[180px] overflow-hidden"
+        className="panel-muted backdrop-blur-sm rounded-2xl p-8 border border-forge-gray-700/50 shadow-fogo hover:shadow-forge-lg transition-all duration-300 hover:scale-105 hover:-translate-y-1 min-h-[180px] overflow-hidden"
         style={{ animationDelay: `${delay}ms` }}
       >
         <div className="space-y-6 h-full flex flex-col">
-          <p className="text-fogo-gray-400 text-sm font-satoshi font-medium uppercase tracking-wide">{title}</p>
+          <p className="text-forge-gray-400 text-sm font-satoshi font-medium uppercase tracking-wide">{title}</p>
           
           <div className="flex-1 flex items-center min-w-0">
             <p 
@@ -180,16 +181,16 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
           </div>
           
           <div className="flex items-center space-x-2">
-            {isPositive && <ArrowUpIcon className="h-4 w-4 text-fogo-success" />}
-            {isNegative && <ArrowDownIcon className="h-4 w-4 text-fogo-error" />}
+            {isPositive && <ArrowUpIcon className="h-4 w-4 text-forge-success" />}
+            {isNegative && <ArrowDownIcon className="h-4 w-4 text-forge-error" />}
             <span className={`text-sm font-satoshi font-medium ${
-              isPositive ? 'text-fogo-success' : 
-              isNegative ? 'text-fogo-error' : 
-              'text-fogo-gray-400'
+              isPositive ? 'text-forge-success' : 
+              isNegative ? 'text-forge-error' : 
+              'text-forge-gray-400'
             }`}>
               {formatChange(change, true)}
             </span>
-            <span className="text-fogo-gray-500 text-sm font-satoshi-light">this week</span>
+            <span className="text-forge-gray-500 text-sm font-satoshi-light">this week</span>
           </div>
         </div>
       </div>
@@ -202,17 +203,17 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-4 sm:space-y-0">
         <div>
           <h2 className="text-3xl font-heading text-white mb-2">Protocol Statistics</h2>
-          <p className="text-fogo-gray-400 font-satoshi-light">Real-time data and performance metrics</p>
+          <p className="text-forge-gray-400 font-satoshi-light">Real-time data and performance metrics</p>
         </div>
         
         <div className="flex items-center space-x-4">
           {/* Live Status */}
           <div className="flex items-center space-x-2">
             <div className={`w-3 h-3 rounded-full ${isLive ? 'status-online' : 'status-offline'}`} />
-            <span className="text-sm text-fogo-gray-400 font-satoshi">Live</span>
+            <span className="text-sm text-forge-gray-400 font-satoshi">Live</span>
             <button 
               onClick={() => setIsLive(!isLive)}
-              className="text-xs px-3 py-1 rounded-lg bg-fogo-gray-700 hover:bg-fogo-gray-600 transition-colors hover-lift font-satoshi"
+              className="text-xs px-3 py-1 rounded-lg bg-forge-gray-700 hover:bg-forge-gray-600 transition-colors hover-lift font-satoshi"
             >
               {isLive ? 'Pause' : 'Resume'}
             </button>
@@ -222,13 +223,14 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
       
       {/* Per-Crucible Stats */}
       {isClient && crucibles.length > 0 && (
-        <div className="panel rounded-2xl p-6 border border-fogo-gray-700 shadow-fogo">
+        <div className="panel rounded-2xl p-6 border border-forge-gray-700 shadow-fogo">
           <h3 className="text-xl font-heading text-white mb-6">Per-Crucible Statistics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex justify-center">
+            <div className="grid grid-cols-1 gap-6 max-w-2xl w-full">
             {crucibles.map((crucible) => {
               const yieldEarned = crucible.apyEarnedByUsers || 0; // APY-based yield earned
               return (
-                <div key={crucible.id} className="panel-muted rounded-xl p-6 border border-fogo-gray-600">
+                <div key={crucible.id} className="panel-muted rounded-xl p-6 border border-forge-gray-600">
                   <div className="flex items-center space-x-3 mb-4">
                     {crucible.icon.startsWith('/') ? (
                       <img 
@@ -237,8 +239,8 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
                         className="w-8 h-8 rounded-lg"
                       />
                     ) : (
-                      <div className="w-8 h-8 bg-fogo-primary/20 rounded-lg flex items-center justify-center">
-                        <span className="text-fogo-primary font-bold text-sm">{crucible.symbol[0]}</span>
+                      <div className="w-8 h-8 bg-forge-primary/20 rounded-lg flex items-center justify-center">
+                        <span className="text-forge-primary font-bold text-sm">{crucible.symbol[0]}</span>
                       </div>
                     )}
                     <h4 className="text-lg font-heading text-white">{crucible.name} Crucible</h4>
@@ -246,21 +248,22 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
                   
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-fogo-gray-400 text-sm">TVL:</span>
+                      <span className="text-forge-gray-400 text-sm">TVL:</span>
                       <span className="text-white font-heading">{formatCurrency(crucible.tvl)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fogo-gray-400 text-sm">APY:</span>
-                      <span className="text-fogo-accent font-heading">{(crucible.apr * 100).toFixed(1)}%</span>
+                      <span className="text-forge-gray-400 text-sm">APY:</span>
+                      <span className="text-forge-accent font-heading">{(crucible.apr * 100).toFixed(1)}%</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-fogo-gray-400 text-sm">Yield Earned:</span>
-                      <span className="text-fogo-primary font-heading">{formatCurrency(yieldEarned)}</span>
+                      <span className="text-forge-gray-400 text-sm">Yield Earned:</span>
+                      <span className="text-forge-primary font-heading">{formatCurrency(yieldEarned)}</span>
                     </div>
                   </div>
                 </div>
               );
             })}
+            </div>
           </div>
         </div>
       )}

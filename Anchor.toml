@@ -1,18 +1,18 @@
+[toolchain]
+anchor_version = "0.30.0"
+
 [features]
-seeds = false
+resolution = true
 skip-lint = false
 
-[toolchain]
-anchor_version = "0.32.0"
+[programs.devnet]
+forge_core = "CtR5tkwzpUmyxMNnihkPdSZzVk5fws1LumXXGyU4phJa"
+forge_crucibles = "B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry"
+lending = "BeJW4TrT31GWgW5wpLeYS4tFiCQquHd5bHcfYrPykErs"
+lending_pool = "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx"
+lvf = "DNV9nTmTztTaufsdKQd3WW1vfaKHMB5uiGzWRXD3AgYd"
 
 [programs.testnet]
-forge_core = "DWkDGw5Pvqgh3DN6HZwssn31AUAkuWLtjDnjyEUdgRHU"
-forge_crucibles = "Ab84n2rkgEnDnQmJKfMsr88jbJqYPcgBW7irwoYWwCL2"
-lending = "LenD1ng111111111111111111111111111111111111"
-lending_pool = "LenD1ng111111111111111111111111111111111111"
-lvf = "LvF1111111111111111111111111111111111111111"
-
-[programs.devnet]
 forge_core = "DWkDGw5Pvqgh3DN6HZwssn31AUAkuWLtjDnjyEUdgRHU"
 forge_crucibles = "Ab84n2rkgEnDnQmJKfMsr88jbJqYPcgBW7irwoYWwCL2"
 lending = "LenD1ng111111111111111111111111111111111111"
@@ -23,9 +23,8 @@ lvf = "LvF1111111111111111111111111111111111111111"
 url = "https://api.apr.dev"
 
 [provider]
-# Solana public devnet provider for this project
 cluster = "devnet"
-wallet = "/Users/federicodelucchi/.config/solana/id.json"
+wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

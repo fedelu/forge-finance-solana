@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        fogo: {
+        forge: {
           // Professional color palette - refined and cohesive
           primary: '#FF660E',      // Vibrant Orange - primary brand color
           'primary-dark': '#CC520B', // Darker orange
@@ -48,9 +48,9 @@ module.exports = {
         },
         // Gradient colors - Professional and modern
         gradient: {
-          'fogo-primary': 'linear-gradient(135deg, #FF660E 0%, #FF8A4B 100%)',
-          'fogo-secondary': 'linear-gradient(135deg, #1A1A2E 0%, #0F3460 100%)',
-          'fogo-flame': 'linear-gradient(135deg, #FF660E 0%, #FF8A4B 100%)',
+          'forge-primary': 'linear-gradient(135deg, #FF660E 0%, #FF8A4B 100%)',
+          'forge-secondary': 'linear-gradient(135deg, #1A1A2E 0%, #0F3460 100%)',
+          'forge-flame': 'linear-gradient(135deg, #FF660E 0%, #FF8A4B 100%)',
           'dark-gradient': 'linear-gradient(135deg, #0D1117 0%, #1A1A2E 100%)',
           'speed-gradient': 'linear-gradient(135deg, #FF660E 0%, #1A1A2E 50%, #FF8A4B 100%)',
           'brand-gradient': 'linear-gradient(135deg, #FF660E 0%, #1A1A2E 100%)',
@@ -88,8 +88,8 @@ module.exports = {
         '5xl': '2.5rem',
       },
       boxShadow: {
-        'fogo': '0 10px 25px -5px rgba(232, 81, 2, 0.15), 0 10px 10px -5px rgba(232, 81, 2, 0.1)',
-        'fogo-lg': '0 20px 25px -5px rgba(232, 81, 2, 0.2), 0 10px 10px -5px rgba(232, 81, 2, 0.1)',
+        'forge': '0 10px 25px -5px rgba(232, 81, 2, 0.15), 0 10px 10px -5px rgba(232, 81, 2, 0.1)',
+        'forge-lg': '0 20px 25px -5px rgba(232, 81, 2, 0.2), 0 10px 10px -5px rgba(232, 81, 2, 0.1)',
         'flame': '0 0 20px rgba(232, 81, 2, 0.4)',
         'flame-lg': '0 0 40px rgba(232, 81, 2, 0.6)',
         'speed': '0 0 30px rgba(232, 81, 2, 0.3), 0 0 60px rgba(0, 0, 54, 0.2)',
@@ -149,15 +149,15 @@ module.exports = {
     'font-satoshi-light',
     'font-satoshi-bold',
     'font-satoshi-black',
-    'text-fogo-primary',
-    'text-fogo-secondary',
-    'bg-fogo-primary',
-    'bg-fogo-secondary',
-    'border-fogo-primary',
-    'border-fogo-secondary',
-    'from-fogo-primary',
-    'to-fogo-secondary',
-    'hover:from-fogo-primary-dark',
-    'hover:to-fogo-secondary-dark',
+    'text-forge-primary',
+    'text-forge-secondary',
+    'bg-forge-primary',
+    'bg-forge-secondary',
+    'border-forge-primary',
+    'border-forge-secondary',
+    'from-forge-primary',
+    'to-forge-secondary',
+    'hover:from-forge-primary-dark',
+    'hover:to-forge-secondary-dark',
   ],
 }

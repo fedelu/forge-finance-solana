@@ -204,7 +204,7 @@ h1, h2, h3, h4, h5, .heading {
 
 /* Enhanced button styles - Fogo inspired */
 .btn-primary {
-  @apply relative overflow-hidden bg-gradient-to-r from-fogo-primary to-fogo-secondary text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-fogo-lg focus:outline-none focus:ring-4 focus:ring-fogo-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none;
+  @apply relative overflow-hidden bg-gradient-to-r from-forge-primary to-forge-secondary text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-forge-lg focus:outline-none focus:ring-4 focus:ring-forge-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none;
 }
 
 .btn-primary::before {
@@ -223,20 +223,20 @@ h1, h2, h3, h4, h5, .heading {
 }
 
 .btn-secondary {
-  @apply bg-fogo-gray-800 hover:bg-fogo-gray-700 text-white font-semibold px-8 py-4 rounded-xl border border-fogo-gray-600 hover:border-fogo-primary transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-fogo-primary/20;
+  @apply bg-forge-gray-800 hover:bg-forge-gray-700 text-white font-semibold px-8 py-4 rounded-xl border border-forge-gray-600 hover:border-forge-primary transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-forge-primary/20;
 }
 
 .btn-ghost {
-  @apply bg-transparent hover:bg-fogo-gray-800 text-fogo-gray-300 hover:text-white font-semibold px-6 py-3 rounded-lg transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-fogo-primary/20;
+  @apply bg-transparent hover:bg-forge-gray-800 text-forge-gray-300 hover:text-white font-semibold px-6 py-3 rounded-lg transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-forge-primary/20;
 }
 
 .btn-danger {
-  @apply bg-fogo-error hover:bg-fogo-error-dark text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-fogo-error/20;
+  @apply bg-forge-error hover:bg-forge-error-dark text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-forge-error/20;
 }
 
 /* Enhanced card styles - Fogo inspired */
 .card {
-  @apply panel rounded-2xl p-8 transition-all duration-300 hover:shadow-fogo-lg hover:border-fogo-primary/30;
+  @apply panel rounded-2xl p-8 transition-all duration-300 hover:shadow-forge-lg hover:border-forge-primary/30;
 }
 
 .card-hover {
@@ -244,7 +244,7 @@ h1, h2, h3, h4, h5, .heading {
 }
 
 .card-glow {
-  @apply panel rounded-2xl p-8 shadow-flame border border-fogo-primary/25;
+  @apply panel rounded-2xl p-8 shadow-flame border border-forge-primary/25;
 }
 
 .card-gradient {
@@ -253,32 +253,32 @@ h1, h2, h3, h4, h5, .heading {
 
 /* Input styles */
 .input {
-  @apply w-full px-6 py-4 bg-fogo-gray-800/50 border border-fogo-gray-600 rounded-xl text-white placeholder-fogo-gray-400 focus:outline-none focus:border-fogo-primary focus:ring-4 focus:ring-fogo-primary/20 transition-all duration-300 backdrop-blur-sm;
+  @apply w-full px-6 py-4 bg-forge-gray-800/50 border border-forge-gray-600 rounded-xl text-white placeholder-forge-gray-400 focus:outline-none focus:border-forge-primary focus:ring-4 focus:ring-forge-primary/20 transition-all duration-300 backdrop-blur-sm;
 }
 
 .input-error {
-  @apply input border-fogo-error focus:border-fogo-error focus:ring-fogo-error/20;
+  @apply input border-forge-error focus:border-forge-error focus:ring-forge-error/20;
 }
 
 .input-success {
-  @apply input border-fogo-success focus:border-fogo-success focus:ring-fogo-success/20;
+  @apply input border-forge-success focus:border-forge-success focus:ring-forge-success/20;
 }
 
 /* Status indicators */
 .status-online {
-  @apply w-3 h-3 bg-fogo-success rounded-full animate-pulse;
+  @apply w-3 h-3 bg-forge-success rounded-full animate-pulse;
 }
 
 .status-offline {
-  @apply w-3 h-3 bg-fogo-gray-500 rounded-full;
+  @apply w-3 h-3 bg-forge-gray-500 rounded-full;
 }
 
 .status-warning {
-  @apply w-3 h-3 bg-fogo-warning rounded-full animate-pulse;
+  @apply w-3 h-3 bg-forge-warning rounded-full animate-pulse;
 }
 
 .status-error {
-  @apply w-3 h-3 bg-fogo-error rounded-full animate-pulse;
+  @apply w-3 h-3 bg-forge-error rounded-full animate-pulse;
 }
 
 /* Loading animations */
@@ -334,11 +334,11 @@ h1, h2, h3, h4, h5, .heading {
 
 /* Gradient text */
 .text-gradient {
-  @apply bg-gradient-to-r from-fogo-primary to-fogo-secondary bg-clip-text text-transparent;
+  @apply bg-gradient-to-r from-forge-primary to-forge-secondary bg-clip-text text-transparent;
 }
 
 .text-gradient-secondary {
-  @apply bg-gradient-to-r from-fogo-secondary to-fogo-accent bg-clip-text text-transparent;
+  @apply bg-gradient-to-r from-forge-secondary to-forge-accent bg-clip-text text-transparent;
 }
 
 /* Hover effects */
@@ -352,7 +352,7 @@ h1, h2, h3, h4, h5, .heading {
 
 /* Focus styles */
 .focus-ring {
-  @apply focus:outline-none focus:ring-4 focus:ring-fogo-primary/20 focus:border-fogo-primary;
+  @apply focus:outline-none focus:ring-4 focus:ring-forge-primary/20 focus:border-forge-primary;
 }
 
 /* Responsive text */

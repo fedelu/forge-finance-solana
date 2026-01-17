@@ -12,9 +12,9 @@ interface BalanceContextType {
   addToBalance: (symbol: string, amount: number) => void;
   subtractFromBalance: (symbol: string, amount: number) => void;
   getBalance: (symbol: string) => number;
-  wrappedFogo: number;
-  addWrappedFogo: (amount: number) => void;
-  subtractWrappedFogo: (amount: number) => void;
+  wrappedForge: number;
+  addWrappedForge: (amount: number) => void;
+  subtractWrappedForge: (amount: number) => void;
 }
 
 const BalanceContext = createContext<BalanceContextType | undefined>(undefined);
@@ -44,14 +44,17 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
     { symbol: 'cFORGE/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
   ]);
   
-  const [wrappedFogo, setWrappedFogo] = useState<number>(0);
+  const [wrappedForge, setWrappedForge] = useState<number>(0);
 
   const getTokenPrice = useCallback((symbol: string): number => {
+    // Base prices - cToken prices should be dynamically calculated from on-chain exchange rate
+    // cToken price = base token price * exchange_rate
+    // Initial exchange rate is 1.0, so initially cSOL price = SOL price
     const prices: { [key: string]: number } = {
       'SOL': 200,
       'FORGE': 0.002,
-      'cSOL': 209,  // cSOL is worth more than SOL due to accumulated value (SOL price * 1.045)
-      'cFORGE': 0.0025, // cFORGE is worth more than FORGE due to accumulated value
+      'cSOL': 200,  // Initial: same as SOL (exchange rate 1.0). In production, fetch from crucible.exchangeRate
+      'cFORGE': 0.002, // Initial: same as FORGE (exchange rate 1.0). In production, fetch from crucible.exchangeRate
       'USDC': 1,
       'ETH': 4000,
       'BTC': 110000,
@@ -125,12 +128,12 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
     return balances.find(b => b.symbol === symbol)?.amount || 0;
   }, [balances]);
 
-  const addWrappedFogo = useCallback((amount: number) => {
-    setWrappedFogo(prev => prev + amount);
+  const addWrappedForge = useCallback((amount: number) => {
+    setWrappedForge(prev => prev + amount);
   }, []);
 
-  const subtractWrappedFogo = useCallback((amount: number) => {
-    setWrappedFogo(prev => Math.max(0, prev - amount));
+  const subtractWrappedForge = useCallback((amount: number) => {
+    setWrappedForge(prev => Math.max(0, prev - amount));
   }, []);
 
   const contextValue = useMemo(() => ({
@@ -139,10 +142,10 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
     addToBalance,
     subtractFromBalance,
     getBalance,
-    wrappedFogo,
-    addWrappedFogo,
-    subtractWrappedFogo,
-  }), [balances, updateBalance, addToBalance, subtractFromBalance, wrappedFogo, addWrappedFogo, subtractWrappedFogo]);
+    wrappedForge,
+    addWrappedForge,
+    subtractWrappedForge,
+  }), [balances, updateBalance, addToBalance, subtractFromBalance, wrappedForge, addWrappedForge, subtractWrappedForge]);
 
   return (
     <BalanceContext.Provider value={contextValue}>

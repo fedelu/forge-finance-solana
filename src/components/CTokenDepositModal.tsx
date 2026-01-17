@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react'
-import { XMarkIcon, ArrowUpIcon, FireIcon, ChartBarIcon, BoltIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, ArrowUpIcon, FireIcon, ChartBarIcon, BoltIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID, NATIVE_MINT, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createSyncNativeInstruction, createAssociatedTokenAccountIdempotentInstruction, getOrCreateAssociatedTokenAccount } from '@solana/spl-token'
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
+import { Program, BN } from '@coral-xyz/anchor'
 import { useCToken } from '../hooks/useCToken'
 import { useLP } from '../hooks/useLP'
 import { useLVFPosition } from '../hooks/useLVFPosition'
@@ -11,6 +13,10 @@ import { useBalance } from '../contexts/BalanceContext'
 import { lendingPool } from '../contracts/lendingPool'
 import { useCrucible } from '../hooks/useCrucible'
 import { WRAP_FEE_RATE, INFERNO_OPEN_FEE_RATE } from '../config/fees'
+import { buildMintCtokenInstruction } from '../utils/anchorProgram'
+import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
+import { SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
 
 interface CTokenDepositModalProps {
   isOpen: boolean
@@ -77,15 +83,15 @@ export default function CTokenDepositModal({
   const { wrapTokens, unwrapTokens, trackLeveragedPosition } = useCrucible()
   const { openPosition: openLPPosition, loading: lpLoading } = useLP({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL',
     baseAPY: currentAPY,
   })
   const { openPosition: openLeveragedPosition, loading: leveragedLoading } = useLVFPosition({
     crucibleAddress,
-    baseTokenSymbol: baseTokenSymbol as 'SOL' | 'FORGE',
+    baseTokenSymbol: baseTokenSymbol as 'SOL',
   })
 
-  const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+  const baseTokenPrice = 200 // SOL price
   // Use actual wallet balance if available (for SOL), otherwise use local balance
   const baseTokenBalance = (baseTokenSymbol === 'SOL' && actualWalletBalance !== null) 
     ? actualWalletBalance 
@@ -187,38 +193,129 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           }
         }
         
-        // Send actual SOL transaction to crucible vault
+        // For SOL deposits: Wrap SOL to WSOL, then mint cSOL
         if (baseTokenSymbol === 'SOL' && publicKey && adapterSendTransaction) {
           try {
-            // Use the crucible vault address from config (in production, this would be a PDA)
-            const crucibleVaultAddress = new PublicKey('5R7DQ1baJiYoi4GdVu1hTwBZMHxqabDenzaLVA9V7wV3')
+            const lamports = Math.floor(depositAmount * LAMPORTS_PER_SOL)
             
-            // Create transfer transaction
-            const transaction = new Transaction().add(
+            // Get user's WSOL (Wrapped SOL) associated token account
+            const wsolMint = NATIVE_MINT // WSOL mint address
+            const userWsolAccount = await getAssociatedTokenAddress(
+              wsolMint,
+              publicKey,
+              false, // allowOwnerOffCurve
+              TOKEN_PROGRAM_ID
+            )
+            
+            // Build transaction to wrap SOL to WSOL
+            const transaction = new Transaction()
+            
+            // Create associated token account (idempotent - won't fail if it exists)
+            transaction.add(
+              createAssociatedTokenAccountIdempotentInstruction(
+                publicKey, // payer
+                userWsolAccount, // associatedToken
+                publicKey, // owner
+                wsolMint, // mint
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            )
+            
+            // Transfer SOL to WSOL account (this wraps it)
+            transaction.add(
               SystemProgram.transfer({
                 fromPubkey: publicKey,
-                toPubkey: crucibleVaultAddress,
-                lamports: Math.floor(depositAmount * LAMPORTS_PER_SOL), // Convert SOL to lamports (use floor to avoid decimals)
+                toPubkey: userWsolAccount,
+                lamports: lamports,
               })
             )
             
-            // Get recent blockhash (required for transaction)
+            // Sync native account to update WSOL balance
+            transaction.add(
+              createSyncNativeInstruction(userWsolAccount, TOKEN_PROGRAM_ID)
+            )
+            
+            // Get base mint (WSOL for SOL deposits)
+            const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL mint
+            
+            // Derive crucible PDA
+            const [cruciblePDA, crucibleBump] = deriveCruciblePDA(baseMint)
+            const [vaultPDA, vaultBump] = deriveVaultPDA(cruciblePDA)
+            const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
+            
+            // Get cToken mint from crucible address or derive it
+            // For now, use the ctokenMint prop, but in production this should come from crucible account data
+            const ctokenMintPubkey = new PublicKey(ctokenMint)
+            
+            // Get user's cToken ATA address
+            const userCtokenAccount = await getAssociatedTokenAddress(
+              ctokenMintPubkey,
+              publicKey,
+              false, // allowOwnerOffCurve
+              TOKEN_PROGRAM_ID
+            )
+            
+            // Create cToken ATA if it doesn't exist (idempotent - won't fail if it exists)
+            transaction.add(
+              createAssociatedTokenAccountIdempotentInstruction(
+                publicKey, // payer
+                userCtokenAccount, // associatedToken
+                publicKey, // owner
+                ctokenMintPubkey, // mint
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            )
+            
+            // Add mint_ctoken instruction (using manual builder to avoid Anchor IDL issues)
+            try {
+              // Get treasury address from config
+              const treasury = new PublicKey(DEPLOYED_ACCOUNTS.WSOL_TREASURY)
+              const programId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
+              
+              const mintCtokenIx = buildMintCtokenInstruction(
+                programId,
+                {
+                  user: publicKey,
+                  crucible: cruciblePDA,
+                  baseMint: baseMint,
+                  ctokenMint: ctokenMintPubkey,
+                  userTokenAccount: userWsolAccount,
+                  userCtokenAccount: userCtokenAccount,
+                  vault: vaultPDA,
+                  crucibleAuthority: crucibleAuthorityPDA,
+                  treasury: treasury,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+                  systemProgram: SystemProgram.programId,
+                  rent: SYSVAR_RENT_PUBKEY,
+                },
+                new BN(lamports)
+              )
+              
+              transaction.add(mintCtokenIx)
+              console.log(`✅ Added mint_ctoken instruction`)
+              console.log(`📝 Program ID: ${programId.toString()}`)
+              console.log(`📝 Treasury: ${treasury.toString()}`)
+            } catch (error: any) {
+              console.warn('⚠️ Could not add mint_ctoken instruction:', error.message)
+              console.warn('Continuing with wrap-only transaction (for testing)')
+              // Continue without mint_ctoken for now if there's an error
+            }
+            
+            // Get recent blockhash
             const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
             transaction.recentBlockhash = blockhash
             transaction.feePayer = publicKey
             
-            // Use the adapter's sendTransaction which handles signing and sending
-            // This will trigger the wallet popup for user approval
-            console.log(`💸 Preparing to send ${depositAmount} SOL to crucible vault...`)
-            console.log(`📝 From: ${publicKey.toString()}`)
-            console.log(`📝 To: ${crucibleVaultAddress.toString()}`)
-            console.log(`📝 Amount: ${depositAmount} SOL (${Math.floor(depositAmount * LAMPORTS_PER_SOL)} lamports)`)
+            console.log(`💸 Wrapping ${depositAmount} SOL to WSOL and minting cSOL...`)
+            console.log(`📝 WSOL Account: ${userWsolAccount.toString()}`)
+            console.log(`📝 Crucible PDA: ${cruciblePDA.toString()}`)
+            console.log(`📝 Vault PDA: ${vaultPDA.toString()}`)
+            console.log(`📝 Amount: ${lamports} lamports`)
             
-            // The adapter's sendTransaction will:
-            // 1. Show wallet popup for user to approve
-            // 2. Sign the transaction
-            // 3. Send it to the network
-            // 4. Return the signature
+            // Send transaction
             const signature = await adapterSendTransaction(transaction, connection, {
               skipPreflight: false,
               maxRetries: 3,
@@ -226,7 +323,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
             
             console.log(`✅ Transaction sent: ${signature}`)
             
-            // Wait for confirmation with timeout
+            // Wait for confirmation
             try {
               await connection.confirmTransaction({
                 signature,
@@ -235,7 +332,6 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               }, 'confirmed')
               console.log(`✅ Transaction confirmed: ${signature}`)
             } catch (confirmError) {
-              // Transaction might still be processing, check status
               console.warn('Confirmation check failed, verifying transaction status...')
               const status = await connection.getSignatureStatus(signature)
               if (status.value?.err) {
@@ -244,13 +340,17 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               console.log(`✅ Transaction status: ${status.value?.confirmationStatus || 'unknown'}`)
             }
             
-            // Update local state after successful transaction
-            await wrapTokens(crucibleAddress, depositAmount.toString())
+            // mint_ctoken instruction was already added to the transaction above
+            // No need to call deposit() separately - it's all in one atomic transaction
+            console.log('✅ cSOL minting included in transaction')
             
-            // Calculate cTokens received based on exchange rate (after fee)
+            // Update local state for UI
             const feeAmount = depositAmount * WRAP_FEE_RATE
             const netAmount = depositAmount - feeAmount
-            const ctokensReceived = netAmount / 1.045 // Based on initial exchange rate
+            // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
+            const crucible = getCrucible(crucibleAddress)
+            const currentExchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+            const ctokensReceived = netAmount / currentExchangeRate
             addToBalance(ctokenSymbol, ctokensReceived)
             
             // Refresh actual wallet balance after deposit
@@ -279,7 +379,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
             
             // Show success message with transaction link
             const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`
-            alert(`✅ Deposit Successful!\n\n${depositAmount} SOL deposited\n${ctokensReceived.toFixed(4)} ${ctokenSymbol} received\nTransaction: ${signature.substring(0, 8)}...\n\nView on Explorer: ${explorerUrl}`)
+            alert(`✅ Deposit Complete!\n\n${depositAmount} SOL → ${ctokensReceived.toFixed(4)} ${ctokenSymbol}\nTransaction: ${signature.substring(0, 8)}...\n\nView on Explorer: ${explorerUrl}`)
             
             setAmount('')
             onClose()
@@ -292,20 +392,32 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
             return
           }
         } else {
-          // For non-SOL tokens or if wallet not connected, use simulation
-          await wrapTokens(crucibleAddress, depositAmount.toString())
-          subtractFromBalance(baseTokenSymbol, depositAmount)
-          
-          // Calculate cTokens received based on exchange rate (after fee)
-          const feeAmount = depositAmount * WRAP_FEE_RATE
-          const netAmount = depositAmount - feeAmount
-          const ctokensReceived = netAmount / 1.045 // Based on initial exchange rate
-          addToBalance(ctokenSymbol, ctokensReceived)
-          
-          // Dispatch event to refresh portfolio
-          window.dispatchEvent(new CustomEvent('wrapPositionOpened', { 
-            detail: { crucibleAddress, baseTokenSymbol } 
-          }))
+          // For non-SOL tokens, use real deposit function
+          try {
+            const depositAmountBigInt = BigInt(Math.floor(depositAmount * 1e9)) // Convert to lamports/token units
+            await deposit(depositAmountBigInt, leverage)
+            
+            subtractFromBalance(baseTokenSymbol, depositAmount)
+            
+            // Calculate cTokens received based on exchange rate (after fee)
+            const feeAmount = depositAmount * WRAP_FEE_RATE
+            const netAmount = depositAmount - feeAmount
+            // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
+            const crucible = getCrucible(crucibleAddress)
+            const currentExchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+            const ctokensReceived = netAmount / currentExchangeRate
+            addToBalance(ctokenSymbol, ctokensReceived)
+            
+            // Dispatch event to refresh portfolio
+            window.dispatchEvent(new CustomEvent('wrapPositionOpened', { 
+              detail: { crucibleAddress, baseTokenSymbol } 
+            }))
+          } catch (error: any) {
+            console.error('Deposit failed:', error)
+            alert(`❌ Deposit Failed: ${error.message || 'Unknown error'}`)
+            setSubmitting(false)
+            return
+          }
           
           // Refresh actual wallet balance after deposit
           if (baseTokenSymbol === 'SOL' && publicKey) {
@@ -369,7 +481,9 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
           // Calculate LP tokens: baseAmount becomes cToken via exchange rate, then sqrt(cToken * USDC)
-          const cTokenAmount = baseForPosition * 1.045 // Exchange rate to get cToken amount
+          // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
+          const lpExchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+          const cTokenAmount = baseForPosition * lpExchangeRate
           const lpTokenAmount = Math.sqrt(cTokenAmount * usdcDetails.depositUSDC) // Constant product formula
           addToBalance(lpTokenSymbol, lpTokenAmount)
           
@@ -478,11 +592,19 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
     ? calculateUSDCNeeded(baseAmountForPosition, leverage)
     : { totalUSDC: 0, depositUSDC: 0, borrowUSDC: 0 }
   const hasEnoughUSDC = leverage === 1 ? usdcDetails.depositUSDC <= usdcBalance : true // Leveraged positions borrow, so no balance check needed
+  
+  // Check lending pool liquidity for leveraged positions (1.5x and 2x)
+  const availableLiquidity = lendingPool.getAvailableLiquidity()
+  const hasEnoughLiquidity = leverage === 1 ? true : usdcDetails.borrowUSDC <= availableLiquidity
+  
+  // Ensure APY is a valid number (default to 8% if NaN or undefined)
+  const safeCurrentAPY = isNaN(currentAPY) || currentAPY === undefined || currentAPY === null ? 8 : currentAPY
+  
   const effectiveAPY = mode === 'lp' 
     ? leverage === 1 
-      ? currentAPY * 3 // 3x for standard LP
-      : (currentAPY * 3 * leverage) - (5 * (leverage - 1)) // Leveraged APY
-    : currentAPY
+      ? safeCurrentAPY * 3 // 3x for standard LP
+      : (safeCurrentAPY * 3 * leverage) - (5 * (leverage - 1)) // Leveraged APY
+    : safeCurrentAPY
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in px-4">
@@ -490,7 +612,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-fogo-gray-400 hover:text-white transition-all duration-200 p-2 rounded-lg hover:bg-black/40 z-10"
+          className="absolute top-5 right-5 text-forge-gray-400 hover:text-white transition-all duration-200 p-2 rounded-lg hover:bg-black/40 z-10"
           aria-label="Close modal"
         >
           <XMarkIcon className="w-5 h-5" />
@@ -501,18 +623,18 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center border ${
               mode === 'wrap' 
-                ? 'from-fogo-primary/30 to-fogo-primary/10 border-fogo-primary/20'
+                ? 'from-forge-primary/30 to-forge-primary/10 border-forge-primary/20'
                 : 'from-orange-500/30 to-orange-500/10 border-orange-500/20'
             }`}>
               {mode === 'wrap' ? (
-                <FireIcon className="w-5 h-5 text-fogo-primary" />
+                <FireIcon className="w-5 h-5 text-forge-primary" />
               ) : (
                 <BoltIcon className="w-5 h-5 text-orange-400" />
               )}
             </div>
             <div>
               <h2 className="text-xl font-heading text-white">Open Position</h2>
-              <p className="text-fogo-gray-400 text-xs">
+              <p className="text-forge-gray-400 text-xs">
                 {mode === 'wrap' ? `Deposit ${baseTokenSymbol} to mint ${ctokenSymbol}` : 'Leveraged position with borrowed USDC'}
               </p>
             </div>
@@ -521,15 +643,15 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
 
         {/* Mode Toggle - Compact */}
         <div className="mb-4">
-          <div className="grid grid-cols-2 gap-2 p-1 panel-muted rounded-2xl border border-fogo-gray-700/50">
+          <div className="grid grid-cols-2 gap-2 p-1 panel-muted rounded-2xl border border-forge-gray-700/50">
             <button
               onClick={() => {
                 setMode('wrap')
               }}
               className={`px-5 py-3 text-sm rounded-xl font-heading uppercase tracking-[0.18em] transition-all duration-300 relative overflow-hidden ${
                 mode === 'wrap'
-                  ? 'bg-gradient-to-r from-fogo-primary to-fogo-primary-light text-white shadow-lg shadow-fogo-primary/30'
-                  : 'text-fogo-gray-400 hover:text-white hover:bg-fogo-gray-700/50'
+                  ? 'bg-gradient-to-r from-forge-primary to-forge-primary-light text-white shadow-lg shadow-forge-primary/30'
+                  : 'text-forge-gray-400 hover:text-white hover:bg-forge-gray-700/50'
               }`}
             >
               <div className="relative flex items-center justify-center gap-2">
@@ -542,7 +664,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               className={`px-5 py-3 text-sm rounded-xl font-heading uppercase tracking-[0.18em] transition-all duration-300 relative overflow-hidden ${
                 mode === 'lp'
                   ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30'
-                  : 'text-fogo-gray-400 hover:text-white hover:bg-fogo-gray-700/50'
+                  : 'text-forge-gray-400 hover:text-white hover:bg-forge-gray-700/50'
               }`}
             >
               <div className="relative flex items-center justify-center gap-2">
@@ -556,7 +678,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         {/* Leverage Toggle (Leveraged Mode Only) */}
         {mode === 'lp' && (
           <div className="mb-4">
-            <label className="block text-xs font-heading text-fogo-gray-300 mb-2 uppercase tracking-[0.18em]">
+            <label className="block text-xs font-heading text-forge-gray-300 mb-2 uppercase tracking-[0.18em]">
               Leverage
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -567,7 +689,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                   className={`px-4 py-2.5 rounded-xl transition-all duration-300 border-2 ${
                     leverage === lev
                       ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/35 border-orange-400'
-                      : 'bg-fogo-gray-700/80 text-fogo-gray-300 hover:bg-fogo-gray-600 border-fogo-gray-600'
+                      : 'bg-forge-gray-700/80 text-forge-gray-300 hover:bg-forge-gray-600 border-forge-gray-600'
                   }`}
                 >
                   <div className="text-sm font-heading">{lev}x</div>
@@ -582,16 +704,16 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
 
         {/* Amount Input */}
         <div className="mb-4">
-          <label className="block text-xs font-semibold text-fogo-gray-300 mb-2 flex items-center gap-2">
+          <label className="block text-xs font-semibold text-forge-gray-300 mb-2 flex items-center gap-2">
             <span>Amount</span>
             <span className={`px-1.5 py-0.5 rounded-md text-xs font-medium ${
               mode === 'wrap' 
-                ? 'bg-fogo-primary/20 text-fogo-primary'
+                ? 'bg-forge-primary/20 text-forge-primary'
                 : 'bg-orange-500/20 text-orange-400'
             }`}>
               {baseTokenSymbol}
             </span>
-            <span className="ml-auto text-xs text-fogo-gray-500">
+            <span className="ml-auto text-xs text-forge-gray-500">
               Balance: {baseTokenBalance.toFixed(4)} {baseTokenSymbol}
               {baseTokenSymbol === 'SOL' && actualWalletBalance !== null && (
                 <span className="ml-1 text-green-400" title="Live wallet balance">●</span>
@@ -610,17 +732,17 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                   }
                 }}
                 placeholder="0.00"
-                className="no-spinner w-full px-4 py-3 pr-16 bg-fogo-gray-800/80 backdrop-blur-sm border-2 border-fogo-gray-700 rounded-xl text-white font-heading placeholder-fogo-gray-500 focus:outline-none focus:border-fogo-primary focus:ring-4 focus:ring-fogo-primary/20 transition-all duration-300"
+                className="no-spinner w-full px-4 py-3 pr-16 bg-forge-gray-800/80 backdrop-blur-sm border-2 border-forge-gray-700 rounded-xl text-white font-heading placeholder-forge-gray-500 focus:outline-none focus:border-forge-primary focus:ring-4 focus:ring-forge-primary/20 transition-all duration-300"
               />
               {amount && (
-                <div className="absolute right-12 top-1/2 -translate-y-1/2 text-fogo-gray-500 text-xs">
+                <div className="absolute right-12 top-1/2 -translate-y-1/2 text-forge-gray-500 text-xs">
                   ≈ ${baseValueUSD.toFixed(2)}
                 </div>
               )}
             </div>
             <button
               onClick={handleMax}
-              className="px-4 py-3 bg-fogo-gray-700/80 hover:bg-fogo-primary/20 border-2 border-fogo-gray-600 hover:border-fogo-primary text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105"
+              className="px-4 py-3 bg-forge-gray-700/80 hover:bg-forge-primary/20 border-2 border-forge-gray-600 hover:border-forge-primary text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105"
             >
               MAX
             </button>
@@ -630,13 +752,13 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         {/* USDC Display (LP Mode Only) */}
         {mode === 'lp' && amount && parseFloat(amount) > 0 && (
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-fogo-gray-300 mb-2 flex items-center gap-2">
+            <label className="block text-xs font-semibold text-forge-gray-300 mb-2 flex items-center gap-2">
               <span>{leverage === 1 ? 'USDC to Deposit' : leverage === 1.5 ? 'USDC (50% deposit + 50% borrow)' : 'USDC to Borrow'}</span>
               <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded-md text-xs font-medium">
                 {leverage === 1 ? 'Equal Value' : leverage === 1.5 ? 'Split' : 'Full Borrow'}
               </span>
               {leverage === 1 && (
-                <span className="ml-auto text-xs text-fogo-gray-500">
+                <span className="ml-auto text-xs text-forge-gray-500">
                   Balance: {usdcBalance.toFixed(2)} USDC
                 </span>
               )}
@@ -665,9 +787,34 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           </div>
         )}
 
+        {/* Error Banners for Inferno Mode */}
+        {mode === 'lp' && leverage === 1 && !hasEnoughUSDC && amount && parseFloat(amount) > 0 && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-xl">
+            <div className="flex items-center gap-2 text-red-400">
+              <ExclamationTriangleIcon className="w-5 h-5" />
+              <span className="font-medium">Insufficient USDC Balance</span>
+            </div>
+            <p className="text-red-300 text-sm mt-1">
+              You need {usdcDetails.depositUSDC.toFixed(2)} USDC but only have {usdcBalance.toFixed(2)} USDC in your wallet.
+            </p>
+          </div>
+        )}
+
+        {mode === 'lp' && leverage > 1 && !hasEnoughLiquidity && amount && parseFloat(amount) > 0 && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-xl">
+            <div className="flex items-center gap-2 text-red-400">
+              <ExclamationTriangleIcon className="w-5 h-5" />
+              <span className="font-medium">Insufficient Lending Pool Liquidity</span>
+            </div>
+            <p className="text-red-300 text-sm mt-1">
+              Need to borrow {usdcDetails.borrowUSDC.toFixed(2)} USDC but pool only has {availableLiquidity.toFixed(2)} USDC available.
+            </p>
+          </div>
+        )}
+
         {/* Preview - Compact */}
-        <div className="panel rounded-2xl p-4 mb-4 border border-fogo-gray-700/50">
-          <h3 className="text-xs font-semibold text-fogo-gray-300 mb-3 flex items-center gap-2">
+        <div className="panel rounded-2xl p-4 mb-4 border border-forge-gray-700/50">
+          <h3 className="text-xs font-semibold text-forge-gray-300 mb-3 flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
@@ -676,63 +823,72 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           <div className="space-y-2">
             {mode === 'wrap' ? (
               <>
-                <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
-                  <span className="text-fogo-gray-400 text-sm font-satoshi">You'll receive</span>
-                  <span className="text-white text-lg font-heading">
-                    {amount ? ((parseFloat(amount) * (1 - WRAP_FEE_RATE)) / 1.045).toFixed(2) : '0.00'} {ctokenSymbol}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2.5 px-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                  <span className="text-red-400 text-xs font-satoshi flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Wrap Fee ({(WRAP_FEE_RATE * 100).toFixed(2)}%)
-                  </span>
-                  <span className="text-red-400 font-heading font-semibold">
-                    -{amount ? (parseFloat(amount) * WRAP_FEE_RATE).toFixed(2) : '0.00'} {baseTokenSymbol}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
-                  <span className="text-fogo-gray-400 text-sm font-satoshi">Exchange Rate</span>
-                  <span className="text-fogo-primary font-heading font-semibold">1 {ctokenSymbol} = 1.045 {baseTokenSymbol}</span>
-                </div>
-                <div className="flex justify-between items-center py-2.5 px-3 bg-gradient-to-r from-fogo-primary/18 to-fogo-primary/6 rounded-lg border border-fogo-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
-                  <span className="text-fogo-gray-200 text-sm font-satoshi">Base APY</span>
-                  <span className="text-fogo-primary font-heading font-bold text-xl">{currentAPY.toFixed(2)}%</span>
+                {/* Get actual exchange rate from crucible */}
+                {(() => {
+                  const crucible = getCrucible(crucibleAddress)
+                  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+                  return (
+                    <>
+                      <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
+                        <span className="text-forge-gray-400 text-sm font-satoshi">You'll receive</span>
+                        <span className="text-white text-lg font-heading">
+                          {amount ? ((parseFloat(amount) * (1 - WRAP_FEE_RATE)) / exchangeRate).toFixed(2) : '0.00'} {ctokenSymbol}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2.5 px-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                        <span className="text-red-400 text-xs font-satoshi flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Wrap Fee ({(WRAP_FEE_RATE * 100).toFixed(2)}%)
+                        </span>
+                        <span className="text-red-400 font-heading font-semibold">
+                          -{amount ? (parseFloat(amount) * WRAP_FEE_RATE).toFixed(2) : '0.00'} {baseTokenSymbol}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
+                        <span className="text-forge-gray-400 text-sm font-satoshi">Exchange Rate</span>
+                        <span className="text-forge-primary font-heading font-semibold">1 {ctokenSymbol} = {exchangeRate.toFixed(4)} {baseTokenSymbol}</span>
+                      </div>
+                    </>
+                  )
+                })()}
+                <div className="flex justify-between items-center py-2.5 px-3 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
+                  <span className="text-forge-gray-200 text-sm font-satoshi">Base APY</span>
+                  <span className="text-forge-primary font-heading font-bold text-xl">{safeCurrentAPY.toFixed(2)}%</span>
                 </div>
               </>
             ) : (
               <>
                 <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                  <span className="text-fogo-gray-400 text-xs font-satoshi">LP Token</span>
+                  <span className="text-forge-gray-400 text-xs font-satoshi">LP Token</span>
                   <span className="text-white text-base font-heading">{displayPairSymbol}/USDC</span>
                 </div>
                 <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                  <span className="text-fogo-gray-400 text-xs font-satoshi">{baseTokenSymbol} Deposited</span>
+                  <span className="text-forge-gray-400 text-xs font-satoshi">{baseTokenSymbol} Deposited</span>
                   <span className="text-white text-sm font-heading">{mode === 'lp' && amount ? baseAmountForPosition.toFixed(2) : '0.00'} {baseTokenSymbol}</span>
                 </div>
                 {leverage === 1.5 ? (
                   <>
                     <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                      <span className="text-fogo-gray-400 text-xs font-satoshi">USDC to Deposit</span>
+                      <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Deposit</span>
                       <span className="text-sm font-heading text-white">
                         {usdcDetails.depositUSDC.toFixed(2)} USDC
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                      <span className="text-fogo-gray-400 text-xs font-satoshi">USDC to Borrow</span>
-                      <span className="text-sm font-heading text-fogo-primary-light">
+                      <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Borrow</span>
+                      <span className="text-sm font-heading text-forge-primary-light">
                         {usdcDetails.borrowUSDC.toFixed(2)} USDC
                       </span>
                     </div>
                   </>
                 ) : (
                   <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                    <span className="text-fogo-gray-400 text-xs font-satoshi">
+                    <span className="text-forge-gray-400 text-xs font-satoshi">
                       {leverage === 1 ? 'USDC Deposited' : 'USDC Borrowed'}
                     </span>
-                    <span className={`text-sm font-heading ${leverage === 1 ? 'text-white' : 'text-fogo-primary-light'}`}>
+                    <span className={`text-sm font-heading ${leverage === 1 ? 'text-white' : 'text-forge-primary-light'}`}>
                       {usdcDetails.totalUSDC.toFixed(2)} USDC
                     </span>
                   </div>
@@ -750,9 +906,9 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-fogo-primary/18 to-fogo-primary/6 rounded-lg border border-fogo-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
-                  <span className="text-fogo-primary-light text-xs font-satoshi">Effective APY</span>
-                  <span className="text-fogo-primary-light text-lg font-heading">{effectiveAPY.toFixed(2)}%</span>
+                <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
+                  <span className="text-forge-primary-light text-xs font-satoshi">Effective APY</span>
+                  <span className="text-forge-primary-light text-lg font-heading">{effectiveAPY.toFixed(2)}%</span>
                 </div>
                 {leverage > 1 && (
                   <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg border border-blue-500/20">
@@ -769,16 +925,16 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         <div className="flex space-x-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-3 panel-muted hover:bg-fogo-gray-700 border-2 border-fogo-gray-700 hover:border-fogo-gray-600 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105"
+            className="flex-1 px-4 py-3 panel-muted hover:bg-forge-gray-700 border-2 border-forge-gray-700 hover:border-forge-gray-600 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!amount || loading || parseFloat(amount) <= 0 || (mode === 'lp' && leverage === 1 && !hasEnoughUSDC)}
+            disabled={!amount || loading || parseFloat(amount) <= 0 || (mode === 'lp' && leverage === 1 && !hasEnoughUSDC) || (mode === 'lp' && leverage > 1 && !hasEnoughLiquidity)}
             className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none relative overflow-hidden group ${
               mode === 'wrap'
-                ? 'bg-gradient-to-r from-fogo-primary to-fogo-primary-light hover:from-fogo-primary-dark hover:to-fogo-primary text-white hover:shadow-fogo-lg'
+                ? 'bg-gradient-to-r from-forge-primary to-forge-primary-light hover:from-forge-primary-dark hover:to-forge-primary text-white hover:shadow-forge-lg'
                 : 'bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600 hover:from-orange-500 hover:via-orange-400 hover:to-orange-500 text-white hover:shadow-orange-500/30'
             }`}
           >

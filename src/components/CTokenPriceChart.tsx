@@ -20,11 +20,21 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
   // Where t is in days, APY is the annual percentage yield
   const apy = crucible.apr
   const daysInYear = 365
-  const initialPrice = crucible.baseToken === 'FORGE' ? 0.002 : 200
+  const baseTokenPrice = 200 // SOL price in USD
   
-  // The final price after 1 year (from accumulated exchange rate)
-  // This represents the price after deposits where we "fast forward" to show accumulated yield
-  const finalPrice = crucible.baseToken === 'FORGE' ? 0.0025 : 208
+  // Get current exchange rate from on-chain data
+  // exchange_rate is scaled by 1_000_000 on-chain (1.0 = 1_000_000)
+  const currentExchangeRate = crucible.exchangeRate 
+    ? Number(crucible.exchangeRate) / 1_000_000 
+    : 1.0
+  
+  // cToken price = baseTokenPrice * exchangeRate
+  // When exchange rate is 1.0, cToken price = SOL price
+  // As yield accumulates, exchange rate grows, so cToken price grows
+  const initialPrice = baseTokenPrice * currentExchangeRate
+  
+  // Project the final price after 1 year using APY
+  const finalPrice = initialPrice * (1 + apy)
 
   // Generate data points for the year
   const generateChartData = () => {
@@ -70,23 +80,23 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
         onClick={onClose}
       />
       
-      <div className="relative panel border border-fogo-primary/30 w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="relative panel border border-forge-primary/30 w-full max-w-4xl max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-fogo-gray-700 panel">
+        <div className="p-6 border-b border-forge-gray-700 panel">
           <div className="flex items-center justify-between mb-2">
             <div>
               <h3 className="text-2xl font-heading text-white">
                 {crucible.ptokenSymbol} Price Projection
               </h3>
-              <p className="text-fogo-gray-400 text-sm mt-1">
+              <p className="text-forge-gray-400 text-sm mt-1">
                 Price growth over 1 year based on {formatPercentage(apy)} APY
               </p>
             </div>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-fogo-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-forge-gray-700 rounded-lg transition-colors"
             >
-              <XMarkIcon className="h-6 w-6 text-fogo-gray-400" />
+              <XMarkIcon className="h-6 w-6 text-forge-gray-400" />
             </button>
           </div>
         </div>
@@ -95,43 +105,43 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-fogo-primary/10 to-fogo-primary/5 rounded-xl p-4 border border-fogo-primary/20">
-              <div className="text-sm text-fogo-gray-300 mb-1">Start Price</div>
-              <div className="text-2xl font-bold text-fogo-primary">
+            <div className="bg-gradient-to-br from-forge-primary/10 to-forge-primary/5 rounded-xl p-4 border border-forge-primary/20">
+              <div className="text-sm text-forge-gray-300 mb-1">Start Price</div>
+              <div className="text-2xl font-bold text-forge-primary">
                 ${todayPrice.toFixed(4)}
               </div>
-              <div className="text-xs text-fogo-gray-400 mt-1">At deposit</div>
+              <div className="text-xs text-forge-gray-400 mt-1">At deposit</div>
             </div>
-            <div className="bg-gradient-to-br from-fogo-accent/10 to-fogo-accent/5 rounded-xl p-4 border border-fogo-accent/20">
-              <div className="text-sm text-fogo-gray-300 mb-1">End Price (1 year)</div>
-              <div className="text-2xl font-bold text-fogo-accent">
+            <div className="bg-gradient-to-br from-forge-accent/10 to-forge-accent/5 rounded-xl p-4 border border-forge-accent/20">
+              <div className="text-sm text-forge-gray-300 mb-1">End Price (1 year)</div>
+              <div className="text-2xl font-bold text-forge-accent">
                 ${yearEndPrice.toFixed(4)}
               </div>
-              <div className="text-xs text-fogo-gray-400 mt-1">After 1 year</div>
+              <div className="text-xs text-forge-gray-400 mt-1">After 1 year</div>
             </div>
-            <div className="bg-gradient-to-br from-fogo-success/10 to-fogo-success/5 rounded-xl p-4 border border-fogo-success/20">
-              <div className="text-sm text-fogo-gray-300 mb-1">APY Rate</div>
-              <div className="text-2xl font-bold text-fogo-success">
+            <div className="bg-gradient-to-br from-forge-success/10 to-forge-success/5 rounded-xl p-4 border border-forge-success/20">
+              <div className="text-sm text-forge-gray-300 mb-1">APY Rate</div>
+              <div className="text-2xl font-bold text-forge-success">
                 {formatPercentage(apy)}
               </div>
-              <div className="text-xs text-fogo-gray-400 mt-1">Annual Percentage Yield</div>
+              <div className="text-xs text-forge-gray-400 mt-1">Annual Percentage Yield</div>
             </div>
             <div className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 rounded-xl p-4 border border-purple-500/20">
-              <div className="text-sm text-fogo-gray-300 mb-1">Price Increase</div>
+              <div className="text-sm text-forge-gray-300 mb-1">Price Increase</div>
               <div className="text-2xl font-bold text-purple-400">
                 {priceIncreasePercent.toFixed(2)}%
               </div>
-              <div className="text-xs text-fogo-gray-400 mt-1">Actual growth</div>
+              <div className="text-xs text-forge-gray-400 mt-1">Actual growth</div>
             </div>
           </div>
 
           {/* Chart */}
-          <div className="panel rounded-xl p-4 border border-fogo-gray-700">
+          <div className="panel rounded-xl p-4 border border-forge-gray-700">
             <div className="mb-4">
               <h4 className="text-lg font-semibold text-white mb-1">
                 {crucible.ptokenSymbol} Price Growth
               </h4>
-              <p className="text-sm text-fogo-gray-400">
+              <p className="text-sm text-forge-gray-400">
                 Price increases over time as yield accumulates
               </p>
             </div>
@@ -186,9 +196,9 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
           </div>
 
           {/* Info Section */}
-          <div className="mt-6 panel rounded-xl p-4 border border-fogo-primary/20">
-            <h4 className="text-sm font-semibold text-fogo-primary mb-2">How it works</h4>
-            <div className="text-xs text-fogo-gray-300 space-y-1">
+          <div className="mt-6 panel rounded-xl p-4 border border-forge-primary/20">
+            <h4 className="text-sm font-semibold text-forge-primary mb-2">How it works</h4>
+            <div className="text-xs text-forge-gray-300 space-y-1">
               <div>• At deposit: 1 {crucible.baseToken} = 1 {crucible.ptokenSymbol} (1:1 exchange rate)</div>
               <div>• Initial {crucible.ptokenSymbol} price: ${todayPrice.toFixed(4)} (same as {crucible.baseToken})</div>
               <div>• Over time: {crucible.ptokenSymbol} price increases through exchange rate growth</div>

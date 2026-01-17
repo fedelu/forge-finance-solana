@@ -3,7 +3,7 @@ import { Program } from "@coral-xyz/anchor";
 import { ForgeCrucibles } from "../target/types/forge_crucibles";
 import { expect } from "chai";
 
-describe("pFOGO/pUSDC MVP Tests", () => {
+describe("pFORGE/pUSDC MVP Tests", () => {
   // Configure the client to use the local cluster
   anchor.setProvider(anchor.AnchorProvider.env());
 
@@ -11,11 +11,11 @@ describe("pFOGO/pUSDC MVP Tests", () => {
   const provider = anchor.getProvider();
 
   // Test accounts
-  let fogoCrucible: anchor.web3.PublicKey;
+  let forgeCrucible: anchor.web3.PublicKey;
   let usdcCrucible: anchor.web3.PublicKey;
-  let fogoMint: anchor.web3.PublicKey;
+  let forgeMint: anchor.web3.PublicKey;
   let usdcMint: anchor.web3.PublicKey;
-  let pfogoMint: anchor.web3.PublicKey;
+  let pforgeMint: anchor.web3.PublicKey;
   let pusdcMint: anchor.web3.PublicKey;
   let user: anchor.web3.Keypair;
   let engineer: anchor.web3.Keypair;
@@ -30,14 +30,14 @@ describe("pFOGO/pUSDC MVP Tests", () => {
     await provider.connection.requestAirdrop(engineer.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
 
     // Create test mints
-    fogoMint = anchor.web3.Keypair.generate().publicKey;
+    forgeMint = anchor.web3.Keypair.generate().publicKey;
     usdcMint = anchor.web3.Keypair.generate().publicKey;
-    pfogoMint = anchor.web3.Keypair.generate().publicKey;
+    pforgeMint = anchor.web3.Keypair.generate().publicKey;
     pusdcMint = anchor.web3.Keypair.generate().publicKey;
 
     // Create crucible PDAs
-    [fogoCrucible] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("crucible"), fogoMint.toBuffer()],
+    [forgeCrucible] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("crucible"), forgeMint.toBuffer()],
       program.programId
     );
 
@@ -47,10 +47,10 @@ describe("pFOGO/pUSDC MVP Tests", () => {
     );
   });
 
-  it("Should initialize FOGO crucible with correct parameters", async () => {
-    // This test would initialize a FOGO crucible
+  it("Should initialize FORGE crucible with correct parameters", async () => {
+    // This test would initialize a FORGE crucible
     // In a real implementation, you would call the initialize_crucible instruction
-    console.log("FOGO Crucible would be initialized here");
+    console.log("FORGE Crucible would be initialized here");
     expect(true).to.be.true; // Placeholder
   });
 
@@ -60,19 +60,19 @@ describe("pFOGO/pUSDC MVP Tests", () => {
     expect(true).to.be.true; // Placeholder
   });
 
-  it("Should wrap FOGO with 0.3% fee", async () => {
-    // Test wrapping FOGO to pFOGO with fee calculation
-    const wrapAmount = new anchor.BN(1000 * 1e9); // 1000 FOGO
-    const expectedFee = new anchor.BN(3 * 1e9); // 0.3% fee = 3 FOGO
-    const expectedNetAmount = wrapAmount.sub(expectedFee); // 997 FOGO
+  it("Should wrap FORGE with 0.3% fee", async () => {
+    // Test wrapping FORGE to pFORGE with fee calculation
+    const wrapAmount = new anchor.BN(1000 * 1e9); // 1000 FORGE
+    const expectedFee = new anchor.BN(3 * 1e9); // 0.3% fee = 3 FORGE
+    const expectedNetAmount = wrapAmount.sub(expectedFee); // 997 FORGE
 
     console.log(`Wrap amount: ${wrapAmount.toString()}`);
     console.log(`Expected fee: ${expectedFee.toString()}`);
     console.log(`Expected net: ${expectedNetAmount.toString()}`);
 
     // In a real implementation, you would call the wrap instruction
-    expect(expectedFee.toNumber()).to.equal(3000000000); // 3 FOGO in lamports
-    expect(expectedNetAmount.toNumber()).to.equal(997000000000); // 997 FOGO in lamports
+    expect(expectedFee.toNumber()).to.equal(3000000000); // 3 FORGE in lamports
+    expect(expectedNetAmount.toNumber()).to.equal(997000000000); // 997 FORGE in lamports
   });
 
   it("Should wrap USDC with 0.3% fee", async () => {
@@ -89,9 +89,9 @@ describe("pFOGO/pUSDC MVP Tests", () => {
     expect(expectedNetAmount.toNumber()).to.equal(997000000); // 997 USDC in micro-units
   });
 
-  it("Should unwrap pFOGO with 0.3% fee", async () => {
-    // Test unwrapping pFOGO to FOGO with fee calculation
-    const unwrapAmount = new anchor.BN(1000 * 1e9); // 1000 pFOGO
+  it("Should unwrap pFORGE with 0.3% fee", async () => {
+    // Test unwrapping pFORGE to FORGE with fee calculation
+    const unwrapAmount = new anchor.BN(1000 * 1e9); // 1000 pFORGE
     const exchangeRate = new anchor.BN(1e9); // 1:1 rate
     const baseAmount = unwrapAmount.mul(exchangeRate).div(new anchor.BN(1e9));
     const expectedFee = baseAmount.mul(new anchor.BN(30)).div(new anchor.BN(10000)); // 0.3%
@@ -102,8 +102,8 @@ describe("pFOGO/pUSDC MVP Tests", () => {
     console.log(`Expected fee: ${expectedFee.toString()}`);
     console.log(`Expected net: ${expectedNetAmount.toString()}`);
 
-    expect(expectedFee.toNumber()).to.equal(3000000000); // 3 FOGO in lamports
-    expect(expectedNetAmount.toNumber()).to.equal(997000000000); // 997 FOGO in lamports
+    expect(expectedFee.toNumber()).to.equal(3000000000); // 3 FORGE in lamports
+    expect(expectedNetAmount.toNumber()).to.equal(997000000000); // 997 FORGE in lamports
   });
 
   it("Should unwrap pUSDC with 0.3% fee", async () => {
@@ -157,14 +157,14 @@ describe("pFOGO/pUSDC MVP Tests", () => {
 
   it("Should handle wrap/unwrap roundtrip correctly", async () => {
     // Test complete wrap/unwrap cycle
-    const initialAmount = new anchor.BN(1000 * 1e9); // 1000 FOGO
+    const initialAmount = new anchor.BN(1000 * 1e9); // 1000 FORGE
     const feeRate = 0.003; // 0.3%
     
-    // Wrap: 1000 FOGO -> pFOGO
+    // Wrap: 1000 FORGE -> pFORGE
     const wrapFee = initialAmount.mul(new anchor.BN(30)).div(new anchor.BN(10000));
     const netWrapped = initialAmount.sub(wrapFee);
     
-    // Unwrap: pFOGO -> FOGO (with exchange rate growth)
+    // Unwrap: pFORGE -> FORGE (with exchange rate growth)
     const exchangeRate = new anchor.BN(1.05e9); // 5% growth
     const baseAmount = netWrapped.mul(exchangeRate).div(new anchor.BN(1e9));
     const unwrapFee = baseAmount.mul(new anchor.BN(30)).div(new anchor.BN(10000));

@@ -1,11 +1,11 @@
-# 🔥 Forge Finance - FOGO DeFi Protocol
+# 🔥 Forge Finance - Solana DeFi Protocol
 
-A comprehensive DeFi protocol built on FOGO (Solana-compatible), featuring token wrapping (cTokens), leveraged positions, lending pools, and yield farming capabilities.
+A comprehensive DeFi protocol built on Solana, featuring token wrapping (cTokens), leveraged positions, lending pools, and yield farming capabilities.
 
 ## 🚀 Features
 
 ### 🏦 **Token Wrapping (cTokens)**
-- Wrap FOGO and FORGE tokens into yield-bearing cTokens (cFOGO, cFORGE)
+- Wrap SOL tokens into yield-bearing cTokens (cSOL)
 - Earn APY through exchange rate appreciation
 - Real-time balance tracking and portfolio management
 - Seamless wrap/unwrap operations
@@ -28,11 +28,6 @@ A comprehensive DeFi protocol built on FOGO (Solana-compatible), featuring token
 - Real-time APY earnings tracking
 - Performance metrics and insights
 
-### 🔥 **FOGO Sessions Integration**
-- Gasless transaction support (when paymaster enabled)
-- Session-based authentication
-- Seamless wallet integration with Phantom
-
 ## 🛠️ **Technology Stack**
 
 ### **Frontend**
@@ -43,8 +38,7 @@ A comprehensive DeFi protocol built on FOGO (Solana-compatible), featuring token
 - **Framer Motion** - Animations
 
 ### **Blockchain**
-- **FOGO Testnet** - Official FOGO test network
-- **FOGO Sessions SDK** - Gasless transactions (paymaster disabled - see [DEPLOYMENT_STATUS.md](docs/DEPLOYMENT_STATUS.md))
+- **Solana Devnet** - Solana test network for development
 - **Solana Web3.js** - Blockchain interaction
 - **Phantom Wallet** - Primary wallet support
 
@@ -135,12 +129,12 @@ npm test
 
 2. **Wrap Tokens**
    - Navigate to the main dashboard
-   - Select FOGO or FORGE token
+   - Select SOL or FORGE token
    - Enter amount to wrap
    - Confirm transaction to receive cTokens
 
 3. **Create Leveraged Positions**
-   - Select a token pair (cFOGO/USDC or cFORGE/USDC)
+   - Select a token pair (cSOL/USDC or cFORGE/USDC)
    - Choose leverage multiplier (1.5x or 2x)
    - Deposit collateral and borrow USDC
    - Monitor health factor
@@ -170,7 +164,7 @@ npm test
 
 3. **Integration**
    - Connect new wallets via `src/contexts/WalletContext.tsx`
-   - Add new token types in `src/config/fogo-testnet.ts`
+   - Add new token types in `src/config/solana-testnet.ts`
    - Extend functionality with custom hooks
 
 ## 🏗️ **Architecture**
@@ -188,7 +182,6 @@ forge-finance/
 │   ├── contexts/          # State management (Balance, Crucible, Analytics)
 │   ├── pages/             # Next.js pages
 │   ├── hooks/             # Custom React hooks
-│   ├── lib/               # FOGO Sessions integration
 │   ├── utils/             # Utility functions
 │   └── config/            # Configuration files
 ├── sdk/                   # TypeScript SDK
@@ -241,15 +234,15 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📚 **Documentation**
 
-- **[Deployment Status](docs/DEPLOYMENT_STATUS.md)** - Current smart contract deployment status, FOGO Sessions status, and missing features
+- **[Deployment Status](docs/DEPLOYMENT_STATUS.md)** - Current smart contract deployment status and missing features
 - **[cToken-LVF Integration](docs/ctoken-lvf-integration.md)** - Technical documentation on cToken and leveraged position integration
 - **[Lending-LVF Architecture](docs/lending-lvf-architecture.md)** - Architecture documentation for lending and leveraged positions
 - **[MVP Documentation](docs/mvp-pfogo-pusdc.md)** - MVP feature documentation
 
 ## 🔗 **Links**
 
-- **FOGO Testnet**: [testnet.fogo.io](https://testnet.fogo.io)
-- **FOGO Explorer**: [explorer.fogo.io](https://explorer.fogo.io)
+- **Solana Explorer**: [explorer.solana.com](https://explorer.solana.com)
+- **Solana Devnet**: [api.devnet.solana.com](https://api.devnet.solana.com)
 
 ## 🙏 **Acknowledgments**
 

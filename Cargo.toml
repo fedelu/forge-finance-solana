@@ -2,12 +2,9 @@
 members = [
     "programs/forge-core",
     "programs/forge-crucibles",
-    "programs/forge-sparks",
-    "programs/forge-smelters",
-    "programs/forge-heat",
-    "programs/forge-reactors",
-    "programs/forge-firewall",
-    "programs/forge-engineers",
+    "programs/lending",
+    "programs/lending-pool",
+    "programs/lvf",
 ]
 resolver = "2"
 

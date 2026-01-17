@@ -7,7 +7,7 @@ export function compileTransaction() {
 }
 export const TRANSACTION_MESSAGE_VERSION = 0;
 
-// Additional exports for compatibility (previously used by @fogo/sessions-sdk)
+// Additional exports for compatibility
 export function createTransactionMessage() {
   return {};
 }

@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { PublicKey } from '@solana/web3.js'
+import { PublicKey, SystemProgram } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token'
+import * as anchor from '@coral-xyz/anchor'
+import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
 // Removed useSession - using useWallet directly
 import { useCrucible as useCrucibleContext } from '../contexts/CrucibleContext'
@@ -11,11 +14,24 @@ import {
   INFERNO_CLOSE_FEE_RATE,
   INFERNO_YIELD_FEE_RATE,
 } from '../config/fees'
+import { 
+  getLendingPoolProgram, 
+  getMarketState, 
+  getBorrowerAccount,
+  calculateBorrowInterest,
+  getLendingPoolPDA,
+  getPoolVaultPDA,
+  getBorrowerAccountPDA,
+  type AnchorWallet
+} from '../utils/lendingProgram'
+import { getCruciblesProgram } from '../utils/anchorProgram'
+import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA, deriveLeveragedPositionPDA } from '../utils/cruciblePdas'
+import { SOLANA_TESTNET_CONFIG, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 
 interface LeveragedPosition {
   id: string
   owner: string
-  token: string // 'FOGO' or 'FORGE'
+  token: string // 'SOL'
   collateral: number // Base token amount
   borrowedUSDC: number
   depositUSDC?: number // USDC deposited (for 1.5x leverage)
@@ -30,13 +46,13 @@ interface LeveragedPosition {
 
 interface UseLVFPositionProps {
   crucibleAddress: string
-  baseTokenSymbol: 'SOL' | 'FORGE'
+  baseTokenSymbol: 'SOL'
 }
 
 export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPositionProps) {
   // Check wallet connection - using Solana devnet directly
   let walletContext: any = null
-  const sessionContext: any = null // Removed FOGO Sessions
+  const sessionContext: any = null // Using Solana devnet directly
   
   // Try WalletContext as fallback
   try {
@@ -135,59 +151,127 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
 
     try {
       setLoading(true)
-      // TODO: In production, fetch from on-chain
-      // For now, fetch from localStorage (mock)
-      try {
-        const storedPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
-        console.log('📊 All stored leveraged positions:', storedPositions.length)
-        
-        // Get all possible wallet address formats
-        const walletAddresses = [
-          currentPublicKey.toBase58(),
-          currentPublicKey.toString(),
-          publicKey?.toBase58(),
-          publicKey?.toString(),
-        ].filter(Boolean) as string[]
-        
-        console.log('🔍 Looking for positions with:', {
-          walletAddresses,
-          token: baseTokenSymbol
-        })
-        
-        // Filter positions for this crucible and wallet
-        // Check all owner formats to handle different wallet address formats
-        const userPositions = storedPositions.filter((p: LeveragedPosition) => {
-          const ownerMatch = walletAddresses.some(addr => p.owner === addr || p.owner?.toLowerCase() === addr?.toLowerCase())
-          const tokenMatch = p.token === baseTokenSymbol
-          const isOpen = p.isOpen === true // Strict check
-          
-          const matches = ownerMatch && tokenMatch && isOpen
-          
-          if (matches) {
-            console.log('✅ Found matching position:', {
-              id: p.id,
-              owner: p.owner,
-              token: p.token,
-              isOpen
-            })
+      const userPositions: LeveragedPosition[] = []
+      let fetchedFromChain = false
+      
+      // PRIORITY 1: Fetch from on-chain
+      if (walletContext?.connection && crucibleAddress) {
+        try {
+          const connection = walletContext.connection
+          const anchorWallet: AnchorWallet = {
+            publicKey: currentPublicKey,
+            signTransaction: walletContext?.signTransaction || (async (tx: any) => tx),
+            signAllTransactions: walletContext?.signAllTransactions || (async (txs: any[]) => txs),
           }
+          const program = getCruciblesProgram(connection, anchorWallet)
+          const cruciblePDA = new PublicKey(crucibleAddress)
           
-          return matches
-        })
-        
-        console.log('✅ Found', userPositions.length, 'matching positions for', baseTokenSymbol)
-        setPositions(userPositions)
-      } catch (e) {
-        console.warn('Failed to load positions from storage:', e)
-        setPositions([])
+          // Derive position PDA using the new function
+          const [positionPDA] = deriveLeveragedPositionPDA(currentPublicKey, cruciblePDA)
+          
+          console.log('🔍 Fetching LVF position from on-chain:', positionPDA.toString())
+          
+          // Try to fetch position account from on-chain
+          try {
+            const positionAccount = await program.account.leveragedPosition.fetch(positionPDA)
+            
+            if (positionAccount.isOpen) {
+              // Convert on-chain position to LeveragedPosition interface
+              const baseTokenPrice = 200 // SOL price (could fetch from oracle)
+              const collateralNum = Number(positionAccount.collateral) / 1e9 // Convert lamports to SOL
+              const borrowedUsdcNum = Number(positionAccount.borrowedUsdc) / 1e6 // Convert USDC decimals
+              const leverageFactorNum = Number(positionAccount.leverageFactor) / 100 // 150 -> 1.5, 200 -> 2.0
+              const entryPriceNum = Number(positionAccount.entryPrice) / 1_000_000 // Convert from scaled
+              
+              const onChainPosition: LeveragedPosition = {
+                id: positionPDA.toString(),
+                owner: positionAccount.owner.toBase58(),
+                token: baseTokenSymbol,
+                collateral: collateralNum,
+                borrowedUSDC: borrowedUsdcNum,
+                depositUSDC: leverageFactorNum === 1.5 ? collateralNum * baseTokenPrice * 0.5 : 0,
+                leverageFactor: leverageFactorNum,
+                entryPrice: entryPriceNum,
+                currentValue: collateralNum * baseTokenPrice * leverageFactorNum,
+                yieldEarned: Number(positionAccount.yieldEarned) / 1e9,
+                timestamp: Number(positionAccount.createdAt),
+                isOpen: positionAccount.isOpen,
+                health: borrowedUsdcNum > 0 ? (collateralNum * baseTokenPrice / borrowedUsdcNum) * 100 : 999,
+              }
+              
+              userPositions.push(onChainPosition)
+              fetchedFromChain = true
+              console.log('✅ Fetched LVF position from on-chain:', onChainPosition.id)
+              
+              // Update localStorage cache with on-chain data
+              try {
+                const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
+                const existingIndex = allStoredPositions.findIndex((p: LeveragedPosition) => p.id === onChainPosition.id)
+                if (existingIndex >= 0) {
+                  allStoredPositions[existingIndex] = onChainPosition
+                } else {
+                  allStoredPositions.push(onChainPosition)
+                }
+                localStorage.setItem('leveraged_positions', JSON.stringify(allStoredPositions))
+              } catch (cacheError) {
+                console.warn('Failed to update localStorage cache:', cacheError)
+              }
+            }
+          } catch (fetchError: any) {
+            // Position doesn't exist on-chain - this is valid (user has no position)
+            // Check if it's an "Account does not exist" error which is expected
+            if (fetchError?.message?.includes('Account does not exist') || 
+                fetchError?.message?.includes('could not find') ||
+                fetchError?.toString()?.includes('Account does not exist')) {
+              console.log('📝 No on-chain LVF position found for user (this is normal if no position exists)')
+            } else {
+              console.warn('Error fetching on-chain position:', fetchError)
+            }
+          }
+        } catch (programError) {
+          console.warn('Failed to initialize program for on-chain fetch:', programError)
+        }
       }
+      
+      // PRIORITY 2: Fallback to localStorage ONLY if on-chain fetch failed due to connection issues
+      // (not if position simply doesn't exist on-chain)
+      if (!fetchedFromChain && !walletContext?.connection) {
+        console.log('📦 No connection available, falling back to localStorage cache')
+        try {
+          const storedPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
+          
+          // Get all possible wallet address formats
+          const walletAddresses = [
+            currentPublicKey.toBase58(),
+            currentPublicKey.toString(),
+            publicKey?.toBase58(),
+            publicKey?.toString(),
+          ].filter(Boolean) as string[]
+          
+          // Filter positions for this crucible and wallet
+          const cachedPositions = storedPositions.filter((p: LeveragedPosition) => {
+            const ownerMatch = walletAddresses.some(addr => p.owner === addr || p.owner?.toLowerCase() === addr?.toLowerCase())
+            const tokenMatch = p.token === baseTokenSymbol
+            const isOpen = p.isOpen === true
+            return ownerMatch && tokenMatch && isOpen
+          })
+          
+          userPositions.push(...cachedPositions)
+          console.log('📦 Loaded', cachedPositions.length, 'positions from localStorage cache')
+        } catch (e) {
+          console.warn('Failed to load positions from localStorage cache:', e)
+        }
+      }
+      
+      console.log('✅ Total LVF positions found:', userPositions.length, 'for', baseTokenSymbol)
+      setPositions(userPositions)
     } catch (error) {
       console.error('Error fetching LVF positions:', error)
       setPositions([])
     } finally {
       setLoading(false)
     }
-  }, [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), crucibleAddress, baseTokenSymbol])
+  }, [publicKey?.toBase58(), sessionContext?.walletPublicKey?.toString(), walletContext?.publicKey?.toBase58(), walletContext?.connection, crucibleAddress, baseTokenSymbol])
 
   // Open a leveraged position
   const openPosition = useCallback(
@@ -267,7 +351,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const collateralAfterFee = collateralAmount - protocolFee
         
         // Calculate borrowed USDC and deposited USDC based on collateral after fee
-        const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+        const baseTokenPrice = 200 // SOL price
         const collateralValueUSD = collateralAfterFee * baseTokenPrice
         const borrowedUSDC = collateralValueUSD * (leverageFactor - 1)
         
@@ -279,29 +363,132 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           depositUSDC = 0 // 100% borrowed, 0% deposited
         }
 
-        // TODO: In production, create and send open_leveraged_position instruction
-        // const transaction = new Transaction()
-        // transaction.add(openLeveragedPositionInstruction(...))
-        // const signature = await sendTransaction(transaction, connection)
-        // await connection.confirmTransaction(signature)
+        if (!walletContext?.connection) {
+          throw new Error('Wallet connection missing')
+        }
 
-        // For now, simulate
-        console.log('⏳ Simulating transaction (1.5s)...')
-        await new Promise((resolve) => setTimeout(resolve, 1500))
-        console.log('✅ Simulation complete, creating position object...')
+        const connection = walletContext.connection
+        
+        // Get Anchor program instance
+        const anchorWallet: AnchorWallet = {
+          publicKey: currentPublicKey,
+          signTransaction: walletContext?.signTransaction || (async (tx: any) => tx),
+          signAllTransactions: walletContext?.signAllTransactions || (async (txs: any[]) => txs),
+        }
+        const program = getCruciblesProgram(connection, anchorWallet)
+        
+        // Get lending pool program for accounts
+        const { getLendingPoolProgram, getLendingPoolPDA, getPoolVaultPDA, getBorrowerAccountPDA } = await import('../utils/lendingProgram')
+        const lendingProgram = getLendingPoolProgram(connection, anchorWallet)
+        const [lendingPoolPDA] = getLendingPoolPDA()
+        const [poolVaultPDA] = getPoolVaultPDA(lendingPoolPDA)
+        const [borrowerAccountPDA] = getBorrowerAccountPDA(currentPublicKey)
+        
+        // Derive PDAs
+        const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
+        const cruciblePDA = new PublicKey(crucibleAddress)
+        
+        // Fetch crucible account to get treasury and oracle
+        let treasuryAccount: PublicKey
+        let oracleAccount: PublicKey | null = null
+        try {
+          const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
+          treasuryAccount = crucibleAccount.treasury as PublicKey
+          if (crucibleAccount.oracle) {
+            oracleAccount = crucibleAccount.oracle as PublicKey
+          }
+        } catch (error) {
+          throw new Error(`Failed to fetch crucible account: ${error}`)
+        }
+        
+        // Derive vault and position PDAs
+        const [baseVaultPDA] = deriveVaultPDA(cruciblePDA)
+        const [positionPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('position'), currentPublicKey.toBuffer(), cruciblePDA.toBuffer()],
+          new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
+        )
+        const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
+        const [poolAuthorityPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('pool')],
+          new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.LENDING_POOL)
+        )
+        
+        // Get user token accounts
+        const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
+        const userTokenAccount = await getAssociatedTokenAddress(baseMint, currentPublicKey)
+        const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
+        
+        // Convert leverage factor (1.5 = 150, 2.0 = 200)
+        const leverageFactorBps = Math.floor(leverageFactor * 100)
+        
+        // Convert collateral amount to lamports
+        const collateralAmountLamports = Math.floor(collateralAfterFee * 1e9) // SOL has 9 decimals
+        
+        // Call open_leveraged_position instruction
+        const txSignature = await program.methods
+          .openLeveragedPosition(
+            new BN(collateralAmountLamports),
+            new BN(leverageFactorBps)
+          )
+          .accounts({
+            user: currentPublicKey,
+            crucible: cruciblePDA,
+            baseTokenMint: baseMint,
+            userTokenAccount: userTokenAccount,
+            crucibleVault: baseVaultPDA,
+            position: positionPDA,
+            positionId: positionPDA, // Same PDA
+            crucibleAuthority: crucibleAuthorityPDA,
+            oracle: oracleAccount,
+            lendingProgram: new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.LENDING_POOL),
+            lendingMarket: lendingPoolPDA,
+            poolAuthority: poolAuthorityPDA,
+            borrowerAccount: borrowerAccountPDA,
+            lendingVault: poolVaultPDA,
+            userUsdcAccount: userUsdcAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+        
+        console.log('✅ Open leveraged position transaction sent:', txSignature)
+        
+        // Wait for confirmation
+        await connection.confirmTransaction(txSignature, 'confirmed')
+        console.log('✅ Transaction confirmed')
+        
+        // Fetch position account to get actual position data
+        let actualPosition: any
+        try {
+          actualPosition = await program.account.leveragedPosition.fetch(positionPDA)
+        } catch (error) {
+          console.warn('Could not fetch position account:', error)
+        }
+        
+        console.log('✅ Position created on-chain')
 
-        // Add to positions
+        // Use position PDA as ID
         const positionTimestamp = Date.now()
+        const positionId = positionPDA.toString()
+        
+        // Get actual position data from on-chain if available
+        let actualCollateral = collateralAfterFee
+        let actualBorrowedUSDC = borrowedUSDC
+        if (actualPosition) {
+          actualCollateral = Number(actualPosition.collateral) / 1e9 // Convert lamports to SOL
+          actualBorrowedUSDC = Number(actualPosition.borrowedUsdc) / 1e6 // Convert USDC decimals
+        }
+        
         const newPosition: LeveragedPosition = {
-          id: `lvf_${positionTimestamp}_${Math.random().toString(36).substr(2, 9)}`,
+          id: positionId,
           owner: currentPublicKey.toBase58(),
           token: baseTokenSymbol,
-          collateral: collateralAfterFee, // Use collateral after fee
-          borrowedUSDC,
-          depositUSDC, // Store deposited USDC
+          collateral: actualCollateral,
+          borrowedUSDC: actualBorrowedUSDC,
+          depositUSDC: depositUSDC, // Store deposited USDC
           leverageFactor,
           entryPrice: baseTokenPrice,
-          currentValue: (collateralAfterFee * baseTokenPrice) * leverageFactor,
+          currentValue: (actualCollateral * baseTokenPrice) * leverageFactor,
           yieldEarned: 0,
           timestamp: positionTimestamp, // Store timestamp for interest calculation
           isOpen: true,
@@ -524,32 +711,25 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         })
 
         // Calculate base tokens to return (collateral value + APY earnings)
-        const baseTokenPriceForClose = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
+        const baseTokenPriceForClose = 200 // SOL price
         
-        // Calculate APY earnings based on EXCHANGE RATE ratio (correlated with borrowing interest)
-        // APY = ((exchange rate at sell / exchange rate at buy) - 1) * 100
-        const initialExchangeRate = 1.045 // Exchange rate at buy (when position was opened)
+        // Use actual on-chain exchange rate (no frontend simulation)
+        // TODO: Fetch current exchange rate from on-chain crucible account
+        // Exchange rate grows as fees accrue on-chain
+        const initialExchangeRate = 1.0 // Initial rate when position was opened (1:1)
         
-        // Calculate DYNAMIC exchange rate based on time elapsed since position was opened
-        // Use position timestamp to calculate actual exchange rate growth
-        const positionTimestamp = position.timestamp || Date.now()
-        const timeElapsedMs = Date.now() - positionTimestamp
-        const timeElapsedMinutes = Math.max(0, timeElapsedMs / (1000 * 60))
-        const timeElapsedMonths = timeElapsedMinutes // 1 minute = 1 month (for demo)
-        const yearsElapsed = timeElapsedMonths / 12
-        
-        // Get crucible APR for dynamic rate calculation
+        // Fetch actual current exchange rate from on-chain
+        // For now, use crucible's exchange rate or calculate from vault/cToken supply
         const crucibleData = crucibleHook?.getCrucible(crucibleAddress)
-        const crucibleAPR = crucibleData?.apr || 0.05 // Use crucible APR (e.g., 18% = 0.18)
-        
-        // Calculate accumulated exchange rate: initialRate * (1 + APR)^(years)
-        // This gives us the DYNAMIC exchange rate that grows over time
-        const currentExchangeRateDecimal = initialExchangeRate * Math.pow(1 + crucibleAPR, yearsElapsed)
+        const currentExchangeRateOnChain = crucibleData?.exchangeRate 
+          ? Number(crucibleData.exchangeRate) / 1_000_000 // Convert from scaled format
+          : initialExchangeRate
+        const currentExchangeRateDecimal = currentExchangeRateOnChain
         
         // Calculate APY percentage: ((exchange rate at sell / exchange rate at buy) - 1) * 100
         const apyPercentage = ((currentExchangeRateDecimal / initialExchangeRate) - 1) * 100
         
-        // Calculate exchange rate growth
+        // Calculate exchange rate growth (based on actual on-chain fees accrued)
         const exchangeRateGrowth = currentExchangeRateDecimal - initialExchangeRate
         
         // Calculate proportional amounts for partial close
@@ -568,18 +748,72 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const totalFeeTokens = principalFeeTokens + yieldFeeTokens
 
         // Calculate borrowing interest (proportional for partial close)
-        // Borrowing interest rate = APY% × 5%
+        // Fetch real borrow rate from on-chain lending-pool
         let borrowingInterest = 0
         let totalOwedUSDC = 0
-        let borrowingInterestRatePercent = 0
+        let borrowRate = 10 // Default 10% APY if fetch fails
         
-        if (position.borrowedUSDC > 0) {
-          // Calculate borrowing interest rate: APY% × 5%
-          borrowingInterestRatePercent = apyPercentage * 0.05 // e.g., if APY is 2%, rate is 0.1%
-          
-          // Calculate proportional borrowed USDC and interest for the portion being closed
+        if (position.borrowedUSDC > 0 && walletContext?.publicKey && walletContext?.connection) {
+          try {
+            // Fetch real market state to get actual borrow rate
+            const anchorWallet: AnchorWallet = {
+              publicKey: walletContext.publicKey,
+              signTransaction: async (tx: any) => tx,
+              signAllTransactions: async (txs: any[]) => txs,
+            }
+            const program = getLendingPoolProgram(walletContext.connection, anchorWallet)
+            const marketState = await getMarketState(program)
+            
+            if (marketState) {
+              borrowRate = marketState.borrowRate // Get actual rate from on-chain
+            }
+            
+            // Fetch borrower account to get actual borrowed amount
+            const borrowerAccount = await getBorrowerAccount(program, walletContext.publicKey)
+            const actualBorrowedAmount = borrowerAccount?.amountBorrowed || position.borrowedUSDC
+            
+            // Calculate time elapsed (use position creation time if available, otherwise estimate)
+            const positionCreatedAt = position.timestamp ? new Date(position.timestamp).getTime() : Date.now() - (30 * 24 * 60 * 60 * 1000) // Default to 30 days ago
+            const now = Date.now()
+            const timeElapsedMs = now - positionCreatedAt
+            const timeElapsedSeconds = timeElapsedMs / 1000
+            
+            // Calculate proportional borrowed USDC for the portion being closed
+            const proportionalBorrowedUSDC = actualBorrowedAmount * proportion
+            
+            // Calculate interest using real borrow rate from on-chain
+            borrowingInterest = calculateBorrowInterest(
+              proportionalBorrowedUSDC,
+              borrowRate,
+              timeElapsedSeconds
+            )
+            
+            totalOwedUSDC = proportionalBorrowedUSDC + borrowingInterest
+          } catch (error) {
+            console.error('Error fetching borrowing interest from on-chain:', error)
+            // Fallback to calculation with default rate
+            const positionCreatedAt = position.createdAt ? new Date(position.createdAt).getTime() : Date.now() - (30 * 24 * 60 * 60 * 1000)
+            const now = Date.now()
+            const timeElapsedSeconds = (now - positionCreatedAt) / 1000
+            const proportionalBorrowedUSDC = position.borrowedUSDC * proportion
+            borrowingInterest = calculateBorrowInterest(
+              proportionalBorrowedUSDC,
+              borrowRate,
+              timeElapsedSeconds
+            )
+            totalOwedUSDC = proportionalBorrowedUSDC + borrowingInterest
+          }
+        } else if (position.borrowedUSDC > 0) {
+          // Fallback calculation when wallet not connected
+          const positionCreatedAt = position.createdAt ? new Date(position.createdAt).getTime() : Date.now() - (30 * 24 * 60 * 60 * 1000)
+          const now = Date.now()
+          const timeElapsedSeconds = (now - positionCreatedAt) / 1000
           const proportionalBorrowedUSDC = position.borrowedUSDC * proportion
-          borrowingInterest = proportionalBorrowedUSDC * (borrowingInterestRatePercent / 100)
+          borrowingInterest = calculateBorrowInterest(
+            proportionalBorrowedUSDC,
+            borrowRate,
+            timeElapsedSeconds
+          )
           totalOwedUSDC = proportionalBorrowedUSDC + borrowingInterest
         }
 
@@ -590,22 +824,90 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Net USDC returned = proportional deposited USDC minus borrowing interest (if any)
         const netUSDCReturned = Math.max(0, proportionalDepositedUSDC - borrowingInterest)
 
-        // Repay borrowed USDC + interest (this goes back to the lending pool)
-        // In production, this would be done via lending pool contract
-        if (totalOwedUSDC > 0) {
-          // TODO: In production, repay USDC to lending pool
-          // lendingPool.repay(totalOwedUSDC)
-          console.log('💰 Repaying borrowed USDC:', position.borrowedUSDC, '+ interest:', borrowingInterest, '= total:', totalOwedUSDC)
+        if (!walletContext?.connection) {
+          throw new Error('Wallet connection missing')
         }
 
-        // TODO: In production, create and send close_leveraged_position instruction
-        // const transaction = new Transaction()
-        // transaction.add(closeLeveragedPositionInstruction(...))
-        // const signature = await sendTransaction(transaction, connection)
-        // await connection.confirmTransaction(signature)
-
-        // For now, simulate
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+        const connection = walletContext.connection
+        
+        // Get Anchor program instance
+        const anchorWallet: AnchorWallet = {
+          publicKey: currentPublicKey,
+          signTransaction: walletContext?.signTransaction || (async (tx: any) => tx),
+          signAllTransactions: walletContext?.signAllTransactions || (async (txs: any[]) => txs),
+        }
+        const program = getCruciblesProgram(connection, anchorWallet)
+        
+        // Get lending pool program for accounts
+        const lendingProgram = getLendingPoolProgram(connection, anchorWallet)
+        const [lendingPoolPDA] = getLendingPoolPDA()
+        const [poolVaultPDA] = getPoolVaultPDA(lendingPoolPDA)
+        const [borrowerAccountPDA] = getBorrowerAccountPDA(currentPublicKey)
+        
+        // Derive PDAs
+        const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
+        const cruciblePDA = new PublicKey(crucibleAddress)
+        
+        // Fetch crucible account to get treasury
+        let treasuryAccount: PublicKey
+        try {
+          const crucibleAccount = await program.account.crucible.fetch(cruciblePDA)
+          treasuryAccount = crucibleAccount.treasury as PublicKey
+        } catch (error) {
+          throw new Error(`Failed to fetch crucible account: ${error}`)
+        }
+        
+        // Derive vault and position PDAs
+        const [baseVaultPDA] = deriveVaultPDA(cruciblePDA)
+        const [positionPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('position'), currentPublicKey.toBuffer(), cruciblePDA.toBuffer()],
+          new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
+        )
+        const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
+        
+        // Get user token accounts
+        const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
+        const userTokenAccount = await getAssociatedTokenAddress(baseMint, currentPublicKey)
+        const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
+        
+        // Fetch position account to verify it exists
+        try {
+          const positionAccount = await program.account.leveragedPosition.fetch(positionPDA)
+          if (!positionAccount.isOpen) {
+            throw new Error('Position is already closed')
+          }
+        } catch (error) {
+          throw new Error(`Position not found: ${error}`)
+        }
+        
+        // Call close_leveraged_position instruction
+        // Note: Repayment is handled by the instruction via CPI
+        const txSignature = await program.methods
+          .closeLeveragedPosition(positionPDA)
+          .accounts({
+            user: currentPublicKey,
+            crucible: cruciblePDA,
+            position: positionPDA,
+            userTokenAccount: userTokenAccount,
+            crucibleVault: baseVaultPDA,
+            crucibleAuthority: crucibleAuthorityPDA,
+            treasury: treasuryAccount,
+            lendingProgram: new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.LENDING_POOL),
+            lendingMarket: lendingPoolPDA,
+            borrowerAccount: borrowerAccountPDA,
+            lendingVault: poolVaultPDA,
+            userUsdcAccount: userUsdcAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc()
+        
+        console.log('✅ Close leveraged position transaction sent:', txSignature)
+        
+        // Wait for confirmation
+        await connection.confirmTransaction(txSignature, 'confirmed')
+        console.log('✅ Transaction confirmed')
+        
+        console.log('💰 Repaid borrowed USDC via CPI:', totalOwedUSDC)
 
         // Update crucible TVL when closing position (decrease by deposit + borrow, proportional for partial)
         const collateralValueUSDForClose = collateralToClose * baseTokenPriceForClose
@@ -720,7 +1022,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
   const calculateHealth = useCallback(
     (collateral: number, borrowed: number): number => {
       if (borrowed === 0) return 999 // No borrow = safe
-      const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
+      const baseTokenPrice = 200 // SOL price
       const collateralValue = collateral * baseTokenPrice
       const health = (collateralValue / borrowed) * 100
       return health
@@ -730,9 +1032,10 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
 
   // Calculate effective APY with leverage
   // Leveraged positions have 3x the APY of normal positions
+  // Fixed 10% APY borrowing rate from lending-pool
   const calculateEffectiveAPY = useCallback(
     (baseAPY: number, leverageFactor: number): number => {
-      const borrowRate = 5 // 5% APR
+      const borrowRate = 10 // 10% APY (fixed rate from lending-pool)
       // Leveraged positions earn 3x the base APY
       const leveragedYield = baseAPY * 3 * leverageFactor
       const borrowCost = borrowRate * (leverageFactor - 1)

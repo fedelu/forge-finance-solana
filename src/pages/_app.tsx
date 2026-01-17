@@ -4,6 +4,7 @@ import Head from 'next/head'
 import { useEffect, useState } from 'react'
 import { SolanaWalletAdapterProvider } from '../contexts/SolanaWalletAdapterProvider'
 import { WalletProvider } from '../contexts/WalletContext'
+import { CrucibleProvider } from '../hooks/useCrucible'
 
 export default function App({ Component, pageProps }: AppProps) {
   const [mounted, setMounted] = useState(false)
@@ -33,9 +34,11 @@ export default function App({ Component, pageProps }: AppProps) {
       </div>
       <SolanaWalletAdapterProvider>
         <WalletProvider>
-          <div className="app-content">
-            <Component {...pageProps} />
-          </div>
+          <CrucibleProvider>
+            <div className="app-content">
+              <Component {...pageProps} />
+            </div>
+          </CrucibleProvider>
         </WalletProvider>
       </SolanaWalletAdapterProvider>
     </>

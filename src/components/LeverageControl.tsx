@@ -23,7 +23,7 @@ export default function LeverageControl({
   collateralAmount = 0,
 }: LeverageControlProps) {
   const calculateEffectiveAPY = (multiplier: number): number => {
-    const borrowRate = 0.05 // 5% annual borrow rate (matches lending pool)
+    const borrowRate = 0.10 // 10% annual borrow rate (fixed rate from lending-pool)
     // Leveraged positions have 3x the APY of normal positions
     const leveragedYield = baseAPY * 3 * multiplier
     const borrowCost = borrowRate * (multiplier - 1) * 100 // Convert to percentage
@@ -44,11 +44,11 @@ export default function LeverageControl({
   }
 
   return (
-    <div className="panel-muted rounded-lg p-4 border border-fogo-gray-700">
+    <div className="panel-muted rounded-lg p-4 border border-forge-gray-700">
       {/* Leverage Toggle - Only shown when leverage > 1.0 */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-fogo-gray-300 font-medium text-sm">Leverage Multiplier</span>
+          <span className="text-forge-gray-300 font-medium text-sm">Leverage Multiplier</span>
           <span className="font-bold text-sm text-yellow-400">
             {leverage}x
           </span>
@@ -59,8 +59,8 @@ export default function LeverageControl({
             disabled={disabled}
             className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
               leverage === 1.5
-                ? 'bg-fogo-primary text-white shadow-lg'
-                : 'bg-fogo-gray-700 text-fogo-gray-300 hover:bg-fogo-gray-600'
+                ? 'bg-forge-primary text-white shadow-lg'
+                : 'bg-forge-gray-700 text-forge-gray-300 hover:bg-forge-gray-600'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             1.5x
@@ -70,8 +70,8 @@ export default function LeverageControl({
             disabled={disabled}
             className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
               leverage === 2.0
-                ? 'bg-fogo-primary text-white shadow-lg'
-                : 'bg-fogo-gray-700 text-fogo-gray-300 hover:bg-fogo-gray-600'
+                ? 'bg-forge-primary text-white shadow-lg'
+                : 'bg-forge-gray-700 text-forge-gray-300 hover:bg-forge-gray-600'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             2x
@@ -83,7 +83,7 @@ export default function LeverageControl({
       {borrowed > 0 && (
         <div className="bg-orange-500/10 border border-orange-500/30 rounded p-2 mb-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-fogo-gray-400">Borrowed USDC</span>
+            <span className="text-xs text-forge-gray-400">Borrowed USDC</span>
             <span className="text-sm font-bold text-orange-400">
               {borrowed.toFixed(2)} USDC
             </span>
@@ -91,8 +91,8 @@ export default function LeverageControl({
           <div className="flex items-start justify-between mt-2 pt-2 border-t border-orange-500/20">
             <div className="flex-1">
               <div className="flex items-center space-x-1 mb-1">
-                <span className="text-xs text-fogo-gray-400">Interest Rate:</span>
-                <div title="Borrowing Interest Rate: 5% APY (Annual Percentage Yield). This is the annual cost you pay for borrowing USDC from the lending pool. The rate compounds daily.">
+                <span className="text-xs text-forge-gray-400">Interest Rate:</span>
+                <div title="Borrowing Interest Rate: 10% APY (Annual Percentage Yield). This is the annual cost you pay for borrowing USDC from the lending pool. The rate compounds daily.">
                   <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -101,7 +101,7 @@ export default function LeverageControl({
               <div className="text-xs font-medium text-orange-400">
                 5% APY
               </div>
-              <div className="text-[10px] text-fogo-gray-500 mt-1">
+              <div className="text-[10px] text-forge-gray-500 mt-1">
                 Annual cost: {(borrowed * 0.05).toFixed(2)} USDC
               </div>
             </div>
@@ -113,7 +113,7 @@ export default function LeverageControl({
       {borrowed > 0 && (
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-fogo-gray-400">Health Factor</span>
+            <span className="text-xs text-forge-gray-400">Health Factor</span>
             <span className={`text-xs font-medium ${
               healthFactor >= 2.0 ? 'text-green-400' :
               healthFactor >= 1.5 ? 'text-yellow-400' :
@@ -123,7 +123,7 @@ export default function LeverageControl({
               {healthFactor >= 999 ? '∞' : healthFactor.toFixed(2)}x
             </span>
           </div>
-          <div className="w-full h-2 bg-fogo-gray-700 rounded-full overflow-hidden">
+          <div className="w-full h-2 bg-forge-gray-700 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-300 ${
                 healthFactor >= 2.0 ? 'bg-green-500' :
@@ -134,7 +134,7 @@ export default function LeverageControl({
               style={{ width: `${Math.min(100, (healthFactor / 2.0) * 100)}%` }}
             />
           </div>
-          <div className="text-xs text-fogo-gray-500 mt-1">
+          <div className="text-xs text-forge-gray-500 mt-1">
             {healthFactor >= 999 ? 'No borrow' : healthFactor < 1.0 ? '⚠️ Liquidation risk' : 'Safe'}
           </div>
         </div>
@@ -143,12 +143,12 @@ export default function LeverageControl({
       {/* Effective APY Display */}
       <div className="panel-muted rounded p-2 mb-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-fogo-gray-400">Effective APY</span>
-          <span className="text-sm font-bold text-fogo-primary">
+          <span className="text-xs text-forge-gray-400">Effective APY</span>
+          <span className="text-sm font-bold text-forge-primary">
             {effectiveAPY.toFixed(2)}%
           </span>
         </div>
-        <div className="text-xs text-fogo-gray-500 mt-1">
+        <div className="text-xs text-forge-gray-500 mt-1">
           Base: {baseAPY.toFixed(2)}% × 3 × {leverage}x - Borrow Cost (5%)
         </div>
       </div>

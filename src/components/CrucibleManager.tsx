@@ -60,10 +60,10 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return 'bg-fogo-gray-800 text-fogo-primary border border-fogo-primary/30'
-      case 'paused': return 'bg-fogo-gray-800 text-fogo-gray-300 border border-fogo-gray-600'
-      case 'maintenance': return 'bg-fogo-gray-800 text-fogo-gray-400 border border-fogo-gray-600'
-      default: return 'bg-fogo-gray-800 text-fogo-gray-300 border border-fogo-gray-600'
+      case 'active': return 'bg-forge-gray-800 text-forge-primary border border-forge-primary/30'
+      case 'paused': return 'bg-forge-gray-800 text-forge-gray-300 border border-forge-gray-600'
+      case 'maintenance': return 'bg-forge-gray-800 text-forge-gray-400 border border-forge-gray-600'
+      default: return 'bg-forge-gray-800 text-forge-gray-300 border border-forge-gray-600'
     }
   }
 
@@ -72,37 +72,37 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
       {/* Crucible Stats - Compact */}
       <div className="flex justify-center mb-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-6xl">
-        <div className="panel rounded-xl p-4 hover:border-fogo-primary/40 transition-all duration-300 group">
+        <div className="panel rounded-xl p-4 hover:border-forge-primary/40 transition-all duration-300 group">
             <div className="text-center">
-              <div className="w-10 h-10 bg-gradient-to-br from-fogo-primary/20 to-fogo-primary/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
-                <ChartBarIcon className="h-5 w-5 text-fogo-primary" />
+              <div className="w-10 h-10 bg-gradient-to-br from-forge-primary/20 to-forge-primary/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
+                <ChartBarIcon className="h-5 w-5 text-forge-primary" />
               </div>
-              <p className="text-fogo-gray-300 text-xs font-satoshi font-medium mb-1">Total TVL</p>
-              <p className="text-2xl font-heading font-semibold text-white group-hover:text-fogo-primary transition-colors duration-300">
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total TVL</p>
+              <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
                 ${crucibles.reduce((sum, c) => sum + c.tvl, 0).toLocaleString()}
               </p>
             </div>
           </div>
 
-          <div className="panel rounded-xl p-4 hover:border-fogo-accent/40 transition-all duration-300 group">
+          <div className="panel rounded-xl p-4 hover:border-forge-accent/40 transition-all duration-300 group">
             <div className="text-center">
-              <div className="w-10 h-10 bg-gradient-to-br from-fogo-accent/20 to-fogo-accent/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
-                <BoltIcon className="h-5 w-5 text-fogo-accent" />
+              <div className="w-10 h-10 bg-gradient-to-br from-forge-accent/20 to-forge-accent/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
+                <BoltIcon className="h-5 w-5 text-forge-accent" />
               </div>
-              <p className="text-fogo-gray-300 text-xs font-satoshi font-medium mb-1">Yield Earned</p>
-              <p className="text-2xl font-heading font-semibold text-white group-hover:text-fogo-accent transition-colors duration-300">
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Yield Earned</p>
+              <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
                 ${crucibles.reduce((sum, c) => sum + (c.apyEarnedByUsers || 0), 0).toLocaleString()}
               </p>
             </div>
           </div>
 
-          <div className="panel rounded-xl p-4 hover:border-fogo-primary/40 transition-all duration-300 group">
+          <div className="panel rounded-xl p-4 hover:border-forge-primary/40 transition-all duration-300 group">
             <div className="text-center">
-              <div className="w-10 h-10 bg-gradient-to-br from-fogo-primary/20 to-fogo-primary/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
-                <FireIcon className="h-5 w-5 text-fogo-primary" />
+              <div className="w-10 h-10 bg-gradient-to-br from-forge-primary/20 to-forge-primary/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
+                <FireIcon className="h-5 w-5 text-forge-primary" />
               </div>
-              <p className="text-fogo-gray-300 text-xs font-satoshi font-medium mb-1">Total Fees</p>
-              <p className="text-2xl font-heading font-semibold text-white group-hover:text-fogo-primary transition-colors duration-300">
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total Fees</p>
+              <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
                 ${crucibles.reduce((sum, c) => sum + (c.totalFeesCollected || 0), 0).toLocaleString()}
               </p>
             </div>
@@ -114,8 +114,8 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
       {loading && (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-fogo-primary mx-auto mb-4"></div>
-            <p className="text-fogo-gray-300">Loading crucibles...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-forge-primary mx-auto mb-4"></div>
+            <p className="text-forge-gray-300">Loading crucibles...</p>
           </div>
         </div>
       )}
@@ -137,24 +137,25 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
       {!loading && !error && (
         <div className="space-y-6">
           <div className="text-center space-y-2">
-            <h2 className="text-3xl md:text-4xl font-heading text-white mb-2 bg-gradient-to-r from-fogo-primary via-fogo-primary-light to-fogo-secondary bg-clip-text text-transparent">
+            <h2 className="text-3xl md:text-4xl font-heading text-white mb-2 bg-gradient-to-r from-forge-primary via-forge-primary-light to-forge-secondary bg-clip-text text-transparent">
               Available Crucibles
             </h2>
-            <p className="text-fogo-gray-300 text-base font-sans leading-relaxed max-w-2xl mx-auto">
+            <p className="text-forge-gray-300 text-base font-sans leading-relaxed max-w-2xl mx-auto">
               Crucibles are on-chain yield engines. Wrap your tokens for steady APY, provide liquidity for amplified rewards, or enter Inferno Mode to leverage your position and maximize returns.
             </p>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
+          <div className="flex justify-center">
+            <div className="grid grid-cols-1 gap-8 max-w-2xl w-full">
             {crucibles.map((crucible) => (
-            <div key={crucible.id} className="panel rounded-3xl p-7 border border-fogo-gray-600/50 hover:border-fogo-primary/60 shadow-2xl hover:shadow-fogo-lg transition-all duration-500 hover:scale-[1.02] group relative overflow-hidden animate-fade-in">
+            <div key={crucible.id} className="panel rounded-3xl p-7 border border-forge-gray-600/50 hover:border-forge-primary/60 shadow-2xl hover:shadow-forge-lg transition-all duration-500 hover:scale-[1.02] group relative overflow-hidden animate-fade-in">
               {/* Background Pattern with better gradient */}
-              <div className="absolute inset-0 bg-gradient-to-br from-fogo-primary/10 via-transparent to-fogo-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+              <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/10 via-transparent to-forge-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
               {/* Animated border glow */}
-              <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-fogo-primary/0 via-fogo-primary/20 to-fogo-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 -z-10 blur-xl"></div>
+              <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-forge-primary/0 via-forge-primary/20 to-forge-primary/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 -z-10 blur-xl"></div>
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    <div className="w-14 h-14 bg-gradient-to-br from-fogo-primary/30 to-fogo-accent/30 rounded-2xl flex items-center justify-center group-hover:from-fogo-primary/40 group-hover:to-fogo-accent/40 transition-all duration-500 shadow-lg group-hover:shadow-fogo-primary/20">
+                    <div className="w-14 h-14 bg-gradient-to-br from-forge-primary/30 to-forge-accent/30 rounded-2xl flex items-center justify-center group-hover:from-forge-primary/40 group-hover:to-forge-accent/40 transition-all duration-500 shadow-lg group-hover:shadow-forge-primary/20">
                       {crucible.icon.startsWith('/') ? (
                         <img 
                           src={crucible.icon} 
@@ -166,17 +167,17 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       )}
                     </div>
                     <div>
-                      <h3 className="text-2xl font-heading text-white group-hover:text-fogo-primary transition-colors duration-300 mb-1">{crucible.name}</h3>
-                      <p className="text-fogo-gray-300 text-sm font-medium">{crucible.baseToken} → {crucible.ptokenSymbol}</p>
+                      <h3 className="text-2xl font-heading text-white group-hover:text-forge-primary transition-colors duration-300 mb-1">{crucible.name}</h3>
+                      <p className="text-forge-gray-300 text-sm font-medium">{crucible.baseToken} → {crucible.ptokenSymbol}</p>
                     </div>
                   </div>
                   <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${getStatusColor(crucible.status)} shadow-lg`}>
                     {crucible.status.toUpperCase()}
                   </span>
                 </div>
-                <div className="space-y-3 text-sm font-satoshi-light text-fogo-gray-200 mb-6">
-                  <div className="flex justify-between items-center py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-fogo-gray-700/50 hover:border-fogo-primary/30 transition-all duration-300">
-                    <span className="text-fogo-gray-400 font-medium text-sm flex items-center gap-2">
+                <div className="space-y-3 text-sm font-satoshi-light text-forge-gray-200 mb-6">
+                  <div className="flex justify-between items-center py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50 hover:border-forge-primary/30 transition-all duration-300">
+                    <span className="text-forge-gray-400 font-medium text-sm flex items-center gap-2">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
@@ -185,14 +186,14 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     <span className="font-heading text-lg text-white">${crucible.tvl.toLocaleString()}</span>
                   </div>
                   {/* APY Display */}
-                  <div className="space-y-2 py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-fogo-gray-700/50">
+                  <div className="space-y-2 py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50">
                     <div className="flex justify-between items-center">
-                      <span className="text-fogo-gray-300 font-medium text-sm">Base APY (Mint):</span>
-                      <span className="font-heading text-lg text-fogo-accent">{(crucible.apr * 100).toFixed(1)}%</span>
+                      <span className="text-forge-gray-300 font-medium text-sm">Base APY (Mint):</span>
+                      <span className="font-heading text-lg text-forge-accent">{(crucible.apr * 100).toFixed(1)}%</span>
                     </div>
-                    <div className="pt-2 border-t border-fogo-gray-700/50">
+                    <div className="pt-2 border-t border-forge-gray-700/50">
                       <div className="flex justify-between items-center">
-                        <span className="text-fogo-gray-400 text-xs flex items-center">
+                        <span className="text-forge-gray-400 text-xs flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon" className="h-3 w-3 mr-1 text-orange-400">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
                           </svg>
@@ -203,7 +204,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                         </span>
                       </div>
                       <div className="flex justify-between items-center mt-1">
-                        <span className="text-fogo-gray-400 text-xs flex items-center">
+                        <span className="text-forge-gray-400 text-xs flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon" className="h-3 w-3 mr-1 text-orange-400">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
                           </svg>
@@ -215,20 +216,20 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       </div>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-fogo-gray-700/50 hover:border-fogo-primary/30 transition-all duration-300">
-                    <span className="text-fogo-gray-400 font-medium text-sm flex items-center gap-2">
+                  <div className="flex justify-between items-center py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50 hover:border-forge-primary/30 transition-all duration-300">
+                    <span className="text-forge-gray-400 font-medium text-sm flex items-center gap-2">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                       </svg>
                       cTOKEN Price
                     </span>
-                    <span className="font-heading text-lg text-fogo-primary">
+                    <span className="font-heading text-lg text-forge-primary">
                       {(() => {
                         // Calculate exchange rate: 1 cToken = exchangeRate base tokens
-                        // Initial exchange rate is 1.045 (4.5% initial yield)
+                        // Initial exchange rate is 1.0 (grows as yield accumulates)
                         // If there are deposits, use actual exchange rate; otherwise use initial rate
                         const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0);
-                        const initialExchangeRate = BigInt(Math.floor(Number(RATE_SCALE) * 1.045)); // 1.045 = 1045 / 1000
+                        const initialExchangeRate = RATE_SCALE; // 1.0 = 1_000_000
                         const exchangeRate = hasDeposits 
                           ? (crucible.exchangeRate || initialExchangeRate)
                           : initialExchangeRate;
@@ -237,14 +238,14 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       })()}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-fogo-gray-700/50 hover:border-fogo-primary/30 transition-all duration-300">
-                    <span className="text-fogo-gray-400 font-medium text-sm flex items-center gap-2">
+                  <div className="flex justify-between items-center py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50 hover:border-forge-primary/30 transition-all duration-300">
+                    <span className="text-forge-gray-400 font-medium text-sm flex items-center gap-2">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                       </svg>
                       Total Yield Earned
                     </span>
-                    <span className="font-heading text-lg text-fogo-primary">
+                    <span className="font-heading text-lg text-forge-primary">
                       ${(crucible.apyEarnedByUsers || 0).toLocaleString()}
                     </span>
                   </div>
@@ -258,7 +259,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       setSelectedCrucible(crucible.id)
                       setShowCTokenDepositModal(true)
                     }}
-                    className="w-full bg-gradient-to-r from-fogo-primary via-fogo-primary-light to-fogo-primary hover:from-fogo-primary-dark hover:via-fogo-primary hover:to-fogo-primary-light text-white font-heading py-4 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-fogo-lg group relative overflow-hidden border border-fogo-primary/20"
+                    className="w-full bg-gradient-to-r from-forge-primary via-forge-primary-light to-forge-primary hover:from-forge-primary-dark hover:via-forge-primary hover:to-forge-primary-light text-white font-heading py-4 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-forge-lg group relative overflow-hidden border border-forge-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-pulse-glow"></div>
                     <div className="relative flex items-center justify-center space-x-3">
@@ -278,17 +279,17 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                 </div>
 
                 {/* Leveraged Yield Projections */}
-                <div className="mt-4 pt-4 border-t border-fogo-gray-700">
+                <div className="mt-4 pt-4 border-t border-forge-gray-700">
                   <LeveragedProjectionChart
                     baseAPY={crucible.apr * 100}
                     leverage={selectedLeverage[crucible.id] || 1.0}
-                    currentPrice={crucible.baseToken === 'FORGE' ? 0.002 : 200}
+                    currentPrice={200}
                     currentExchangeRate={(() => {
-                      // Initial exchange rate is 1.045
-                      const initialExchangeRate = 1.045
+                      // Initial exchange rate is 1.0 (grows as yield accumulates)
+                      const initialExchangeRate = 1.0
                       const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                       const exchangeRate = hasDeposits 
-                        ? Number(crucible.exchangeRate || BigInt(Math.floor(Number(RATE_SCALE) * 1.045))) / Number(RATE_SCALE)
+                        ? Number(crucible.exchangeRate || RATE_SCALE) / Number(RATE_SCALE)
                         : initialExchangeRate
                       return exchangeRate
                     })()}
@@ -303,6 +304,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               </div>
             </div>
             ))}
+            </div>
           </div>
         </div>
       )}
@@ -338,11 +340,11 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               ctokenSymbol={crucible.ptokenSymbol}
               currentBalance={crucible.userPtokenBalance ? BigInt(crucible.userPtokenBalance.toString()) : null}
               exchangeRate={(() => {
-                // Initial exchange rate is 1.045 (4.5% initial yield)
-                const initialExchangeRate = 1.045
+                // Initial exchange rate is 1.0 (grows as yield accumulates)
+                const initialExchangeRate = 1.0
                 const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                 const exchangeRate = hasDeposits 
-                  ? Number(crucible.exchangeRate || BigInt(Math.floor(Number(RATE_SCALE) * 1.045))) / Number(RATE_SCALE)
+                  ? Number(crucible.exchangeRate || RATE_SCALE) / Number(RATE_SCALE)
                   : initialExchangeRate
                 return exchangeRate
               })()}
@@ -364,7 +366,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                 setSelectedCrucible(null)
               }}
               crucibleAddress={selectedCrucible}
-              baseTokenSymbol={crucible.baseToken as 'SOL' | 'FORGE'}
+              baseTokenSymbol={crucible.baseToken as 'SOL'}
               baseAPY={crucible.apr * 100}
             />
             <ClosePositionModal
@@ -405,7 +407,7 @@ function CrucibleActionButtons({
       {/* Primary Open Position Button */}
       <button
         onClick={onMintCToken}
-        className="w-full bg-gradient-to-r from-fogo-primary to-fogo-accent hover:from-fogo-primary/90 hover:to-fogo-accent/90 text-white font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-fogo-primary/25 group relative overflow-hidden"
+        className="w-full bg-gradient-to-r from-forge-primary to-forge-accent hover:from-forge-primary/90 hover:to-forge-accent/90 text-white font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-forge-primary/25 group relative overflow-hidden"
       >
         <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
         <div className="relative flex items-center justify-center space-x-2">
@@ -533,15 +535,15 @@ function CrucibleCloseButton({
       disabled={!hasAnyPosition}
       className={`w-full py-4 rounded-xl font-heading transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg flex items-center justify-center space-x-3 border relative overflow-hidden group ${
         !hasAnyPosition
-          ? 'bg-fogo-gray-900 text-fogo-gray-500 border-fogo-gray-800 cursor-not-allowed opacity-50'
+          ? 'bg-forge-gray-900 text-forge-gray-500 border-forge-gray-800 cursor-not-allowed opacity-50'
           : hasLeveragedPosition
           ? 'bg-gradient-to-r from-orange-500/20 to-orange-600/20 hover:from-orange-500/30 hover:to-orange-600/30 text-orange-400 border-orange-500/30 hover:border-orange-500/50'
           : hasLPPosition
           ? 'bg-gradient-to-r from-green-500/20 to-green-600/20 hover:from-green-500/30 hover:to-green-600/30 text-green-400 border-green-500/30 hover:border-green-500/50'
-          : 'bg-gradient-to-r from-fogo-gray-800 to-fogo-gray-700 hover:from-fogo-gray-700 hover:to-fogo-gray-600 text-white border-fogo-gray-600 hover:border-fogo-gray-500'
+          : 'bg-gradient-to-r from-forge-gray-800 to-forge-gray-700 hover:from-forge-gray-700 hover:to-forge-gray-600 text-white border-forge-gray-600 hover:border-forge-gray-500'
       }`}
     >
-      <div className="absolute inset-0 bg-gradient-to-r from-fogo-gray-700/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-r from-forge-gray-700/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
       <div className="relative flex items-center justify-center space-x-2">
         <ArrowDownIcon className="h-5 w-5 group-hover:scale-110 transition-transform duration-300" />
         <span className="text-base font-semibold">

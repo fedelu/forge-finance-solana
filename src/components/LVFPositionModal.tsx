@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { XMarkIcon, BoltIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, BoltIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useWallet } from '../contexts/WalletContext'
 import { lendingPool } from '../contracts/lendingPool'
@@ -12,7 +12,7 @@ interface LVFPositionModalProps {
   isOpen: boolean
   onClose: () => void
   crucibleAddress: string
-  baseTokenSymbol: 'SOL' | 'FORGE'
+  baseTokenSymbol: 'SOL'
   baseAPY: number
 }
 
@@ -48,7 +48,7 @@ export default function LVFPositionModal({
 
     try {
       const collateralAmount = parseFloat(amount)
-      const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+      const baseTokenPrice = 200 // SOL price
       const collateralValue = collateralAmount * baseTokenPrice
       const borrowedUSDC = collateralValue * (leverage - 1)
 
@@ -139,6 +139,10 @@ export default function LVFPositionModal({
     ? calculateHealth(parseFloat(amount), borrowedUSDC)
     : 999
   const effectiveAPY = calculateEffectiveAPY(baseAPY, leverage)
+  
+  // Check lending pool liquidity for leveraged positions
+  const availableLiquidity = lendingPool.getAvailableLiquidity()
+  const hasEnoughLiquidity = borrowedUSDC <= availableLiquidity
 
   if (!isOpen) return null
 
@@ -147,7 +151,7 @@ export default function LVFPositionModal({
       <div className="panel rounded-3xl w-full max-w-lg p-8 relative animate-scale-in">
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-fogo-gray-400 hover:text-white transition-all duration-200 p-2 rounded-lg hover:bg-black/40"
+          className="absolute top-5 right-5 text-forge-gray-400 hover:text-white transition-all duration-200 p-2 rounded-lg hover:bg-black/40"
           aria-label="Close modal"
         >
           <XMarkIcon className="w-5 h-5" />
@@ -161,17 +165,17 @@ export default function LVFPositionModal({
             </div>
             <div>
               <h2 className="text-2xl font-heading text-white">Leveraged LP</h2>
-              <p className="text-fogo-gray-400 text-sm">Amplified Yield</p>
+              <p className="text-forge-gray-400 text-sm">Amplified Yield</p>
             </div>
           </div>
-          <p className="text-fogo-gray-400 text-sm leading-relaxed">
+          <p className="text-forge-gray-400 text-sm leading-relaxed">
             Deposit {baseTokenSymbol} and borrow USDC to amplify your yield. Higher risk, higher reward. Maximum leverage: 2x.
           </p>
         </div>
 
         {/* Amount Input - Enhanced */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-fogo-gray-300 mb-3 flex items-center gap-2">
+          <label className="block text-sm font-semibold text-forge-gray-300 mb-3 flex items-center gap-2">
             <span>Collateral Amount</span>
             <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-md text-xs font-medium">{baseTokenSymbol}</span>
           </label>
@@ -182,17 +186,17 @@ export default function LVFPositionModal({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-full px-5 py-4 pr-16 panel-muted backdrop-blur-sm border-2 border-fogo-gray-700 rounded-xl text-white text-lg font-medium placeholder-fogo-gray-500 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all duration-300"
+                className="w-full px-5 py-4 pr-16 panel-muted backdrop-blur-sm border-2 border-forge-gray-700 rounded-xl text-white text-lg font-medium placeholder-forge-gray-500 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all duration-300"
               />
               {amount && (
-                <div className="absolute right-16 top-1/2 -translate-y-1/2 text-fogo-gray-500 text-sm">
+                <div className="absolute right-16 top-1/2 -translate-y-1/2 text-forge-gray-500 text-sm">
                   ≈ ${(parseFloat(amount) * baseTokenPrice).toFixed(2)}
                 </div>
               )}
             </div>
             <button
               onClick={() => setAmount('1000')}
-              className="px-6 py-4 bg-fogo-gray-700/80 hover:bg-orange-500/20 border-2 border-fogo-gray-600 hover:border-orange-500 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105"
+              className="px-6 py-4 bg-forge-gray-700/80 hover:bg-orange-500/20 border-2 border-forge-gray-600 hover:border-orange-500 text-white rounded-xl font-semibold transition-all duration-300 hover:scale-105"
             >
               MAX
             </button>
@@ -201,7 +205,7 @@ export default function LVFPositionModal({
 
         {/* Leverage Selection - Enhanced */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-fogo-gray-300 mb-3 flex items-center gap-2">
+          <label className="block text-sm font-semibold text-forge-gray-300 mb-3 flex items-center gap-2">
             <span>Leverage Multiplier</span>
             <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-md text-xs font-medium">Max 2x</span>
           </label>
@@ -211,7 +215,7 @@ export default function LVFPositionModal({
               className={`flex-1 px-5 py-4 rounded-xl text-base font-semibold transition-all duration-300 transform hover:scale-105 ${
                 leverage === 1.5
                   ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30 border-2 border-orange-400'
-                  : 'bg-fogo-gray-700/80 text-fogo-gray-300 hover:bg-fogo-gray-600 border-2 border-fogo-gray-600'
+                  : 'bg-forge-gray-700/80 text-forge-gray-300 hover:bg-forge-gray-600 border-2 border-forge-gray-600'
               }`}
             >
               1.5x
@@ -222,7 +226,7 @@ export default function LVFPositionModal({
               className={`flex-1 px-5 py-4 rounded-xl text-base font-semibold transition-all duration-300 transform hover:scale-105 ${
                 leverage === 2.0
                   ? 'bg-gradient-to-r from-orange-600 to-yellow-500 text-white shadow-lg shadow-orange-500/30 border-2 border-orange-400'
-                  : 'bg-fogo-gray-700/80 text-fogo-gray-300 hover:bg-fogo-gray-600 border-2 border-fogo-gray-600'
+                  : 'bg-forge-gray-700/80 text-forge-gray-300 hover:bg-forge-gray-600 border-2 border-forge-gray-600'
               }`}
             >
               2x
@@ -233,7 +237,7 @@ export default function LVFPositionModal({
 
             {/* Position Preview - Enhanced */}
             <div className="bg-gradient-to-br from-orange-500/10 via-orange-500/5 to-transparent backdrop-blur-sm rounded-2xl p-6 mb-6 border border-orange-500/20">
-              <h3 className="text-sm font-semibold text-fogo-gray-300 mb-4 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-forge-gray-300 mb-4 flex items-center gap-2">
                 <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
@@ -241,7 +245,7 @@ export default function LVFPositionModal({
               </h3>
               <div className="space-y-3">
                 <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
-                  <span className="text-fogo-gray-400 text-sm">Collateral</span>
+                  <span className="text-forge-gray-400 text-sm">Collateral</span>
                   <span className="text-white font-bold text-lg">
                     {amount ? parseFloat(amount).toFixed(4) : '0.0000'} {baseTokenSymbol}
                   </span>
@@ -260,8 +264,8 @@ export default function LVFPositionModal({
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-2 px-3 panel-muted rounded-lg">
-                      <span className="text-fogo-gray-400 text-xs">Collateral After Fee</span>
-                      <span className="text-fogo-gray-300 font-semibold">
+                      <span className="text-forge-gray-400 text-xs">Collateral After Fee</span>
+                      <span className="text-forge-gray-300 font-semibold">
                         {(parseFloat(amount) * (1 - INFERNO_OPEN_FEE_RATE)).toFixed(2)} {baseTokenSymbol}
                       </span>
                     </div>
@@ -269,11 +273,11 @@ export default function LVFPositionModal({
                 )}
             {leverage > 1.0 && (
               <>
-                <div className="flex justify-between pt-2 border-t border-fogo-gray-700">
+                <div className="flex justify-between pt-2 border-t border-forge-gray-700">
                   <div className="flex items-center space-x-1">
-                    <span className="text-fogo-gray-400">Borrowing</span>
+                    <span className="text-forge-gray-400">Borrowing</span>
                     <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <title>Borrowing Interest Rate: 5% APY - This is the annual cost of borrowing USDC from the lending pool</title>
+                      <title>Borrowing Interest Rate: 10% APY - This is the annual cost of borrowing USDC from the lending pool</title>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
@@ -282,13 +286,13 @@ export default function LVFPositionModal({
                   </span>
                 </div>
                 <div className="flex justify-between text-xs pt-1">
-                  <span className="text-fogo-gray-500">Interest Rate (5% APY)</span>
-                  <span className="text-fogo-gray-400">
+                  <span className="text-forge-gray-500">Interest Rate (5% APY)</span>
+                  <span className="text-forge-gray-400">
                     {(borrowedUSDC * 0.05).toFixed(2)} USDC/year
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-fogo-gray-400">Health</span>
+                  <span className="text-forge-gray-400">Health</span>
                   <span className={`font-medium ${
                     health >= 200 ? 'text-green-400' :
                     health >= 150 ? 'text-yellow-400' :
@@ -300,22 +304,35 @@ export default function LVFPositionModal({
                 </div>
               </>
             )}
-            <div className="flex justify-between pt-2 border-t border-fogo-gray-700">
-              <span className="text-fogo-gray-400">LP Pair</span>
+            <div className="flex justify-between pt-2 border-t border-forge-gray-700">
+              <span className="text-forge-gray-400">LP Pair</span>
               <span className="text-white font-medium">
                 {baseTokenSymbol}/USDC
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-fogo-gray-400">Effective APY</span>
-              <span className="text-fogo-primary font-bold">
+              <span className="text-forge-gray-400">Effective APY</span>
+              <span className="text-forge-primary font-bold">
                 {effectiveAPY.toFixed(2)}%
               </span>
             </div>
           </div>
         </div>
 
-        {/* Warning */}
+        {/* Lending Pool Liquidity Error */}
+        {!hasEnoughLiquidity && amount && parseFloat(amount) > 0 && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-xl">
+            <div className="flex items-center gap-2 text-red-400">
+              <ExclamationTriangleIcon className="w-5 h-5" />
+              <span className="font-medium">Insufficient Lending Pool Liquidity</span>
+            </div>
+            <p className="text-red-300 text-sm mt-1">
+              Need to borrow {borrowedUSDC.toFixed(2)} USDC but pool only has {availableLiquidity.toFixed(2)} USDC available.
+            </p>
+          </div>
+        )}
+
+        {/* Health Warning */}
         {health < 120 && health < 999 && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">
             ⚠️ Health factor below 120%. Position is at risk.
@@ -326,14 +343,14 @@ export default function LVFPositionModal({
         <div className="flex space-x-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-3 bg-fogo-gray-700 hover:bg-fogo-gray-600 text-white rounded-lg font-medium transition-colors"
+            className="flex-1 px-4 py-3 bg-forge-gray-700 hover:bg-forge-gray-600 text-white rounded-lg font-medium transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleOpenPosition}
-            disabled={!amount || loading || parseFloat(amount) <= 0 || borrowedUSDC > lendingPool.getAvailableLiquidity()}
-            className="flex-1 px-4 py-3 bg-fogo-primary hover:bg-fogo-secondary text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!amount || loading || parseFloat(amount) <= 0 || !hasEnoughLiquidity}
+            className="flex-1 px-4 py-3 bg-forge-primary hover:bg-forge-secondary text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Processing...' : 'Open Position'}
           </button>

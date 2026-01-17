@@ -18,7 +18,7 @@ interface LVFPositionCardProps {
     isOpen: boolean
   }
   crucibleAddress: string
-  baseTokenSymbol: 'SOL' | 'FORGE'
+  baseTokenSymbol: 'SOL'
   baseAPY: number
   onClose: () => void
 }
@@ -48,7 +48,7 @@ export default function LVFPositionCard({
 
   const handleClosePosition = async () => {
     // Calculate closing fee for confirmation
-    const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.002 : 200
+    const baseTokenPrice = 200 // SOL price
     const collateralValueUSD = position.collateral * baseTokenPrice
     const principalFeeUSD = collateralValueUSD * INFERNO_CLOSE_FEE_RATE
     const baseAmountAfterFee = position.collateral * (1 - INFERNO_CLOSE_FEE_RATE)
@@ -80,9 +80,11 @@ export default function LVFPositionCard({
         const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
         
         // Calculate LP token amount that was added when opening
-        const baseTokenPrice = baseTokenSymbol === 'FORGE' ? 0.5 : 0.002
+        const baseTokenPrice = 200 // SOL price
         const collateralValue = position.collateral * baseTokenPrice
-        const cTokenAmount = position.collateral * 1.045 // Exchange rate to get cToken amount
+        // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
+        const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+        const cTokenAmount = position.collateral * exchangeRate
         
         // Calculate total USDC used in the LP position
         let totalUSDC = position.borrowedUSDC
@@ -150,7 +152,7 @@ export default function LVFPositionCard({
           </div>
           <div>
             <h3 className="text-lg font-heading text-white">{displayPairToken}/USDC</h3>
-            <p className="text-xs text-fogo-gray-400">Leveraged Position</p>
+            <p className="text-xs text-forge-gray-400">Leveraged Position</p>
           </div>
         </div>
         <div className="text-right">
@@ -164,14 +166,14 @@ export default function LVFPositionCard({
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-fogo-gray-700/50">
-          <div className="text-xs text-fogo-gray-400 mb-1">Collateral</div>
+        <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-forge-gray-700/50">
+          <div className="text-xs text-forge-gray-400 mb-1">Collateral</div>
           <div className="text-white font-bold text-base">
             {position.collateral.toFixed(2)} {position.token}
           </div>
         </div>
         <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-orange-500/20">
-          <div className="text-xs text-fogo-gray-400 mb-1">Borrowed</div>
+          <div className="text-xs text-forge-gray-400 mb-1">Borrowed</div>
           <div className="text-orange-400 font-bold text-base">
             {position.borrowedUSDC.toFixed(2)} USDC
           </div>
@@ -182,7 +184,7 @@ export default function LVFPositionCard({
           position.health >= 120 ? 'border-orange-500/30' :
           'border-red-500/30'
         }`}>
-          <div className="text-xs text-fogo-gray-400 mb-1">Health Factor</div>
+          <div className="text-xs text-forge-gray-400 mb-1">Health Factor</div>
           <div className={`font-bold text-base ${healthColor}`}>
             {(position.health / 100).toFixed(2)}x
           </div>
@@ -195,8 +197,8 @@ export default function LVFPositionCard({
             </div>
           )}
         </div>
-        <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-fogo-gray-700/50">
-          <div className="text-xs text-fogo-gray-400 mb-1">Current Value</div>
+        <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-forge-gray-700/50">
+          <div className="text-xs text-forge-gray-400 mb-1">Current Value</div>
           <div className="text-white font-bold text-base">
             ${position.currentValue.toFixed(2)}
           </div>
@@ -205,13 +207,13 @@ export default function LVFPositionCard({
 
       <div className="flex items-center justify-between mb-4 p-4 bg-gradient-to-r from-orange-500/10 to-orange-500/5 rounded-lg border border-orange-500/20">
         <div>
-          <div className="text-xs text-fogo-gray-400 mb-1">Effective APY</div>
+          <div className="text-xs text-forge-gray-400 mb-1">Effective APY</div>
           <div className="text-orange-400 font-bold text-xl">
             {effectiveAPY.toFixed(2)}%
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xs text-fogo-gray-400 mb-1">Yield Earned</div>
+          <div className="text-xs text-forge-gray-400 mb-1">Yield Earned</div>
           <div className="text-green-400 font-bold text-base">
             +{position.yieldEarned.toFixed(4)} {position.token}
           </div>
@@ -221,7 +223,7 @@ export default function LVFPositionCard({
       <button
         onClick={handleClosePosition}
         disabled={loading}
-        className="w-full px-5 py-3 bg-gradient-to-r from-fogo-primary to-fogo-primary-light hover:from-fogo-primary-dark hover:to-fogo-primary text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-fogo-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
+        className="w-full px-5 py-3 bg-gradient-to-r from-forge-primary to-forge-primary-light hover:from-forge-primary-dark hover:to-forge-primary text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-forge-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none relative overflow-hidden group"
       >
         {loading && (
           <span className="absolute inset-0 flex items-center justify-center">

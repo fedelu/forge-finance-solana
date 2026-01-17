@@ -1,23 +1,24 @@
-// Math utilities for pFOGO calculations
-export const RATE_SCALE = BigInt(1_000_000_000); // 9 decimal places
+// Math utilities for token calculations
+// RATE_SCALE must match on-chain exchange_rate scaling (1.0 = 1_000_000)
+export const RATE_SCALE = BigInt(1_000_000); // 6 decimal places - matches Rust state.rs
 
 /**
- * Calculate pFOGO amount to mint based on FOGO amount and exchange rate
- * @param amountFOGO - Amount of FOGO tokens to wrap
+ * Calculate pToken amount to mint based on base token amount and exchange rate
+ * @param amountBase - Amount of base tokens to wrap
  * @param exchangeRate - Current exchange rate (scaled by RATE_SCALE)
- * @returns Amount of pFOGO tokens to mint
+ * @returns Amount of pTokens to mint
  */
-export function computePMint(amountFOGO: bigint, exchangeRate: bigint): bigint {
-  return (amountFOGO * RATE_SCALE) / exchangeRate;
+export function computePMint(amountBase: bigint, exchangeRate: bigint): bigint {
+  return (amountBase * RATE_SCALE) / exchangeRate;
 }
 
 /**
- * Calculate FOGO amount to return based on pFOGO amount and exchange rate
- * @param pAmount - Amount of pFOGO tokens to unwrap
+ * Calculate base token amount to return based on pToken amount and exchange rate
+ * @param pAmount - Amount of pTokens to unwrap
  * @param exchangeRate - Current exchange rate (scaled by RATE_SCALE)
- * @returns Amount of FOGO tokens to return
+ * @returns Amount of base tokens to return
  */
-export function computeFogoOut(pAmount: bigint, exchangeRate: bigint): bigint {
+export function computeForgeOut(pAmount: bigint, exchangeRate: bigint): bigint {
   return (pAmount * exchangeRate) / RATE_SCALE;
 }
 
@@ -89,13 +90,13 @@ export function parseAmount(amountStr: string, decimals: number = 9): bigint {
 }
 
 /**
- * Calculate the estimated FOGO value of pFOGO tokens
- * @param pFOGOAmount - Amount of pFOGO tokens
+ * Calculate the estimated base token value of pTokens
+ * @param pTokenAmount - Amount of pTokens
  * @param exchangeRate - Current exchange rate
- * @returns Estimated FOGO value
+ * @returns Estimated base token value
  */
-export function getEstimatedFogoValue(pFOGOAmount: bigint, exchangeRate: bigint): bigint {
-  return computeFogoOut(pFOGOAmount, exchangeRate);
+export function getEstimatedForgeValue(pTokenAmount: bigint, exchangeRate: bigint): bigint {
+  return computeForgeOut(pTokenAmount, exchangeRate);
 }
 
 /**

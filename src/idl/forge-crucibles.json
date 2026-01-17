@@ -1,35 +1,673 @@
 {
-  "version": "0.1.0",
-  "name": "forge-crucibles",
+  "address": "B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry",
+  "metadata": {
+    "name": "forge_crucibles",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Forge Protocol Crucibles - Token vaults for user deposits"
+  },
   "instructions": [
     {
-      "name": "initialize",
+      "name": "burn_ctoken",
+      "docs": [
+        "Burn cToken and return base tokens to user"
+      ],
+      "discriminator": [
+        39,
+        133,
+        56,
+        80,
+        220,
+        86,
+        252,
+        148
+      ],
       "accounts": [
         {
-          "name": "authority",
-          "isMut": true,
-          "isSigner": true
+          "name": "user",
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "programData",
-          "isMut": false,
-          "isSigner": false
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "base_mint",
+          "relations": [
+            "crucible"
+          ]
+        },
+        {
+          "name": "ctoken_mint",
+          "writable": true
+        },
+        {
+          "name": "user_ctoken_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "ctokens_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_leveraged_position",
+      "docs": [
+        "Close a leveraged LP position"
+      ],
+      "discriminator": [
+        125,
+        117,
+        120,
+        40,
+        110,
+        215,
+        240,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "crucible_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "lending_program"
+        },
+        {
+          "name": "lending_market",
+          "writable": true
+        },
+        {
+          "name": "borrower_account",
+          "writable": true
+        },
+        {
+          "name": "lending_vault",
+          "writable": true
+        },
+        {
+          "name": "user_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "position_id",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "close_lp_position",
+      "docs": [
+        "Close a standard LP position"
+      ],
+      "discriminator": [
+        33,
+        118,
+        57,
+        195,
+        133,
+        126,
+        105,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_base_token_account",
+          "writable": true
+        },
+        {
+          "name": "user_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "crucible_base_vault",
+          "writable": true
+        },
+        {
+          "name": "crucible_usdc_vault",
+          "writable": true
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_base",
+          "writable": true
+        },
+        {
+          "name": "treasury_usdc",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
     },
     {
-      "name": "deposit",
+      "name": "initialize_crucible",
+      "docs": [
+        "Initialize a new crucible for a base token"
+      ],
+      "discriminator": [
+        142,
+        95,
+        27,
+        7,
+        32,
+        132,
+        83,
+        106
+      ],
       "accounts": [
         {
-          "name": "user",
-          "isMut": true,
-          "isSigner": true
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "ctoken_mint",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "vault",
-          "isMut": true,
-          "isSigner": false
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_rate",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "mint_ctoken",
+      "docs": [
+        "Mint cToken when user deposits base token"
+      ],
+      "discriminator": [
+        122,
+        91,
+        163,
+        86,
+        17,
+        255,
+        5,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "base_mint",
+          "relations": [
+            "crucible"
+          ]
+        },
+        {
+          "name": "ctoken_mint",
+          "writable": true
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "user_ctoken_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ctoken_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
@@ -40,63 +678,883 @@
       ]
     },
     {
-      "name": "withdraw",
+      "name": "open_leveraged_position",
+      "docs": [
+        "Open a leveraged LP position (TOKEN/USDC)"
+      ],
+      "discriminator": [
+        78,
+        176,
+        109,
+        172,
+        124,
+        126,
+        23,
+        155
+      ],
       "accounts": [
         {
           "name": "user",
-          "isMut": true,
-          "isSigner": true
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "vault",
-          "isMut": true,
-          "isSigner": false
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "crucible_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_id",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle",
+          "docs": [
+            "If provided, must match crucible.oracle"
+          ],
+          "optional": true
+        },
+        {
+          "name": "lending_program"
+        },
+        {
+          "name": "lending_market",
+          "writable": true
+        },
+        {
+          "name": "pool_authority"
+        },
+        {
+          "name": "borrower_account",
+          "writable": true
+        },
+        {
+          "name": "lending_vault",
+          "writable": true
+        },
+        {
+          "name": "user_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "amount",
+          "name": "collateral_amount",
+          "type": "u64"
+        },
+        {
+          "name": "leverage_factor",
           "type": "u64"
         }
-      ]
+      ],
+      "returns": "u64"
+    },
+    {
+      "name": "open_lp_position",
+      "docs": [
+        "Open a standard LP position (base token + USDC, equal value)"
+      ],
+      "discriminator": [
+        162,
+        192,
+        10,
+        152,
+        68,
+        254,
+        183,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "user_base_token_account",
+          "writable": true
+        },
+        {
+          "name": "user_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "crucible_base_vault",
+          "writable": true
+        },
+        {
+          "name": "crucible_usdc_vault",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle",
+          "docs": [
+            "If provided, must match crucible.oracle"
+          ],
+          "optional": true
+        },
+        {
+          "name": "treasury_base",
+          "writable": true
+        },
+        {
+          "name": "treasury_usdc",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "base_amount",
+          "type": "u64"
+        },
+        {
+          "name": "usdc_amount",
+          "type": "u64"
+        },
+        {
+          "name": "max_slippage_bps",
+          "type": "u64"
+        }
+      ],
+      "returns": "u64"
     }
   ],
   "accounts": [
     {
-      "name": "Vault",
+      "name": "Crucible",
+      "discriminator": [
+        47,
+        127,
+        119,
+        76,
+        137,
+        77,
+        50,
+        185
+      ]
+    },
+    {
+      "name": "LPPositionAccount",
+      "discriminator": [
+        70,
+        254,
+        30,
+        107,
+        156,
+        163,
+        242,
+        199
+      ]
+    },
+    {
+      "name": "LeveragedPosition",
+      "discriminator": [
+        212,
+        145,
+        88,
+        69,
+        227,
+        167,
+        162,
+        165
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "CTokenBurned",
+      "discriminator": [
+        106,
+        177,
+        85,
+        179,
+        232,
+        47,
+        51,
+        131
+      ]
+    },
+    {
+      "name": "CTokenMinted",
+      "discriminator": [
+        80,
+        219,
+        204,
+        170,
+        88,
+        25,
+        0,
+        169
+      ]
+    },
+    {
+      "name": "CrucibleInitialized",
+      "discriminator": [
+        84,
+        130,
+        152,
+        175,
+        176,
+        90,
+        161,
+        44
+      ]
+    },
+    {
+      "name": "LeveragedPositionClosed",
+      "discriminator": [
+        195,
+        127,
+        203,
+        242,
+        10,
+        78,
+        53,
+        184
+      ]
+    },
+    {
+      "name": "LeveragedPositionOpened",
+      "discriminator": [
+        63,
+        140,
+        102,
+        71,
+        213,
+        50,
+        66,
+        237
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InsufficientLiquidity",
+      "msg": "Insufficient liquidity in vault"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidBaseMint",
+      "msg": "Invalid base mint"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidLeverage",
+      "msg": "Invalid leverage factor"
+    },
+    {
+      "code": 6003,
+      "name": "PositionNotOpen",
+      "msg": "Position is not open"
+    },
+    {
+      "code": 6004,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidPosition",
+      "msg": "Invalid position ID"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidLPAmounts",
+      "msg": "Invalid LP amounts - must be equal value"
+    },
+    {
+      "code": 6007,
+      "name": "PositionNotFound",
+      "msg": "Position not found"
+    },
+    {
+      "code": 6008,
+      "name": "VaultBalanceMismatch",
+      "msg": "Vault balance mismatch - potential manipulation detected"
+    },
+    {
+      "code": 6009,
+      "name": "ProtocolPaused",
+      "msg": "Protocol is paused"
+    },
+    {
+      "code": 6010,
+      "name": "FeatureNotImplemented",
+      "msg": "Feature not implemented - lending integration required"
+    },
+    {
+      "code": 6011,
+      "name": "StaleOraclePrice",
+      "msg": "Oracle price is stale"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidOraclePrice",
+      "msg": "Invalid oracle price"
+    },
+    {
+      "code": 6013,
+      "name": "SlippageExceeded",
+      "msg": "Slippage tolerance exceeded"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidTreasury",
+      "msg": "Invalid treasury account"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidLendingProgram",
+      "msg": "Invalid lending program"
+    }
+  ],
+  "types": [
+    {
+      "name": "CTokenBurned",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "authority",
-            "type": "publicKey"
+            "name": "crucible",
+            "type": "pubkey"
           },
           {
-            "name": "totalDeposits",
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "ctokens_burned",
             "type": "u64"
           },
           {
-            "name": "totalWithdrawals",
+            "name": "base_returned",
+            "type": "u64"
+          },
+          {
+            "name": "exchange_rate",
+            "type": "u64"
+          },
+          {
+            "name": "unwrap_fee",
+            "type": "u64"
+          },
+          {
+            "name": "vault_fee_share",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee_share",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CTokenMinted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "crucible",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "ctokens_minted",
+            "type": "u64"
+          },
+          {
+            "name": "exchange_rate",
+            "type": "u64"
+          },
+          {
+            "name": "wrap_fee",
+            "type": "u64"
+          },
+          {
+            "name": "vault_fee_share",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee_share",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Crucible",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "ctoken_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "total_base_deposited",
+            "type": "u64"
+          },
+          {
+            "name": "total_ctoken_supply",
+            "type": "u64"
+          },
+          {
+            "name": "exchange_rate",
+            "type": "u64"
+          },
+          {
+            "name": "last_update_slot",
+            "type": "u64"
+          },
+          {
+            "name": "fee_rate",
+            "type": "u64"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "total_leveraged_positions",
+            "type": "u64"
+          },
+          {
+            "name": "total_lp_positions",
+            "type": "u64"
+          },
+          {
+            "name": "expected_vault_balance",
+            "type": "u64"
+          },
+          {
+            "name": "oracle",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_fees_accrued",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CrucibleInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "crucible",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "ctoken_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "oracle",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "fee_rate",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LPPositionAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "crucible",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_amount",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_amount",
+            "type": "u64"
+          },
+          {
+            "name": "entry_price",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "u64"
+          },
+          {
+            "name": "is_open",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LeveragedPosition",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "token",
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral",
+            "type": "u64"
+          },
+          {
+            "name": "borrowed_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "leverage_factor",
+            "type": "u64"
+          },
+          {
+            "name": "entry_price",
+            "type": "u64"
+          },
+          {
+            "name": "current_value",
+            "type": "u64"
+          },
+          {
+            "name": "yield_earned",
+            "type": "u64"
+          },
+          {
+            "name": "is_open",
+            "type": "bool"
+          },
+          {
+            "name": "created_at",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LeveragedPositionClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral_returned",
+            "type": "u64"
+          },
+          {
+            "name": "yield_earned",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LeveragedPositionOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "token",
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral",
+            "type": "u64"
+          },
+          {
+            "name": "borrowed_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "leverage_factor",
             "type": "u64"
           }
         ]
       }
     }
-  ],
-  "types": [],
-  "errors": [
-    {
-      "code": 6000,
-      "name": "InsufficientFunds",
-      "msg": "Insufficient funds for operation"
-    },
-    {
-      "code": 6001,
-      "name": "Unauthorized",
-      "msg": "Unauthorized access"
-    }
-  ],
-  "metadata": {
-    "address": "Fg1F9DAE2CA7F978969B56EC7E9E7B93DEF5224C63"
-  }
+  ]
 }

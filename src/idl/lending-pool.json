@@ -1,0 +1,294 @@
+{
+  "address": "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx",
+  "version": "0.1.0",
+  "name": "lending_pool_usdc",
+  "instructions": [
+    {
+      "name": "initialize",
+      "accounts": [
+        {
+          "name": "pool",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "usdcMint",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "authority",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "initialLiquidity",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "depositUsdc",
+      "accounts": [
+        {
+          "name": "pool",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "user",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "userUsdcAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "poolVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "borrowUsdc",
+      "accounts": [
+        {
+          "name": "pool",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "borrower",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "borrowerAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "poolVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "borrowerUsdcAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "repayUsdc",
+      "accounts": [
+        {
+          "name": "pool",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "borrower",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "borrowerAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "borrowerUsdcAccount",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "poolVault",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "tokenProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "getAvailableLiquidity",
+      "accounts": [
+        {
+          "name": "pool",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "LendingPool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "usdcMint",
+            "type": "publicKey"
+          },
+          {
+            "name": "totalLiquidity",
+            "type": "u64"
+          },
+          {
+            "name": "totalBorrowed",
+            "type": "u64"
+          },
+          {
+            "name": "borrowRate",
+            "type": "u64"
+          },
+          {
+            "name": "lenderRate",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BorrowerAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "borrower",
+            "type": "publicKey"
+          },
+          {
+            "name": "amountBorrowed",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "USDCDeposited",
+      "fields": [
+        {
+          "name": "lender",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "amount",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "totalLiquidity",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "USDCBorrowed",
+      "fields": [
+        {
+          "name": "borrower",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "amount",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "totalBorrowed",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "USDCRepaid",
+      "fields": [
+        {
+          "name": "borrower",
+          "type": "publicKey",
+          "index": false
+        },
+        {
+          "name": "amount",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "remainingDebt",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InsufficientLiquidity",
+      "msg": "Insufficient liquidity in pool"
+    },
+    {
+      "code": 6001,
+      "name": "RepayAmountExceedsDebt",
+      "msg": "Repay amount exceeds debt"
+    }
+  ],
+  "metadata": {
+    "address": "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx"
+  }
+}

@@ -39,12 +39,13 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
    * Calculate effective APY with leverage
    * Leveraged positions have 3x the APY of normal positions
    * Effective APY = (Base APY * 3 * Leverage) - (Borrow Rate * (Leverage - 1))
+   * Fixed 10% APY borrowing rate from lending-pool
    */
   const calculateEffectiveAPY = useCallback(
     (baseAPY: number, leverage: number, borrowed: number, collateral: number): number => {
       if (leverage === 1) return baseAPY
 
-      const borrowRate = 5 // 5% APR (fixed borrow rate)
+      const borrowRate = 10 // 10% APY (fixed rate from lending-pool)
       // Leveraged positions earn 3x the base APY
       const leveragedYield = baseAPY * 3 * leverage
       const borrowCost = borrowRate * (leverage - 1) * (borrowed / (collateral + borrowed))
@@ -64,7 +65,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
       if (selectedLeverage === 2) {
         // Calculate borrow amount (equal to collateral for 2x)
         const borrowAmount = collateralAmount // In base token units, convert to USDC value
-        const baseTokenPrice = 0.5 // FOGO price, adjust as needed
+        const baseTokenPrice = 0.5 // SOL price, adjust as needed
         const borrowAmountUSDC = borrowAmount * baseTokenPrice
 
         // Check if pool has enough liquidity
@@ -138,7 +139,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
       }
 
       const newBorrowed = leverageState.borrowed - repayAmount
-      const collateralValue = (initialCollateral || 0) * 0.5 // Assume FOGO price
+      const collateralValue = (initialCollateral || 0) * 0.5 // Assume SOL price
       const healthFactor = calculateHealthFactor(collateralValue, newBorrowed)
 
       setLeverageState((prev) => ({
@@ -164,7 +165,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
         return
       }
 
-      const baseTokenPrice = 0.5 // FOGO price
+      const baseTokenPrice = 0.5 // SOL price
       const collateralValue = collateralAmount * baseTokenPrice
       const healthFactor = calculateHealthFactor(collateralValue, leverageState.borrowed)
 

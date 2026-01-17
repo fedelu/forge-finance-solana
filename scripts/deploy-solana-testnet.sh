@@ -289,7 +289,7 @@ cat > SOLANA_DEPLOYMENT_SUMMARY.md << EOF
 - ✅ **Transaction Sending**: Send transactions to Solana testnet
 - ✅ **Real RPC**: Connected to Solana testnet RPC
 - ✅ **Program Interaction**: Interact with deployed programs
-- ✅ **Stable Network**: Solana testnet is more stable than Fogo
+- ✅ **Stable Network**: Solana devnet for development and testing
 
 ## Next Steps
 1. **Start Frontend**: \`cd app && npm run dev\`

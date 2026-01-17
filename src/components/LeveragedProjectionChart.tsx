@@ -7,7 +7,7 @@ interface LeveragedProjectionChartProps {
   leverage: number
   currentPrice: number // Base token price in USD
   currentExchangeRate: number // 1 cToken = X base tokens
-  baseTokenSymbol: string // 'FOGO' or 'FORGE'
+  baseTokenSymbol: 'SOL'
 }
 
 export default function LeveragedProjectionChart({
@@ -85,8 +85,8 @@ export default function LeveragedProjectionChart({
           onClick={() => setShowChart(!showChart)}
           className={`px-4 py-2 rounded-lg text-xs font-heading uppercase tracking-[0.18em] transition-all duration-300 flex items-center gap-2 ${
             showChart
-              ? 'bg-fogo-primary-light/30 border border-fogo-primary/40 text-white shadow-[0_10px_25px_rgba(255,102,14,0.25)] hover:bg-fogo-primary/30 hover:border-fogo-primary/50'
-              : 'bg-white/5 border border-white/10 text-fogo-gray-200 hover:text-white hover:bg-white/10 hover:border-white/20'
+              ? 'bg-forge-primary-light/30 border border-forge-primary/40 text-white shadow-[0_10px_25px_rgba(255,102,14,0.25)] hover:bg-forge-primary/30 hover:border-forge-primary/50'
+              : 'bg-white/5 border border-white/10 text-forge-gray-200 hover:text-white hover:bg-white/10 hover:border-white/20'
           }`}
         >
           <span>{showChart ? 'Hide Chart' : 'Show Chart'}</span>

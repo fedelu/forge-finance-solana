@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # --- Configuration ---
-FOGO_RPC_URL="https://testnet.fogo.io"
+SOLANA_RPC_URL="https://api.devnet.solana.com"
 USER_WALLET_ADDRESS="78bNPUUvdFLoCubco57mfXqEu1EU9UmRcodqUGNaZ7Pf"
 
 # --- Utility Functions ---
 print_status() {
-    echo "🔥 [FOGO] $1"
+    echo "🔥 [SOLANA] $1"
 }
 
 print_success() {
@@ -24,7 +24,7 @@ print_error() {
 
 # --- Main Frontend Deployment Process ---
 
-echo "🔥 Forge Protocol - Frontend Deployment to Fogo Testnet"
+echo "🔥 Forge Protocol - Frontend Deployment to Solana Devnet"
 echo "======================================================="
 echo ""
 
@@ -74,13 +74,13 @@ print_success "Frontend is ready!"
 echo ""
 print_status "🚀 Your Forge Protocol is now running:"
 print_status "  • Local URL: http://localhost:3000/demo"
-print_status "  • Fogo Testnet: Configured"
+print_status "  • Solana Devnet: Configured"
 print_status "  • Wallet: Ready to connect"
 print_status "  • Features: All DeFi features available"
 echo ""
 print_status "📱 To test:"
 print_status "  1. Open http://localhost:3000/demo"
-print_status "  2. Click 'Connect Fogo Wallet'"
+print_status "  2. Click 'Connect Wallet'"
 print_status "  3. Test all DeFi features"
 print_status "  4. Navigate between tabs (Dashboard, Crucibles, Governance, Analytics)"
 echo ""
