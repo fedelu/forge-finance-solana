@@ -46,7 +46,7 @@ interface LeveragedPosition {
 
 interface UseLVFPositionProps {
   crucibleAddress: string
-  baseTokenSymbol: 'SOL'
+  baseTokenSymbol: 'SOL' | 'FORGE'
 }
 
 export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPositionProps) {
