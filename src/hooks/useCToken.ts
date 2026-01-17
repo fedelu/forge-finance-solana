@@ -3,10 +3,10 @@ import { PublicKey, Transaction, SystemProgram, SYSVAR_RENT_PUBKEY } from '@sola
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, NATIVE_MINT } from '@solana/spl-token'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
-import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram'
+import { getCruciblesProgram, AnchorWallet, buildBurnCtokenInstruction } from '../utils/anchorProgram'
 import { fetchCrucibleDirect, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate } from '../utils/crucibleFetcher'
-import { deriveCruciblePDA, deriveVaultPDA } from '../utils/cruciblePdas'
-import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
+import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
+import { SOLANA_TESTNET_CONFIG, SOLANA_TESTNET_PROGRAM_IDS, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
 import { UNWRAP_FEE_RATE } from '../config/fees'
 
 interface CTokenBalance {
@@ -381,19 +381,12 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       const withdrawalFee = baseAmountBeforeFee * withdrawalFeePercent
       const baseAmountAfterFee = baseAmountBeforeFee - withdrawalFee
 
-      // Get Anchor program instance
-      const anchorWallet: AnchorWallet = {
-        publicKey: publicKey,
-        signTransaction: walletContext?.signTransaction || (async (tx: Transaction) => tx),
-        signAllTransactions: walletContext?.signAllTransactions || (async (txs: Transaction[]) => txs),
-      }
-      const program = getCruciblesProgram(connection, anchorWallet)
-      
       // Derive PDAs
       const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
       const [cruciblePDA] = deriveCruciblePDA(baseMint)
       const [vaultPDA] = deriveVaultPDA(cruciblePDA)
       const ctokenMintPubkey = new PublicKey(ctokenMint)
+      const programId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
       
       // Fetch crucible account to get treasury address (using direct fetcher)
       let treasuryAccount: PublicKey
@@ -419,24 +412,42 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         publicKey
       )
       
-      // Call burnCtoken instruction
+      // Derive crucible authority PDA
+      const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
+      
+      // Build burn_ctoken instruction manually (bypasses Anchor IDL parsing)
+      const burnInstruction = buildBurnCtokenInstruction(
+        programId,
+        {
+          user: publicKey,
+          crucible: cruciblePDA,
+          baseMint: baseMint,
+          ctokenMint: ctokenMintPubkey,
+          userCtokenAccount: userCtokenAccount,
+          vault: vaultPDA,
+          userTokenAccount: userTokenAccount,
+          crucibleAuthority: crucibleAuthorityPDA,
+          treasury: treasuryAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        },
+        new BN(ctokenAmount.toString())
+      )
+      
+      // Build transaction
+      const transaction = new Transaction().add(burnInstruction)
+      const { blockhash } = await connection.getLatestBlockhash('confirmed')
+      transaction.recentBlockhash = blockhash
+      transaction.feePayer = publicKey
+      
+      // Send transaction
       try {
-        const txSignature = await program.methods
-          .burnCtoken(new BN(ctokenAmount.toString()))
-          .accounts({
-            user: publicKey,
-            crucible: cruciblePDA,
-            baseMint: baseMint,
-            ctokenMint: ctokenMintPubkey,
-            userCtokenAccount: userCtokenAccount,
-            vault: vaultPDA,
-            userTokenAccount: userTokenAccount,
-            crucibleAuthority: cruciblePDA,
-            treasury: treasuryAccount,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc()
+        let txSignature: string
+        if (walletContext?.sendTransaction) {
+          txSignature = await walletContext.sendTransaction(transaction, connection)
+        } else {
+          throw new Error('No sendTransaction method available')
+        }
         
         console.log('✅ Burn cToken transaction sent:', txSignature)
         

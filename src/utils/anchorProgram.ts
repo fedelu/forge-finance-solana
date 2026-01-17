@@ -16,6 +16,9 @@ export interface AnchorWallet {
 // From IDL: [122, 91, 163, 86, 17, 255, 5, 147]
 const MINT_CTOKEN_DISCRIMINATOR = Buffer.from([122, 91, 163, 86, 17, 255, 5, 147])
 
+// From IDL burn_ctoken discriminator: [39, 133, 56, 80, 220, 86, 252, 148]
+const BURN_CTOKEN_DISCRIMINATOR = Buffer.from([39, 133, 56, 80, 220, 86, 252, 148])
+
 /**
  * Build mint_ctoken instruction manually (bypasses Anchor IDL parsing)
  */
@@ -69,6 +72,55 @@ export function buildMintCtokenInstruction(
   })
 }
 
+/**
+ * Build burn_ctoken instruction manually (bypasses Anchor IDL parsing)
+ */
+export function buildBurnCtokenInstruction(
+  programId: PublicKey,
+  accounts: {
+    user: PublicKey
+    crucible: PublicKey
+    baseMint: PublicKey
+    ctokenMint: PublicKey
+    userCtokenAccount: PublicKey
+    vault: PublicKey
+    userTokenAccount: PublicKey
+    crucibleAuthority: PublicKey
+    treasury: PublicKey
+    tokenProgram: PublicKey
+    systemProgram: PublicKey
+  },
+  ctokenAmount: BN
+): TransactionInstruction {
+  // Serialize amount as u64 (8 bytes, little-endian)
+  const amountBuffer = Buffer.alloc(8)
+  ctokenAmount.toArrayLike(Buffer, 'le', 8).copy(amountBuffer)
+  
+  // Instruction data = discriminator + amount
+  const data = Buffer.concat([BURN_CTOKEN_DISCRIMINATOR, amountBuffer])
+  
+  // Account metas in order (matching IDL)
+  const keys = [
+    { pubkey: accounts.user, isSigner: true, isWritable: true },
+    { pubkey: accounts.crucible, isSigner: false, isWritable: true },
+    { pubkey: accounts.baseMint, isSigner: false, isWritable: false },
+    { pubkey: accounts.ctokenMint, isSigner: false, isWritable: true },
+    { pubkey: accounts.userCtokenAccount, isSigner: false, isWritable: true },
+    { pubkey: accounts.vault, isSigner: false, isWritable: true },
+    { pubkey: accounts.userTokenAccount, isSigner: false, isWritable: true },
+    { pubkey: accounts.crucibleAuthority, isSigner: false, isWritable: false },
+    { pubkey: accounts.treasury, isSigner: false, isWritable: true },
+    { pubkey: accounts.tokenProgram, isSigner: false, isWritable: false },
+    { pubkey: accounts.systemProgram, isSigner: false, isWritable: false },
+  ]
+  
+  return new TransactionInstruction({
+    keys,
+    programId,
+    data,
+  })
+}
+
 // Manually define a minimal IDL for mint_ctoken instruction
 // This avoids IDL parsing issues with Anchor 0.32
 const FORGE_CRUCIBLES_IDL = {
@@ -101,13 +153,15 @@ const FORGE_CRUCIBLES_IDL = {
         { name: 'crucible', isMut: true, isSigner: false },
         { name: 'baseMint', isMut: false, isSigner: false },
         { name: 'ctokenMint', isMut: true, isSigner: false },
-        { name: 'userTokenAccount', isMut: true, isSigner: false },
         { name: 'userCtokenAccount', isMut: true, isSigner: false },
         { name: 'vault', isMut: true, isSigner: false },
+        { name: 'userTokenAccount', isMut: true, isSigner: false },
         { name: 'crucibleAuthority', isMut: false, isSigner: false },
+        { name: 'treasury', isMut: true, isSigner: false },
         { name: 'tokenProgram', isMut: false, isSigner: false },
+        { name: 'systemProgram', isMut: false, isSigner: false },
       ],
-      args: [{ name: 'ctokenAmount', type: 'u64' }],
+      args: [{ name: 'ctokensAmount', type: 'u64' }],
     },
   ],
   accounts: [
@@ -137,6 +191,7 @@ const FORGE_CRUCIBLES_IDL = {
       },
     },
   ],
+  types: [], // Required by Anchor 0.32 - account types are defined in accounts array
   errors: [],
 }
 
