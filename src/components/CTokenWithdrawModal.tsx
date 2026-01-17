@@ -10,6 +10,7 @@ import { useBalance } from '../contexts/BalanceContext'
 import { useLP } from '../hooks/useLP'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useWallet } from '../contexts/WalletContext'
+import { useAnalytics } from '../contexts/AnalyticsContext'
 import { formatNumberWithCommas } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { getCruciblesProgram } from '../utils/anchorProgram'
@@ -43,7 +44,9 @@ export default function CTokenWithdrawModal({
   const { addToBalance, subtractFromBalance } = useBalance()
   const { connected, publicKey, connection } = useWallet()
   const { sendTransaction: adapterSendTransaction } = useSolanaWallet()
+  const { addTransaction } = useAnalytics()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
+  const baseTokenPrice = 200 // SOL price
   
   // Check for LP and leveraged positions for this crucible
   const { positions: lpPositions, closePosition: closeLPPosition, loading: lpLoading } = useLP({
@@ -250,6 +253,15 @@ export default function CTokenWithdrawModal({
             
             addToBalance(baseTokenSymbol, withdrawResult.baseAmount)
             
+            // Record withdrawal transaction
+            addTransaction({
+              type: 'unwrap',
+              amount: withdrawResult.baseAmount,
+              token: baseTokenSymbol,
+              crucibleId: crucibleAddress,
+              usdValue: withdrawResult.baseAmount * baseTokenPrice, // Explicit USD value for accurate tracking
+            })
+            
             const unwrapSummary = [
               '🔥 Forge Position Update',
               '',
@@ -289,6 +301,15 @@ export default function CTokenWithdrawModal({
         
         if (withdrawResult) {
           addToBalance(baseTokenSymbol, withdrawResult.baseAmount)
+          
+          // Record withdrawal transaction
+          addTransaction({
+            type: 'unwrap',
+            amount: withdrawResult.baseAmount,
+            token: baseTokenSymbol,
+            crucibleId: crucibleAddress,
+            usdValue: withdrawResult.baseAmount * baseTokenPrice, // Explicit USD value for accurate tracking
+          })
           
           const unwrapSummary = [
             '🔥 Forge Position Update',
