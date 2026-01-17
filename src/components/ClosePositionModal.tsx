@@ -1,14 +1,17 @@
 import React, { useState, useMemo } from 'react'
 import { XMarkIcon, ArrowDownIcon } from '@heroicons/react/24/outline'
 import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddress, getAccount, createCloseAccountInstruction } from '@solana/spl-token'
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
 import { useCrucible } from '../hooks/useCrucible'
+import { useCToken } from '../hooks/useCToken'
 import { useBalance } from '../contexts/BalanceContext'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useWallet } from '../contexts/WalletContext'
 import { formatNumberWithCommas, RATE_SCALE } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
 
 interface ClosePositionModalProps {
   isOpen: boolean
@@ -48,7 +51,10 @@ export default function ClosePositionModal({
     return () => clearInterval(interval)
   }, [isOpen])
 
-  const { unwrapTokens, getCrucible, calculateUnwrapPreview } = useCrucible()
+  const { getCrucible, calculateUnwrapPreview } = useCrucible()
+  const crucible = getCrucible(crucibleAddress)
+  const ctokenMint = crucible?.ptokenMint || DEPLOYED_ACCOUNTS.CSOL_MINT
+  const { withdraw: withdrawCToken, loading: withdrawLoading } = useCToken(crucibleAddress, ctokenMint)
   const { addToBalance, subtractFromBalance, balances } = useBalance()
   const { publicKey: walletPublicKey, connection } = useWallet()
   const { sendTransaction: adapterSendTransaction } = useSolanaWallet() // Use adapter's sendTransaction
@@ -111,8 +117,57 @@ export default function ClosePositionModal({
     }
   }, [crucibleAddress, baseTokenSymbol, refetchLVF])
 
-  const crucible = getCrucible(crucibleAddress)
-        const baseTokenPrice = 200 // SOL price
+  const baseTokenPrice = 200 // SOL price
+  
+  // Helper function to unwrap WSOL to SOL
+  const unwrapWSOLToSOL = async (userPublicKey: PublicKey): Promise<void> => {
+    if (!connection) {
+      throw new Error('Connection not available')
+    }
+    
+    const wsolMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL mint
+    const userWSOLAccount = await getAssociatedTokenAddress(wsolMint, userPublicKey)
+    
+    try {
+      // Check if WSOL account exists and has balance
+      const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
+      
+      if (wsolAccountInfo.amount > BigInt(0)) {
+        // Close WSOL account to unwrap to SOL
+        const closeInstruction = createCloseAccountInstruction(
+          userWSOLAccount, // Account to close
+          userPublicKey,   // Destination for rent
+          userPublicKey    // Owner
+        )
+        
+        const transaction = new Transaction().add(closeInstruction)
+        const { blockhash } = await connection.getLatestBlockhash('confirmed')
+        transaction.recentBlockhash = blockhash
+        transaction.feePayer = userPublicKey
+        
+        console.log(`🔄 Unwrapping WSOL to SOL: ${wsolAccountInfo.amount.toString()} lamports`)
+        
+        if (adapterSendTransaction) {
+          const signature = await adapterSendTransaction(transaction, connection)
+          await connection.confirmTransaction(signature, 'confirmed')
+          console.log('✅ WSOL unwrapped to SOL:', signature)
+        }
+      }
+    } catch (error: any) {
+      // If account doesn't exist or is empty, that's fine - no WSOL to unwrap
+      if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('Account not found')) {
+        console.log('ℹ️ No WSOL account found - nothing to unwrap')
+        return
+      }
+      // If account has 0 balance, that's also fine
+      if (error.message?.includes('0')) {
+        console.log('ℹ️ WSOL account has 0 balance - nothing to unwrap')
+        return
+      }
+      console.warn('Warning: Could not unwrap WSOL:', error)
+      // Don't throw - WSOL unwrap is optional, contract already transferred tokens
+    }
+  }
   
   // Calculate leveraged position status internally - ULTRA LENIENT
   const hasLeveragedPosition = useMemo(() => {
@@ -293,220 +348,51 @@ export default function ClosePositionModal({
       return
     }
 
+    if (!walletPublicKey) {
+      setError('Wallet not connected')
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     try {
-      const result = await unwrapTokens(crucibleAddress, ctokenAmount)
+      // Call contract burn_ctoken instruction (returns WSOL)
+      const ctokenAmountBigInt = BigInt(Math.floor(parseFloat(ctokenAmount) * 1e9))
+      const result = await withdrawCToken(ctokenAmountBigInt, crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1_000_000 : undefined)
       
       if (result) {
-        // Send actual SOL back to wallet if baseToken is SOL
-        if (baseTokenSymbol === 'SOL' && walletPublicKey && adapterSendTransaction && result.baseAmount > 0) {
+        // Contract has transferred WSOL to user's token account
+        // Now unwrap WSOL to SOL
+        if (baseTokenSymbol === 'SOL' && walletPublicKey) {
           try {
-            // In production, this would come from the crucible vault
-            // For now, we'll simulate receiving SOL from the vault
-            // The vault address is where we sent SOL during deposit
-            const crucibleVaultAddress = new PublicKey('5R7DQ1baJiYoi4GdVu1hTwBZMHxqabDenzaLVA9V7wV3')
-            
-            // Create transfer transaction FROM vault TO user wallet
-            const transaction = new Transaction().add(
-              SystemProgram.transfer({
-                fromPubkey: crucibleVaultAddress,
-                toPubkey: walletPublicKey,
-                lamports: Math.floor(result.baseAmount * LAMPORTS_PER_SOL), // Convert SOL to lamports
-              })
-            )
-            
-            // Get recent blockhash
-            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
-            transaction.recentBlockhash = blockhash
-            transaction.feePayer = walletPublicKey
-            
-            console.log(`💸 Sending ${result.baseAmount} SOL back to wallet...`)
-            console.log(`📝 From: ${crucibleVaultAddress.toString()}`)
-            console.log(`📝 To: ${walletPublicKey.toString()}`)
-            console.log(`📝 Amount: ${result.baseAmount} SOL (${Math.floor(result.baseAmount * LAMPORTS_PER_SOL)} lamports)`)
-            
-            // For devnet testing: Use Solana devnet faucet to send SOL back to user
-            // In production, the crucible program would handle this withdrawal
-            console.log(`💸 Requesting ${result.baseAmount} SOL from devnet faucet to simulate withdrawal...`)
-            
-            try {
-              // Request airdrop from Solana devnet faucet to simulate withdrawal
-              // Devnet faucet limits: max 2 SOL per request, rate limited
-              const lamportsToAirdrop = Math.floor(result.baseAmount * LAMPORTS_PER_SOL)
-              const maxAirdropLamports = 2 * LAMPORTS_PER_SOL // 2 SOL max per request
-              
-              console.log(`📝 Requesting airdrop of ${result.baseAmount} SOL (${lamportsToAirdrop} lamports) to ${walletPublicKey.toString()}`)
-              
-              let airdropSignature: string | null = null
-              
-              // If amount is larger than 2 SOL, split into multiple requests
-              if (lamportsToAirdrop > maxAirdropLamports) {
-                console.log(`⚠️ Amount exceeds 2 SOL limit, splitting into multiple airdrops...`)
-                const chunks = Math.ceil(lamportsToAirdrop / maxAirdropLamports)
-                const chunkSize = Math.floor(lamportsToAirdrop / chunks)
-                
-                for (let i = 0; i < chunks; i++) {
-                  const chunkAmount = i === chunks - 1 
-                    ? lamportsToAirdrop - (chunkSize * (chunks - 1)) // Last chunk gets remainder
-                    : chunkSize
-                  
-                  console.log(`📦 Requesting chunk ${i + 1}/${chunks}: ${chunkAmount / LAMPORTS_PER_SOL} SOL`)
-                  
-                  try {
-                    const chunkSignature = await connection.requestAirdrop(
-                      walletPublicKey,
-                      chunkAmount
-                    )
-                    console.log(`✅ Chunk ${i + 1} requested: ${chunkSignature}`)
-                    
-                    // Wait a bit between requests to avoid rate limits
-                    if (i < chunks - 1) {
-                      await new Promise(resolve => setTimeout(resolve, 2000)) // 2 second delay
-                    }
-                    
-                    airdropSignature = chunkSignature // Use last signature
-                  } catch (chunkError: any) {
-                    console.error(`Chunk ${i + 1} failed:`, chunkError)
-                    // Continue with other chunks
-                  }
-                }
-              } else {
-                // Single airdrop request
-                airdropSignature = await connection.requestAirdrop(
-                  walletPublicKey,
-                  lamportsToAirdrop
-                )
-                console.log(`✅ Airdrop requested: ${airdropSignature}`)
-              }
-              
-              if (airdropSignature) {
-                // Wait for confirmation with retry
-                let confirmed = false
-                let retries = 3
-                
-                while (!confirmed && retries > 0) {
-                  try {
-                    await connection.confirmTransaction(airdropSignature, 'confirmed')
-                    confirmed = true
-                    console.log(`✅ Airdrop confirmed! ${result.baseAmount} SOL added to wallet`)
-                  } catch (confirmError) {
-                    retries--
-                    if (retries > 0) {
-                      console.log(`⏳ Confirmation pending, retrying... (${retries} retries left)`)
-                      await new Promise(resolve => setTimeout(resolve, 2000))
-                    } else {
-                      // Check if transaction actually succeeded despite confirmation error
-                      const status = await connection.getSignatureStatus(airdropSignature)
-                      if (status.value?.confirmationStatus) {
-                        confirmed = true
-                        console.log(`✅ Transaction confirmed via status check`)
-                      } else {
-                        throw confirmError
-                      }
-                    }
-                  }
-                }
-              }
-              
-              // Update wallet balances
-              subtractFromBalance(ctokenSymbol, parseFloat(ctokenAmount))
-              addToBalance(baseTokenSymbol, result.baseAmount)
-              
-              // Refresh wallet balance from blockchain after a delay
-              setTimeout(async () => {
-                try {
-                  const newBalance = await connection.getBalance(walletPublicKey)
-                  console.log(`✅ Wallet balance updated: ${newBalance / LAMPORTS_PER_SOL} SOL`)
-                  
-                  // Dispatch event to refresh wallet balance display
-                  window.dispatchEvent(new CustomEvent('depositComplete', { 
-                    detail: { token: baseTokenSymbol, amount: result.baseAmount } 
-                  }))
-                } catch (error) {
-                  console.error('Failed to refresh balance:', error)
-                }
-              }, 3000) // Wait 3 seconds for balance to update
-              
-              // Show success message
-              if (airdropSignature) {
-                const explorerUrl = `https://explorer.solana.com/tx/${airdropSignature}?cluster=devnet`
-                alert(`✅ Withdrawal Successful!\n\n${result.baseAmount} SOL received\nTransaction: ${airdropSignature.substring(0, 8)}...\n\nView on Explorer: ${explorerUrl}\n\nNote: This uses devnet faucet for demo. In production, SOL would come from the crucible vault.`)
-              } else {
-                alert(`✅ Withdrawal Processed!\n\n${result.baseAmount} SOL requested from devnet faucet.\n\nNote: If faucet is rate-limited, SOL may arrive shortly. Check your wallet balance.\n\nIn production, withdrawals come directly from the crucible vault.`)
-              }
-            } catch (airdropError: any) {
-              console.error('Airdrop failed:', airdropError)
-              
-              // If airdrop fails (rate limit, etc.), still update local state
-              subtractFromBalance(ctokenSymbol, parseFloat(ctokenAmount))
-              addToBalance(baseTokenSymbol, result.baseAmount)
-              
-              // Provide helpful error message
-              const errorMsg = airdropError.message || 'Unknown error'
-              const isRateLimit = errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('too many')
-              
-              if (isRateLimit) {
-                alert(`⚠️ Devnet Faucet Rate Limited\n\nThe devnet faucet has rate limits (typically 2 SOL per request).\n\n✅ Your local balances have been updated.\n\n💡 To receive SOL:\n1. Wait a few minutes and try again\n2. Or use the Solana faucet directly:\n   https://faucet.solana.com/\n\nIn production, withdrawals come directly from the crucible vault.`)
-              } else {
-                alert(`⚠️ Airdrop Request Failed\n\nError: ${errorMsg}\n\n✅ Your local balances have been updated.\n\n💡 To receive SOL:\n1. Try again in a moment\n2. Or use the Solana faucet directly:\n   https://faucet.solana.com/\n\nIn production, withdrawals come directly from the crucible vault.`)
-              }
-            }
-            
-            // Record transaction (use outer scope baseTokenPrice)
-            addTransaction({
-              type: 'unwrap',
-              amount: result.baseAmount,
-              token: baseTokenSymbol,
-              crucibleId: crucibleAddress,
-              signature: `unwrap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              apyRewards: result.apyEarned,
-              totalWithdrawal: result.baseAmount,
-              usdValue: result.baseAmount * baseTokenPrice
-            })
-          } catch (txError: any) {
-            console.error('Transaction error:', txError)
-            // Still update local state even if transaction fails
-            subtractFromBalance(ctokenSymbol, parseFloat(ctokenAmount))
-            addToBalance(baseTokenSymbol, result.baseAmount)
-            
-            addTransaction({
-              type: 'unwrap',
-              amount: result.baseAmount,
-              token: baseTokenSymbol,
-              crucibleId: crucibleAddress,
-              signature: `unwrap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              apyRewards: result.apyEarned,
-              totalWithdrawal: result.baseAmount,
-              usdValue: result.baseAmount * baseTokenPrice
-            })
+            await unwrapWSOLToSOL(walletPublicKey)
+          } catch (unwrapError: any) {
+            console.warn('Warning: Could not unwrap WSOL to SOL:', unwrapError)
+            // Don't throw - contract already transferred tokens, unwrap is optional
           }
-        } else {
-          // For non-SOL tokens or if wallet not connected, use simulation
-          subtractFromBalance(ctokenSymbol, parseFloat(ctokenAmount))
-          addToBalance(baseTokenSymbol, result.baseAmount)
-          
-          // Record transaction (use outer scope baseTokenPrice)
-          addTransaction({
-            type: 'unwrap',
-            amount: result.baseAmount,
-            token: baseTokenSymbol,
-            crucibleId: crucibleAddress,
-            signature: `unwrap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            apyRewards: result.apyEarned,
-            totalWithdrawal: result.baseAmount,
-            usdValue: result.baseAmount * baseTokenPrice
-          })
         }
+        
+        // Update wallet balances
+        subtractFromBalance(ctokenSymbol, parseFloat(ctokenAmount))
+        addToBalance(baseTokenSymbol, result.baseAmount)
+        
+        // Record transaction
+        addTransaction({
+          type: 'unwrap',
+          amount: result.baseAmount,
+          token: baseTokenSymbol,
+          crucibleId: crucibleAddress,
+          signature: `unwrap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          apyRewards: 0, // APY is included in baseAmount
+          totalWithdrawal: result.baseAmount,
+          usdValue: result.baseAmount * baseTokenPrice
+        })
         
         // Trigger portfolio refresh to update cToken/USDC information
         window.dispatchEvent(new CustomEvent('forceRecalculateLP'))
         
-        // Calculate actual Yield earned (received - unwrapped - fee)
-        const actualAPYEarned = result.baseAmount - parseFloat(ctokenAmount) - (result.feeAmount || 0)
-        const apyEarnedDisplay = actualAPYEarned > 0 ? actualAPYEarned : result.apyEarned || 0
-        
+        // Build summary message with fee information from contract
         const summary = [
           '🔥 Forge Position Update',
           '',
@@ -516,12 +402,12 @@ export default function ClosePositionModal({
           `• Released: ${formatNumberWithCommas(result.baseAmount)} ${baseTokenSymbol}`,
         ]
 
-        if (apyEarnedDisplay > 0) {
-          summary.push(`• Net Yield: +${formatNumberWithCommas(apyEarnedDisplay)} ${baseTokenSymbol}`)
+        // Show fee information if available (contract deducts fees before returning baseAmount)
+        if (result.fee && result.fee > 0) {
+          summary.push(`• Forge Safety Fee (${result.feePercent?.toFixed(2) || (UNWRAP_FEE_RATE * 100).toFixed(2)}%): ${formatNumberWithCommas(result.fee)} ${baseTokenSymbol}`)
         }
-        if (result.feeAmount && result.feeAmount > 0) {
-          summary.push(`• Forge Safety Fee (${(UNWRAP_FEE_RATE * 100).toFixed(2)}%): ${formatNumberWithCommas(result.feeAmount)} ${baseTokenSymbol}`)
-        }
+        
+        // Note: APY earned is already included in baseAmount (baseAmount = original + yield - fee)
 
         summary.push('', 'Wallet and portfolio balances refresh instantly in Forge.')
 
@@ -574,6 +460,17 @@ export default function ClosePositionModal({
       const result = await closeLVFPosition(availableLeveragedPosition.id, isPartialClose ? unwrapAmount : undefined)
       
       if (result && result.success) {
+        // Contract has transferred WSOL to user's token account
+        // Unwrap WSOL to SOL
+        if (baseTokenSymbol === 'SOL' && walletPublicKey) {
+          try {
+            await unwrapWSOLToSOL(walletPublicKey)
+          } catch (unwrapError: any) {
+            console.warn('Warning: Could not unwrap WSOL to SOL:', unwrapError)
+            // Don't throw - contract already transferred tokens, unwrap is optional
+          }
+        }
+        
         // Update wallet balances - add base tokens and USDC received
         // Note: closeLVFPosition already subtracts LP tokens internally,
         // so we only need to update the wallet's base token and USDC balances
