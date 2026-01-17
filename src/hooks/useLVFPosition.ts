@@ -744,12 +744,15 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Total collateral value including APY earnings (for the portion being closed)
         const totalCollateralValueUSD = collateralValueAtCurrentRate * baseTokenPriceForClose
         
-        // Apply Forge close fees: 2% on principal, 10% on yield
+        // Apply Forge close fees: 2% on principal, 10% on yield (matches contract)
         const principalFeeTokens = collateralToClose * INFERNO_CLOSE_FEE_RATE
         const yieldFeeTokens = apyEarnedTokens * INFERNO_YIELD_FEE_RATE
         const netYieldTokens = Math.max(0, apyEarnedTokens - yieldFeeTokens)
         const baseAmountAfterFee = (collateralToClose - principalFeeTokens) + netYieldTokens
         const totalFeeTokens = principalFeeTokens + yieldFeeTokens
+        // Split fee: 80% to vault (stays in vault for yield), 20% to treasury (transferred)
+        const vaultFeeShare = totalFeeTokens * 0.8
+        const protocolFeeShare = totalFeeTokens * 0.2
 
         // Calculate borrowing interest (proportional for partial close)
         // Fetch real borrow rate from on-chain lending-pool
@@ -911,10 +914,36 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         console.log('✅ Close leveraged position transaction sent:', txSignature)
         
         // Wait for confirmation
-        await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed')
+        const confirmation = await connection.confirmTransaction(txSignature, 'confirmed')
+        console.log('✅ Transaction confirmed:', confirmation)
+        
+        // Verify position is actually closed on-chain
+        try {
+          const positionAccountAfter = await (program.account as any).leveragedPosition.fetch(positionPDA)
+          if (positionAccountAfter.isOpen) {
+            console.error('⚠️ Position still marked as open after close transaction!')
+            throw new Error('Position was not closed on-chain. Transaction may have failed.')
+          }
+          console.log('✅ Position confirmed closed on-chain (isOpen = false)')
+        } catch (verifyError: any) {
+          // If position account doesn't exist or fetch fails, check transaction logs
+          console.error('Error verifying position closure:', verifyError)
+          // Don't throw - transaction may have succeeded but account fetch failed
+          // Check transaction status instead
+          const txStatus = await connection.getSignatureStatus(txSignature)
+          if (txStatus.value?.err) {
+            throw new Error(`Transaction failed: ${JSON.stringify(txStatus.value.err)}`)
+          }
+        }
         
         console.log('💰 Repaid borrowed USDC via CPI:', totalOwedUSDC)
+        console.log('💰 Fees charged (matching contract):', {
+          principalFee: principalFeeTokens,
+          yieldFee: yieldFeeTokens,
+          totalFee: totalFeeTokens,
+          vaultFeeShare: vaultFeeShare, // 80% stays in vault for yield
+          protocolFeeShare: protocolFeeShare // 20% transferred to treasury
+        })
 
         // Update crucible TVL when closing position (decrease by deposit + borrow, proportional for partial)
         const collateralValueUSDForClose = collateralToClose * baseTokenPriceForClose
