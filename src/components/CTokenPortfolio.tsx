@@ -711,7 +711,7 @@ export default function CTokenPortfolio() {
                             </td>
                             <td className="text-right py-4 px-6">
                               <div className="text-white text-base font-heading">
-                                {formatNumberWithCommas(position.suppliedAmount.toFixed(2))} USDC
+                                {formatNumberWithCommas(position.suppliedAmount || 0)} USDC
                               </div>
                             </td>
                             <td className="text-right py-4 px-6">
@@ -721,12 +721,12 @@ export default function CTokenPortfolio() {
                             </td>
                             <td className="text-right py-4 px-6">
                               <div className="text-green-400 text-base font-heading">
-                                +{formatNumberWithCommas((position.interestEarned || 0).toFixed(2))} USDC
+                                +{formatNumberWithCommas(position.interestEarned || 0)} USDC
                               </div>
                             </td>
                             <td className="text-right py-4 px-6">
                               <div className="text-white text-base font-heading">
-                                ${formatNumberWithCommas(suppliedValue.toFixed(2))}
+                                ${formatNumberWithCommas(suppliedValue)}
                               </div>
                             </td>
                             <td className="text-right py-4 px-6">
@@ -763,7 +763,7 @@ export default function CTokenPortfolio() {
                             </td>
                             <td className="text-right py-4 px-6">
                               <div className="text-white text-base font-heading">
-                                {formatNumberWithCommas(position.borrowedAmount.toFixed(2))} USDC
+                                {formatNumberWithCommas(position.borrowedAmount || 0)} USDC
                               </div>
                             </td>
                             <td className="text-right py-4 px-6">
@@ -773,12 +773,12 @@ export default function CTokenPortfolio() {
                             </td>
                             <td className="text-right py-4 px-6">
                               <div className="text-orange-400 text-base font-heading">
-                                -{formatNumberWithCommas(borrowedInterest.toFixed(2))} USDC
+                                -{formatNumberWithCommas(borrowedInterest)} USDC
                               </div>
                             </td>
                             <td className="text-right py-4 px-6">
                               <div className="text-white text-base font-heading">
-                                ${formatNumberWithCommas(borrowedValue.toFixed(2))}
+                                ${formatNumberWithCommas(borrowedValue)}
                               </div>
                             </td>
                             <td className="text-right py-4 px-6">
