@@ -47,6 +47,8 @@ export interface CrucibleData {
   apyEarnedByUsers?: number;
   totalDeposited?: number;
   totalWithdrawn?: number;
+  totalBaseDeposited?: bigint; // Total net base tokens deposited (in lamports)
+  vaultBalance?: bigint; // Current vault balance (in lamports)
 }
 
 interface CrucibleHookReturn {
@@ -218,6 +220,8 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         apyEarnedByUsers: (Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD), // 80% vault fee share that generates yield
         totalDeposited: 0,
         totalWithdrawn: 0,
+        totalBaseDeposited: crucibleAccount.totalBaseDeposited, // Total net deposits
+        vaultBalance: vaultBalance, // Current vault balance
       }
       
       console.log('✅ On-chain crucible data:', {

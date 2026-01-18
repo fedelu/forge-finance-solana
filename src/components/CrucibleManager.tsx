@@ -94,20 +94,28 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Yield Generated (Exchange Rate Growth)</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
                 ${(() => {
-                  // Calculate yield from exchange rate: vaultBalance - totalWrapped (in USD)
-                  // This represents the actual value added to the vault through fees,
-                  // regardless of when individual users deposited
+                  // Calculate yield from actual vault balance and deposits: vaultBalance - totalBaseDeposited (in USD)
+                  // This represents the actual value added to the vault through fees
                   return crucibles.reduce((sum, c) => {
-                    if (!c.exchangeRate || !c.totalWrapped || c.totalWrapped === BigInt(0)) return sum;
-                    // exchangeRate = vaultBalance / totalWrapped (scaled by 1_000_000)
-                    // vaultBalance = (exchangeRate * totalWrapped) / 1_000_000
-                    // yieldValue = (vaultBalance - totalWrapped) * solPrice
-                    const exchangeRateDecimal = Number(c.exchangeRate) / Number(RATE_SCALE);
-                    const totalWrappedSOL = Number(c.totalWrapped) / 1e9; // Convert from lamports to SOL
-                    const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL; // Current vault balance in SOL
-                    const yieldSOL = vaultBalanceSOL - totalWrappedSOL; // Yield = vault excess over deposits
-                    const yieldValue = yieldSOL * solPrice; // Convert to USD
-                    return sum + yieldValue;
+                    // Use actual vaultBalance and totalBaseDeposited if available, otherwise calculate from exchange rate
+                    if (c.vaultBalance && c.totalBaseDeposited && c.totalBaseDeposited > BigInt(0)) {
+                      const vaultBalanceSOL = Number(c.vaultBalance) / 1e9;
+                      const totalDepositedSOL = Number(c.totalBaseDeposited) / 1e9;
+                      const yieldSOL = vaultBalanceSOL - totalDepositedSOL; // Actual yield = vault excess over net deposits
+                      const yieldValue = yieldSOL * solPrice; // Convert to USD
+                      return sum + Math.max(0, yieldValue); // Ensure non-negative
+                    }
+                    // Fallback: calculate from exchange rate if on-chain data not available
+                    if (c.exchangeRate && c.totalWrapped && c.totalWrapped > BigInt(0)) {
+                      const exchangeRateDecimal = Number(c.exchangeRate) / Number(RATE_SCALE);
+                      const totalWrappedSOL = Number(c.totalWrapped) / 1e9;
+                      const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL;
+                      // Approximate: use totalWrapped as proxy for deposits (less accurate)
+                      const yieldSOL = vaultBalanceSOL * (1 - 1 / exchangeRateDecimal);
+                      const yieldValue = yieldSOL * solPrice;
+                      return sum + Math.max(0, yieldValue);
+                    }
+                    return sum;
                   }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 })()}
               </p>
@@ -266,19 +274,27 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     </span>
                     <span className="font-heading text-lg text-forge-primary">
                       ${(() => {
-                        // Calculate yield from exchange rate: vaultBalance - totalWrapped (in USD)
-                        // This represents the actual value added to the vault through fees,
-                        // regardless of when individual users deposited
-                        if (!crucible.exchangeRate || !crucible.totalWrapped || crucible.totalWrapped === BigInt(0)) return '0.00';
-                        // exchangeRate = vaultBalance / totalWrapped (scaled by 1_000_000)
-                        // vaultBalance = (exchangeRate * totalWrapped) / 1_000_000
-                        // yieldValue = (vaultBalance - totalWrapped) * solPrice
-                        const exchangeRateDecimal = Number(crucible.exchangeRate) / Number(RATE_SCALE);
-                        const totalWrappedSOL = Number(crucible.totalWrapped) / 1e9; // Convert from lamports to SOL
-                        const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL; // Current vault balance in SOL
-                        const yieldSOL = vaultBalanceSOL - totalWrappedSOL; // Yield = vault excess over deposits
-                        const yieldValue = yieldSOL * solPrice; // Convert to USD
-                        return yieldValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        // Calculate yield from actual vault balance and deposits: vaultBalance - totalBaseDeposited (in USD)
+                        // This represents the actual value added to the vault through fees
+                        // Use actual vaultBalance and totalBaseDeposited if available
+                        if (crucible.vaultBalance && crucible.totalBaseDeposited && crucible.totalBaseDeposited > BigInt(0)) {
+                          const vaultBalanceSOL = Number(crucible.vaultBalance) / 1e9;
+                          const totalDepositedSOL = Number(crucible.totalBaseDeposited) / 1e9;
+                          const yieldSOL = vaultBalanceSOL - totalDepositedSOL; // Actual yield = vault excess over net deposits
+                          const yieldValue = yieldSOL * solPrice; // Convert to USD
+                          return Math.max(0, yieldValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        }
+                        // Fallback: calculate from exchange rate if on-chain data not available
+                        if (crucible.exchangeRate && crucible.totalWrapped && crucible.totalWrapped > BigInt(0)) {
+                          const exchangeRateDecimal = Number(crucible.exchangeRate) / Number(RATE_SCALE);
+                          const totalWrappedSOL = Number(crucible.totalWrapped) / 1e9;
+                          const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL;
+                          // Approximate: use totalWrapped as proxy for deposits (less accurate)
+                          const yieldSOL = vaultBalanceSOL * (1 - 1 / exchangeRateDecimal);
+                          const yieldValue = yieldSOL * solPrice;
+                          return Math.max(0, yieldValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        }
+                        return '0.00';
                       })()}
                     </span>
                     <div className="text-xs text-forge-gray-500 mt-1">Value generated from exchange rate growth</div>
