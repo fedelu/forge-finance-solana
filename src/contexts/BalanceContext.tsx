@@ -1,5 +1,9 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
 import { usePrice } from './PriceContext';
+import { useWallet } from './WalletContext';
+import { PublicKey } from '@solana/web3.js';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet';
 
 interface TokenBalance {
   symbol: string;
@@ -34,12 +38,13 @@ interface BalanceProviderProps {
 
 export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) => {
   const { solPrice } = usePrice();
+  const { connection, publicKey, connected } = useWallet();
   const [balances, setBalances] = useState<TokenBalance[]>([
     { symbol: 'SOL', amount: 25, usdValue: 5000 }, // Start with 25 SOL (will be recalculated with real price)
     { symbol: 'FORGE', amount: 5000, usdValue: 10 }, // Start with 5,000 FORGE ($10 at $0.002 each)
     { symbol: 'cSOL', amount: 0, usdValue: 0 }, // Start with 0 cSOL
     { symbol: 'cFORGE', amount: 0, usdValue: 0 }, // Start with 0 cFORGE (worth $0.0025 each)
-    { symbol: 'USDC', amount: 10000, usdValue: 10000 }, // Start with 10,000 USDC
+    { symbol: 'USDC', amount: 0, usdValue: 0 }, // Will be fetched from wallet
     { symbol: 'ETH', amount: 0, usdValue: 0 }, // Start with 0 ETH
     { symbol: 'BTC', amount: 0, usdValue: 0 }, // Start with 0 BTC
     { symbol: 'cSOL/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
@@ -47,6 +52,52 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
   ]);
   
   const [wrappedForge, setWrappedForge] = useState<number>(0);
+
+  // Fetch USDC balance from wallet
+  useEffect(() => {
+    const fetchUSDCBalance = async () => {
+      if (!connection || !publicKey || !connected) {
+        // Reset to 0 when wallet is disconnected
+        updateBalance('USDC', 0);
+        return;
+      }
+
+      try {
+        const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC);
+        const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey);
+        
+        // Check if token account exists
+        const accountInfo = await connection.getAccountInfo(userUsdcAccount);
+        if (!accountInfo) {
+          // Token account doesn't exist, balance is 0
+          updateBalance('USDC', 0);
+          return;
+        }
+
+        // Get token account balance
+        const balance = await connection.getTokenAccountBalance(userUsdcAccount);
+        if (balance.value) {
+          // USDC has 6 decimals
+          const usdcAmount = Number(balance.value.amount) / 1e6;
+          updateBalance('USDC', usdcAmount);
+        } else {
+          updateBalance('USDC', 0);
+        }
+      } catch (error) {
+        console.error('Error fetching USDC balance:', error);
+        // On error, keep current balance or set to 0
+        updateBalance('USDC', 0);
+      }
+    };
+
+    fetchUSDCBalance();
+
+    // Refresh balance every 10 seconds when wallet is connected
+    const interval = connected ? setInterval(fetchUSDCBalance, 10000) : null;
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [connection, publicKey, connected, updateBalance]);
 
   const getTokenPrice = useCallback((symbol: string): number => {
     // Base prices - cToken prices should be dynamically calculated from on-chain exchange rate

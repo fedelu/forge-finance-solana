@@ -172,12 +172,31 @@ export async function getBorrowerAccount(
     const [borrowerPDA] = getBorrowerAccountPDA(borrower)
     const borrowerAccount = await (program.account as any).borrowerAccount.fetch(borrowerPDA)
     
+    // Check if account data is valid
+    if (!borrowerAccount) {
+      return null
+    }
+    
+    // Safely handle amountBorrowed - it might be undefined or not a BN
+    let amountBorrowed = 0
+    if (borrowerAccount.amountBorrowed) {
+      // Check if it has toNumber method (it's a BN)
+      if (typeof borrowerAccount.amountBorrowed.toNumber === 'function') {
+        amountBorrowed = borrowerAccount.amountBorrowed.toNumber()
+      } else if (typeof borrowerAccount.amountBorrowed === 'number') {
+        amountBorrowed = borrowerAccount.amountBorrowed
+      } else if (typeof borrowerAccount.amountBorrowed === 'bigint') {
+        amountBorrowed = Number(borrowerAccount.amountBorrowed)
+      }
+    }
+    
     return {
       borrower: borrowerAccount.borrower,
-      amountBorrowed: borrowerAccount.amountBorrowed.toNumber(),
+      amountBorrowed: amountBorrowed,
     }
   } catch (error) {
     // Account might not exist if user hasn't borrowed
+    console.warn('Error fetching borrower account (this is normal if user has not borrowed):', error)
     return null
   }
 }
