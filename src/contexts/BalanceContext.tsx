@@ -53,52 +53,6 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
   
   const [wrappedForge, setWrappedForge] = useState<number>(0);
 
-  // Fetch USDC balance from wallet
-  useEffect(() => {
-    const fetchUSDCBalance = async () => {
-      if (!connection || !publicKey || !connected) {
-        // Reset to 0 when wallet is disconnected
-        updateBalance('USDC', 0);
-        return;
-      }
-
-      try {
-        const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC);
-        const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey);
-        
-        // Check if token account exists
-        const accountInfo = await connection.getAccountInfo(userUsdcAccount);
-        if (!accountInfo) {
-          // Token account doesn't exist, balance is 0
-          updateBalance('USDC', 0);
-          return;
-        }
-
-        // Get token account balance
-        const balance = await connection.getTokenAccountBalance(userUsdcAccount);
-        if (balance.value) {
-          // USDC has 6 decimals
-          const usdcAmount = Number(balance.value.amount) / 1e6;
-          updateBalance('USDC', usdcAmount);
-        } else {
-          updateBalance('USDC', 0);
-        }
-      } catch (error) {
-        console.error('Error fetching USDC balance:', error);
-        // On error, keep current balance or set to 0
-        updateBalance('USDC', 0);
-      }
-    };
-
-    fetchUSDCBalance();
-
-    // Refresh balance every 10 seconds when wallet is connected
-    const interval = connected ? setInterval(fetchUSDCBalance, 10000) : null;
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [connection, publicKey, connected, updateBalance]);
-
   const getTokenPrice = useCallback((symbol: string): number => {
     // Base prices - cToken prices should be dynamically calculated from on-chain exchange rate
     // cToken price = base token price * exchange_rate
@@ -180,6 +134,52 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
   const getBalance = useCallback((symbol: string): number => {
     return balances.find(b => b.symbol === symbol)?.amount || 0;
   }, [balances]);
+
+  // Fetch USDC balance from wallet
+  useEffect(() => {
+    const fetchUSDCBalance = async () => {
+      if (!connection || !publicKey || !connected) {
+        // Reset to 0 when wallet is disconnected
+        updateBalance('USDC', 0);
+        return;
+      }
+
+      try {
+        const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC);
+        const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey);
+        
+        // Check if token account exists
+        const accountInfo = await connection.getAccountInfo(userUsdcAccount);
+        if (!accountInfo) {
+          // Token account doesn't exist, balance is 0
+          updateBalance('USDC', 0);
+          return;
+        }
+
+        // Get token account balance
+        const balance = await connection.getTokenAccountBalance(userUsdcAccount);
+        if (balance.value) {
+          // USDC has 6 decimals
+          const usdcAmount = Number(balance.value.amount) / 1e6;
+          updateBalance('USDC', usdcAmount);
+        } else {
+          updateBalance('USDC', 0);
+        }
+      } catch (error) {
+        console.error('Error fetching USDC balance:', error);
+        // On error, keep current balance or set to 0
+        updateBalance('USDC', 0);
+      }
+    };
+
+    fetchUSDCBalance();
+
+    // Refresh balance every 10 seconds when wallet is connected
+    const interval = connected ? setInterval(fetchUSDCBalance, 10000) : null;
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [connection, publicKey, connected, updateBalance]);
 
   const addWrappedForge = useCallback((amount: number) => {
     setWrappedForge(prev => prev + amount);
