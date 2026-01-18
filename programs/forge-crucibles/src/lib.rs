@@ -5,11 +5,13 @@ use anchor_spl::associated_token::AssociatedToken;
 pub mod ctoken;
 pub mod lvf;
 pub mod lp;
+pub mod metadata;
 pub mod state;
 
 use ctoken::*;
 use lvf::*;
 use lp::*;
+use metadata::*;
 use state::*;
 
 declare_id!("B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry");
@@ -198,6 +200,19 @@ pub mod forge_crucibles {
         ctx: Context<CloseLPPosition>,
     ) -> Result<()> {
         lp::close_lp_position(ctx)
+    }
+
+    /// Create Metaplex Token Metadata for a cToken mint
+    /// Allows the crucible PDA (mint authority) to sign metadata creation
+    pub fn create_ctoken_metadata(
+        ctx: Context<CreateCTokenMetadata>,
+        name: String,
+        symbol: String,
+        uri: String,
+        seller_fee_basis_points: u16,
+        is_mutable: bool,
+    ) -> Result<()> {
+        metadata::create_ctoken_metadata(ctx, name, symbol, uri, seller_fee_basis_points, is_mutable)
     }
 }
 

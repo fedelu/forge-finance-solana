@@ -371,6 +371,111 @@
       "args": []
     },
     {
+      "name": "create_ctoken_metadata",
+      "docs": [
+        "Create Metaplex Token Metadata for a cToken mint",
+        "Allows the crucible PDA (mint authority) to sign metadata creation"
+      ],
+      "discriminator": [
+        183,
+        170,
+        174,
+        14,
+        152,
+        98,
+        156,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "crucible",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ctoken_mint",
+          "docs": [
+            "cToken mint account"
+          ],
+          "writable": true
+        },
+        {
+          "name": "metadata",
+          "docs": [
+            "Seeds: [\"metadata\", TOKEN_METADATA_PROGRAM_ID, mint]"
+          ],
+          "writable": true
+        },
+        {
+          "name": "crucible_authority",
+          "docs": [
+            "Seeds: [b\"crucible\", base_mint.as_ref(), bump]"
+          ]
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Payer for metadata account creation (rent)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_metadata_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
+        },
+        {
+          "name": "seller_fee_basis_points",
+          "type": "u16"
+        },
+        {
+          "name": "is_mutable",
+          "type": "bool"
+        }
+      ]
+    },
+    {
       "name": "initialize_crucible",
       "docs": [
         "Initialize a new crucible for a base token"
@@ -1193,6 +1298,21 @@
       "code": 6015,
       "name": "InvalidLendingProgram",
       "msg": "Invalid lending program"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidMint",
+      "msg": "Invalid mint account"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidMetadataAccount",
+      "msg": "Invalid metadata account"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidProgram",
+      "msg": "Invalid program"
     }
   ],
   "types": [

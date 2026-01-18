@@ -119,5 +119,11 @@ pub enum CrucibleError {
     InvalidTreasury,
     #[msg("Invalid lending program")]
     InvalidLendingProgram,
+    #[msg("Invalid mint account")]
+    InvalidMint,
+    #[msg("Invalid metadata account")]
+    InvalidMetadataAccount,
+    #[msg("Invalid program")]
+    InvalidProgram,
 }
 
