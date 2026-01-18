@@ -102,7 +102,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                   }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 })()}
               </p>
-              <p className="text-forge-gray-500 text-xs mt-1">All-time yield from fees (includes withdrawn yield)</p>
             </div>
           </div>
 
@@ -115,7 +114,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
                 ${crucibles.reduce((sum, c) => sum + (c.totalFeesCollected || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
-              <p className="text-forge-gray-500 text-xs mt-1">All transaction fees collected (100% of fees)</p>
             </div>
           </div>
         </div>
@@ -264,7 +262,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                         return allTimeYield.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                       })()}
                     </span>
-                    <div className="text-xs text-forge-gray-500 mt-1">All-time yield from fees (includes withdrawn yield)</div>
                   </div>
                 </div>
 
