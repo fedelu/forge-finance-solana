@@ -70,8 +70,10 @@ export const AnalyticsDashboard: React.FC = () => {
               // Find the crucible for this position
               const crucible = crucibles.find(c => c.baseToken === position.token);
               if (crucible) {
-                // Leveraged positions earn 3x the base APY
-                const leveragedAPY = collateralValueUSD * (crucible.apr || 0) * 3;
+                // Matches contract: leveraged_apy = base_apy * leverage (no 3x multiplier)
+                // For display purposes, using base APY * leverage factor from position
+                const leverageFactor = position.leverageFactor || 1.0
+                const leveragedAPY = collateralValueUSD * (crucible.apr || 0) * leverageFactor;
                 totalAPYEarnings += leveragedAPY;
               }
             }

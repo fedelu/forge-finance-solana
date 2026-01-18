@@ -19,13 +19,13 @@ export default function LeveragedProjectionChart({
 }: LeveragedProjectionChartProps) {
   const [showChart, setShowChart] = useState(false)
   
-  // Calculate APY projections
+  // Calculate APY projections - matches smart contract calculation
   const cTokenAPY = baseAPY // cToken APY is the base APY
   
-  // LP positions APY calculations
-  const lpAPY_1x = baseAPY * 3 // LP 1x: 3x base APY
-  const lpAPY_1_5x = (baseAPY * 3 * 1.5) - (5 * 0.5) // LP 1.5x: 3x base * 1.5 - borrow cost
-  const lpAPY_2x = (baseAPY * 3 * 2.0) - (5 * 1.0) // LP 2x: 3x base * 2 - borrow cost
+  // LP positions APY calculations - matches contract: base_apy * leverage - borrow_cost
+  const lpAPY_1x = baseAPY // LP 1x: base APY (no 3x in contract)
+  const lpAPY_1_5x = (baseAPY * 1.5) - (10 * 0.5) // LP 1.5x: base * 1.5 - borrow cost (10% * 0.5)
+  const lpAPY_2x = (baseAPY * 2.0) - (10 * 1.0) // LP 2x: base * 2 - borrow cost (10% * 1.0)
   
   // Calculate cumulative APY projections over time
   const calculateCumulativeAPY = (days: number, apy: number): number => {

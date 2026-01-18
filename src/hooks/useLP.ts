@@ -21,14 +21,14 @@ export interface LPPosition {
   currentValue: number // USD
   yieldEarned: number
   isOpen: boolean
-  lpAPY: number // LP APY = baseAPY * 3
+  lpAPY: number // LP APY = baseAPY (matches contract, no 3x multiplier)
   pnl: number // Profit and Loss (USD)
 }
 
 interface UseLPProps {
   crucibleAddress: string
   baseTokenSymbol: 'SOL'
-  baseAPY: number // Base APY for calculating LP APY (3x)
+  baseAPY: number // Base APY for calculating LP APY (matches contract calculation)
 }
 
 export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps) {
@@ -120,7 +120,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
                 currentValue: baseAmountNum * baseTokenPrice + usdcAmountNum,
                 yieldEarned: 0, // TODO: Calculate from exchange rate
                 isOpen: positionAccount.isOpen,
-                lpAPY: baseAPY * 3, // LP APY = base APY * 3
+                lpAPY: baseAPY, // Matches contract: LP APY = base APY (no 3x multiplier)
                 pnl: 0, // TODO: Calculate from price changes
               }
               
@@ -342,7 +342,8 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         }
 
         const entryPrice = baseTokenPrice
-        const lpAPY = baseAPY * 3 // LP APY = base APY * 3
+        // Matches contract: LP APY = base APY (no 3x multiplier)
+        const lpAPY = baseAPY
 
         const newPosition: LPPosition = {
           id: positionId,

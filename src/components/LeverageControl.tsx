@@ -23,10 +23,11 @@ export default function LeverageControl({
   collateralAmount = 0,
 }: LeverageControlProps) {
   const calculateEffectiveAPY = (multiplier: number): number => {
-    const borrowRate = 0.10 // 10% annual borrow rate (fixed rate from lending-pool)
-    // Leveraged positions have 3x the APY of normal positions
-    const leveragedYield = baseAPY * 3 * multiplier
-    const borrowCost = borrowRate * (multiplier - 1) * 100 // Convert to percentage
+    const borrowRate = 10 // 10% APY (fixed rate from lending-pool, matches contract)
+    // Matches contract: leveraged_apy = base_apy * leverage_multiplier / 100
+    const leveragedYield = baseAPY * multiplier
+    // Matches contract: borrow_cost = borrow_rate * (leverage_multiplier - 100) / 100
+    const borrowCost = borrowRate * (multiplier - 1)
     return leveragedYield - borrowCost
   }
 
@@ -149,7 +150,7 @@ export default function LeverageControl({
           </span>
         </div>
         <div className="text-xs text-forge-gray-500 mt-1">
-          Base: {baseAPY.toFixed(2)}% × 3 × {leverage}x - Borrow Cost (5%)
+          Base: {baseAPY.toFixed(2)}% × {leverage}x - Borrow Cost ({10 * (leverage - 1)}%)
         </div>
       </div>
 

@@ -37,7 +37,8 @@ export default function LPPositionModal({
 
   const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   const baseTokenBalance = getBalance(baseTokenSymbol)
-  const lpAPY = baseAPY * 3 // LP APY = base APY * 3
+  // Matches contract: LP positions use base APY (no 3x multiplier in contract)
+  const lpAPY = baseAPY
 
   // Auto-calculate USDC when base amount changes
   const handleBaseAmountChange = (value: string) => {

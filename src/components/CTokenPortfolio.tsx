@@ -326,7 +326,8 @@ export default function CTokenPortfolio() {
       // Get baseAPY from crucible by matching baseToken
       const crucible = crucibles.find(c => c.baseToken === pos.baseToken)
       const baseAPY = crucible ? (crucible.apr || 0) * 100 : 0
-      const lpAPY = 'lpAPY' in pos && pos.lpAPY ? pos.lpAPY : baseAPY * 3
+      // Matches contract: LP APY = base APY (no 3x multiplier)
+      const lpAPY = 'lpAPY' in pos && pos.lpAPY ? pos.lpAPY : baseAPY
       totalValue += value
       weightedSum += value * lpAPY
     })
@@ -558,11 +559,12 @@ export default function CTokenPortfolio() {
                     : borrowedUSDC > 0 
                       ? totalCollateralValue / (borrowedUSDC * 1.3) // Use total collateral for health factor
                       : 999
+                  // Matches contract: leveraged_apy = base_apy * leverage - borrow_cost
                   const lpAPY = 'lpAPY' in position && position.lpAPY 
                     ? position.lpAPY 
                     : leverage > 1 
-                      ? (crucible?.baseAPY || 0) * leverage * 3 
-                      : (crucible?.baseAPY || 0) * 3
+                      ? (crucible?.baseAPY || 0) * leverage - (10 * (leverage - 1))
+                      : (crucible?.baseAPY || 0)
                   const totalValue = totalCollateralValue + borrowedUSDC // Total position value = collateral + borrowed
                   
                   return (

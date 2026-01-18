@@ -1114,13 +1114,14 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
   )
 
   // Calculate effective APY with leverage
-  // Leveraged positions have 3x the APY of normal positions
+  // Matches smart contract calculation: (Base APY * Leverage) - (Borrow Rate * (Leverage - 1))
   // Fixed 10% APY borrowing rate from lending-pool
   const calculateEffectiveAPY = useCallback(
     (baseAPY: number, leverageFactor: number): number => {
       const borrowRate = 10 // 10% APY (fixed rate from lending-pool)
-      // Leveraged positions earn 3x the base APY
-      const leveragedYield = baseAPY * 3 * leverageFactor
+      // Matches contract: leveraged_apy = base_apy * leverage_multiplier / 100
+      const leveragedYield = baseAPY * leverageFactor
+      // Matches contract: borrow_cost = borrow_rate * (leverage_multiplier - 100) / 100
       const borrowCost = borrowRate * (leverageFactor - 1)
       return leveragedYield - borrowCost
     },

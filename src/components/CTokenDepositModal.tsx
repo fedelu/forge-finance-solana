@@ -604,10 +604,11 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
   // Ensure APY is a valid number (default to 8% if NaN or undefined)
   const safeCurrentAPY = isNaN(currentAPY) || currentAPY === undefined || currentAPY === null ? 8 : currentAPY
   
+  // Matches contract: leveraged_apy = base_apy * leverage - borrow_cost
   const effectiveAPY = mode === 'lp' 
     ? leverage === 1 
-      ? safeCurrentAPY * 3 // 3x for standard LP
-      : (safeCurrentAPY * 3 * leverage) - (5 * (leverage - 1)) // Leveraged APY
+      ? safeCurrentAPY // Standard LP uses base APY (no 3x in contract)
+      : (safeCurrentAPY * leverage) - (10 * (leverage - 1)) // Leveraged: base * leverage - borrow cost
     : safeCurrentAPY
 
   return (

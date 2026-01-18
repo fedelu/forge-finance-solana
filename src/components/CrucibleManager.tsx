@@ -209,7 +209,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                           Leveraged APY (1.5x):
                         </span>
                         <span className="text-orange-400 text-sm font-heading">
-                          {((crucible.apr * 100) * 3 * 1.5 - 5 * 0.5).toFixed(1)}%
+                          {((crucible.apr * 100) * 1.5 - 10 * 0.5).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between items-center mt-1">
@@ -220,7 +220,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                           Leveraged APY (2x):
                         </span>
                         <span className="text-orange-400 text-sm font-heading">
-                          {((crucible.apr * 100) * 3 * 2.0 - 5 * 1.0).toFixed(1)}%
+                          {((crucible.apr * 100) * 2.0 - 10 * 1.0).toFixed(1)}%
                         </span>
                       </div>
                     </div>

@@ -533,11 +533,12 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
   // Calculate effective APY with leverage
   // Leveraged positions have 3x the APY of normal positions
   const calculateEffectiveAPY = useCallback((baseAPY: number, leverageMultiplier: number): number => {
-    // Leveraged positions earn 3x the base APY
-    // Effective APY = (Base APY * 3 * Leverage) - (Borrow Rate * (Leverage - 1))
-    const borrowRate = 0.05 // 5% annual borrow rate (matches lending pool)
-    const leveragedYield = baseAPY * 3 * leverageMultiplier
-    const borrowCost = borrowRate * (leverageMultiplier - 1) * 100 // Convert to percentage
+    // Matches smart contract calculation: (Base APY * Leverage) - (Borrow Rate * (Leverage - 1))
+    const borrowRate = 10 // 10% APY (fixed rate from lending-pool, matches contract)
+    // Matches contract: leveraged_apy = base_apy * leverage_multiplier / 100
+    const leveragedYield = baseAPY * leverageMultiplier
+    // Matches contract: borrow_cost = borrow_rate * (leverage_multiplier - 100) / 100
+    const borrowCost = borrowRate * (leverageMultiplier - 1)
     return leveragedYield - borrowCost
   }, [])
 

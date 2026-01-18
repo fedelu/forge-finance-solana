@@ -39,8 +39,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
 
   /**
    * Calculate effective APY with leverage
-   * Leveraged positions have 3x the APY of normal positions
-   * Effective APY = (Base APY * 3 * Leverage) - (Borrow Rate * (Leverage - 1))
+   * Matches smart contract calculation: (Base APY * Leverage) - (Borrow Rate * (Leverage - 1))
    * Fixed 10% APY borrowing rate from lending-pool
    */
   const calculateEffectiveAPY = useCallback(
@@ -48,9 +47,10 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
       if (leverage === 1) return baseAPY
 
       const borrowRate = 10 // 10% APY (fixed rate from lending-pool)
-      // Leveraged positions earn 3x the base APY
-      const leveragedYield = baseAPY * 3 * leverage
-      const borrowCost = borrowRate * (leverage - 1) * (borrowed / (collateral + borrowed))
+      // Matches contract: leveraged_apy = base_apy * leverage_multiplier / 100
+      const leveragedYield = baseAPY * leverage
+      // Matches contract: borrow_cost = borrow_rate * (leverage_multiplier - 100) / 100
+      const borrowCost = borrowRate * (leverage - 1)
 
       return leveragedYield - borrowCost
     },
