@@ -91,11 +91,27 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <div className="w-10 h-10 bg-gradient-to-br from-forge-accent/20 to-forge-accent/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
                 <BoltIcon className="h-5 w-5 text-forge-accent" />
               </div>
-              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Fees Accrued to Vault</p>
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Yield Generated (Exchange Rate Growth)</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
-                ${crucibles.reduce((sum, c) => sum + (c.apyEarnedByUsers || 0), 0).toLocaleString()}
+                ${(() => {
+                  // Calculate yield from exchange rate: vaultBalance - totalWrapped (in USD)
+                  // This represents the actual value added to the vault through fees,
+                  // regardless of when individual users deposited
+                  return crucibles.reduce((sum, c) => {
+                    if (!c.exchangeRate || !c.totalWrapped || c.totalWrapped === BigInt(0)) return sum;
+                    // exchangeRate = vaultBalance / totalWrapped (scaled by 1_000_000)
+                    // vaultBalance = (exchangeRate * totalWrapped) / 1_000_000
+                    // yieldValue = (vaultBalance - totalWrapped) * solPrice
+                    const exchangeRateDecimal = Number(c.exchangeRate) / Number(RATE_SCALE);
+                    const totalWrappedSOL = Number(c.totalWrapped) / 1e9; // Convert from lamports to SOL
+                    const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL; // Current vault balance in SOL
+                    const yieldSOL = vaultBalanceSOL - totalWrappedSOL; // Yield = vault excess over deposits
+                    const yieldValue = yieldSOL * solPrice; // Convert to USD
+                    return sum + yieldValue;
+                  }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                })()}
               </p>
-              <p className="text-forge-gray-500 text-xs mt-1">80% of fees generate yield via exchange rate growth</p>
+              <p className="text-forge-gray-500 text-xs mt-1">Value generated from exchange rate growth</p>
             </div>
           </div>
 
@@ -246,12 +262,26 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                       </svg>
-                      Total Fees Accrued (Vault Share)
+                      Yield Generated (Exchange Rate Growth)
                     </span>
                     <span className="font-heading text-lg text-forge-primary">
-                      ${(crucible.apyEarnedByUsers || 0).toLocaleString()}
+                      ${(() => {
+                        // Calculate yield from exchange rate: vaultBalance - totalWrapped (in USD)
+                        // This represents the actual value added to the vault through fees,
+                        // regardless of when individual users deposited
+                        if (!crucible.exchangeRate || !crucible.totalWrapped || crucible.totalWrapped === BigInt(0)) return '0.00';
+                        // exchangeRate = vaultBalance / totalWrapped (scaled by 1_000_000)
+                        // vaultBalance = (exchangeRate * totalWrapped) / 1_000_000
+                        // yieldValue = (vaultBalance - totalWrapped) * solPrice
+                        const exchangeRateDecimal = Number(crucible.exchangeRate) / Number(RATE_SCALE);
+                        const totalWrappedSOL = Number(crucible.totalWrapped) / 1e9; // Convert from lamports to SOL
+                        const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL; // Current vault balance in SOL
+                        const yieldSOL = vaultBalanceSOL - totalWrappedSOL; // Yield = vault excess over deposits
+                        const yieldValue = yieldSOL * solPrice; // Convert to USD
+                        return yieldValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      })()}
                     </span>
-                    <div className="text-xs text-forge-gray-500 mt-1">These fees grow the exchange rate, creating yield</div>
+                    <div className="text-xs text-forge-gray-500 mt-1">Value generated from exchange rate growth</div>
                   </div>
                 </div>
 
