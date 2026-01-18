@@ -113,8 +113,9 @@ export default function DocsPage() {
                   <ol className="space-y-3 text-forge-gray-300 list-decimal list-inside">
                     <li><strong className="text-white">Market Volatility Creates Opportunities</strong>: When asset prices fluctuate, price deviations between wrapped tokens (cTokens) and underlying assets create arbitrage opportunities</li>
                     <li><strong className="text-white">Arbitrageurs Capture Spreads</strong>: Traders automatically wrap/unwrap tokens to capture price differences</li>
-                    <li><strong className="text-white">Fees Generate Yield</strong>: Each wrap/unwrap transaction generates fees that flow back to Crucible stakers</li>
-                    <li><strong className="text-white">Compounding Flywheel</strong>: Fees are recycled back into the system, creating sustainable growth</li>
+                    <li><strong className="text-white">Fees Generate Yield</strong>: Each wrap/unwrap transaction generates fees - 80% accumulates in the vault, increasing the exchange rate (vault_balance / ctoken_supply), which generates yield for all cToken holders</li>
+                    <li><strong className="text-white">Exchange Rate Growth</strong>: As fees accumulate in the vault, each cToken becomes worth more base tokens over time - this is how yield is realized</li>
+                    <li><strong className="text-white">Compounding Flywheel</strong>: More fees in vault → higher exchange rate → more value per cToken → attracts more deposits → more fees</li>
                   </ol>
                 </div>
 
@@ -131,7 +132,13 @@ export default function DocsPage() {
                     <div className="text-forge-primary">↓</div>
                     <div>Fee Generation</div>
                     <div className="text-forge-primary">↓</div>
-                    <div>Fees Distributed (80% to Stakers, 20% to Protocol)</div>
+                    <div>Fees Distributed (80% to Vault, 20% to Protocol)</div>
+                    <div className="text-forge-primary">↓</div>
+                    <div>Vault Balance Grows (80% fees accumulate)</div>
+                    <div className="text-forge-primary">↓</div>
+                    <div>Exchange Rate Grows (vault_balance / ctoken_supply)</div>
+                    <div className="text-forge-primary">↓</div>
+                    <div>Each cToken Worth More Base Tokens (Yield Realized)</div>
                     <div className="text-forge-primary">↓</div>
                     <div>Higher Yield Attracts More Deposits</div>
                     <div className="text-forge-primary">↓</div>
@@ -160,7 +167,7 @@ export default function DocsPage() {
                       <ul className="space-y-1 text-sm text-forge-gray-400">
                         <li>• Wrap Fee: 0.5% on deposit</li>
                         <li>• Unwrap Fee: 0.75% → 0.3% (after 5-day cooldown)</li>
-                        <li>• Yield Source: 80% of protocol fees</li>
+                        <li>• Yield Mechanism: 80% of wrap/unwrap fees accumulate in vault, growing the exchange rate (vault_balance / ctoken_supply) to create yield</li>
                         <li>• Volatility-Driven: Higher volatility = higher yield</li>
                         <li>• No Emissions: All yield from real market activity</li>
                       </ul>

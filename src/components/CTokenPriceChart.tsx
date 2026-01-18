@@ -32,7 +32,7 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
   
   // cToken price = baseTokenPrice * exchangeRate
   // When exchange rate is 1.0, cToken price = SOL price
-  // As yield accumulates, exchange rate grows, so cToken price grows
+  // As fees accumulate in vault (80% of wrap/unwrap fees), exchange rate grows (vault_balance / ctoken_supply), so cToken price grows
   const initialPrice = baseTokenPrice * currentExchangeRate
   
   // Project the final price after 1 year using APY
@@ -144,7 +144,7 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
                 {crucible.ptokenSymbol} Price Growth
               </h4>
               <p className="text-sm text-forge-gray-400">
-                Price increases over time as yield accumulates
+                Price increases over time as fees accumulate in the vault, growing the exchange rate
               </p>
             </div>
             <ResponsiveContainer width="100%" height={400}>
@@ -203,7 +203,7 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
             <div className="text-xs text-forge-gray-300 space-y-1">
               <div>• At deposit: 1 {crucible.baseToken} = 1 {crucible.ptokenSymbol} (1:1 exchange rate)</div>
               <div>• Initial {crucible.ptokenSymbol} price: ${todayPrice.toFixed(4)} (same as {crucible.baseToken})</div>
-              <div>• Over time: {crucible.ptokenSymbol} price increases through exchange rate growth</div>
+              <div>• Over time: 80% of wrap/unwrap fees accumulate in vault, increasing the exchange rate (vault_balance / ctoken_supply)</div>
               <div>• After 1 year: {crucible.ptokenSymbol} reaches ${yearEndPrice.toFixed(4)} (${priceIncreasePercent.toFixed(2)}% price increase)</div>
               <div>• Withdrawal: Exchange {crucible.ptokenSymbol} back to {crucible.baseToken} at the higher price</div>
               <div>• Result: You receive MORE {crucible.baseToken} than originally deposited</div>

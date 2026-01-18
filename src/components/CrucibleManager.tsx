@@ -91,10 +91,11 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <div className="w-10 h-10 bg-gradient-to-br from-forge-accent/20 to-forge-accent/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
                 <BoltIcon className="h-5 w-5 text-forge-accent" />
               </div>
-              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Yield Earned</p>
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Fees Accrued to Vault</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
                 ${crucibles.reduce((sum, c) => sum + (c.apyEarnedByUsers || 0), 0).toLocaleString()}
               </p>
+              <p className="text-forge-gray-500 text-xs mt-1">80% of fees generate yield via exchange rate growth</p>
             </div>
           </div>
 
@@ -228,7 +229,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     <span className="font-heading text-lg text-forge-primary">
                       {(() => {
                         // Calculate exchange rate: 1 cToken = exchangeRate base tokens
-                        // Initial exchange rate is 1.0 (grows as yield accumulates)
+                        // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
                         // If there are deposits, use actual exchange rate; otherwise use initial rate
                         const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0);
                         const initialExchangeRate = RATE_SCALE; // 1.0 = 1_000_000
@@ -245,11 +246,12 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                       </svg>
-                      Total Yield Earned
+                      Total Fees Accrued (Vault Share)
                     </span>
                     <span className="font-heading text-lg text-forge-primary">
                       ${(crucible.apyEarnedByUsers || 0).toLocaleString()}
                     </span>
+                    <div className="text-xs text-forge-gray-500 mt-1">These fees grow the exchange rate, creating yield</div>
                   </div>
                 </div>
 
@@ -287,7 +289,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     leverage={selectedLeverage[crucible.id] || 1.0}
                     currentPrice={solPrice}
                     currentExchangeRate={(() => {
-                      // Initial exchange rate is 1.0 (grows as yield accumulates)
+                      // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
                       const initialExchangeRate = 1.0
                       const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                       const exchangeRate = hasDeposits 
@@ -342,7 +344,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               ctokenSymbol={crucible.ptokenSymbol}
               currentBalance={crucible.userPtokenBalance ? BigInt(crucible.userPtokenBalance.toString()) : null}
               exchangeRate={(() => {
-                // Initial exchange rate is 1.0 (grows as yield accumulates)
+                // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
                 const initialExchangeRate = 1.0
                 const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                 const exchangeRate = hasDeposits 

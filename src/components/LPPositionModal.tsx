@@ -268,7 +268,7 @@ export default function LPPositionModal({
                   <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <span>LP positions earn <strong>3x the base APY</strong> from trading & volatility yield</span>
+                  <span>LP positions earn <strong>3x the base APY</strong> from trading fees that accumulate in the vault and grow the exchange rate</span>
                 </div>
               </div>
             </div>
