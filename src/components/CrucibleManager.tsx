@@ -230,11 +230,11 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                       </svg>
-                      cTOKEN Price
+                      Crucible Price
                     </span>
                     <span className="font-heading text-lg text-forge-primary">
                       {(() => {
-                        // Calculate exchange rate: 1 cToken = exchangeRate base tokens
+                        // Calculate crucible price: SOL price * exchange rate
                         // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
                         // If there are deposits, use actual exchange rate; otherwise use initial rate
                         const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0);
@@ -243,7 +243,8 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                           ? (crucible.exchangeRate || initialExchangeRate)
                           : initialExchangeRate;
                         const exchangeRateDecimal = Number(exchangeRate) / Number(RATE_SCALE);
-                        return `${exchangeRateDecimal.toFixed(4)} ${crucible.baseToken}`;
+                        const cruciblePrice = solPrice * exchangeRateDecimal;
+                        return `$${cruciblePrice.toFixed(2)}`;
                       })()}
                     </span>
                   </div>
