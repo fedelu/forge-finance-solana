@@ -91,35 +91,18 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <div className="w-10 h-10 bg-gradient-to-br from-forge-accent/20 to-forge-accent/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
                 <BoltIcon className="h-5 w-5 text-forge-accent" />
               </div>
-              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Yield Generated (Exchange Rate Growth)</p>
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total Yield Earned (All Time)</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
                 ${(() => {
-                  // Calculate yield from actual vault balance and deposits: vaultBalance - totalBaseDeposited (in USD)
-                  // This represents the actual value added to the vault through fees
+                  // Calculate ALL TIME yield earned: totalFeesAccrued (80% vault share of all fees)
+                  // This represents all yield generated from fees, regardless of withdrawals
                   return crucibles.reduce((sum, c) => {
-                    // Use actual vaultBalance and totalBaseDeposited if available, otherwise calculate from exchange rate
-                    if (c.vaultBalance && c.totalBaseDeposited && c.totalBaseDeposited > BigInt(0)) {
-                      const vaultBalanceSOL = Number(c.vaultBalance) / 1e9;
-                      const totalDepositedSOL = Number(c.totalBaseDeposited) / 1e9;
-                      const yieldSOL = vaultBalanceSOL - totalDepositedSOL; // Actual yield = vault excess over net deposits
-                      const yieldValue = yieldSOL * solPrice; // Convert to USD
-                      return sum + Math.max(0, yieldValue); // Ensure non-negative
-                    }
-                    // Fallback: calculate from exchange rate if on-chain data not available
-                    if (c.exchangeRate && c.totalWrapped && c.totalWrapped > BigInt(0)) {
-                      const exchangeRateDecimal = Number(c.exchangeRate) / Number(RATE_SCALE);
-                      const totalWrappedSOL = Number(c.totalWrapped) / 1e9;
-                      const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL;
-                      // Approximate: use totalWrapped as proxy for deposits (less accurate)
-                      const yieldSOL = vaultBalanceSOL * (1 - 1 / exchangeRateDecimal);
-                      const yieldValue = yieldSOL * solPrice;
-                      return sum + Math.max(0, yieldValue);
-                    }
-                    return sum;
+                    const allTimeYield = c.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD
+                    return sum + allTimeYield;
                   }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 })()}
               </p>
-              <p className="text-forge-gray-500 text-xs mt-1">Value generated from exchange rate growth</p>
+              <p className="text-forge-gray-500 text-xs mt-1">All-time yield from fees (includes withdrawn yield)</p>
             </div>
           </div>
 
@@ -128,10 +111,11 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <div className="w-10 h-10 bg-gradient-to-br from-forge-primary/20 to-forge-primary/10 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-300">
                 <FireIcon className="h-5 w-5 text-forge-primary" />
               </div>
-              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total Fees</p>
+              <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total Transaction Fees</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
-                ${crucibles.reduce((sum, c) => sum + (c.totalFeesCollected || 0), 0).toLocaleString()}
+                ${crucibles.reduce((sum, c) => sum + (c.totalFeesCollected || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
+              <p className="text-forge-gray-500 text-xs mt-1">All transaction fees collected (100% of fees)</p>
             </div>
           </div>
         </div>
@@ -270,34 +254,17 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                       </svg>
-                      Yield Generated (Exchange Rate Growth)
+                      Total Yield Earned (All Time)
                     </span>
                     <span className="font-heading text-lg text-forge-primary">
                       ${(() => {
-                        // Calculate yield from actual vault balance and deposits: vaultBalance - totalBaseDeposited (in USD)
-                        // This represents the actual value added to the vault through fees
-                        // Use actual vaultBalance and totalBaseDeposited if available
-                        if (crucible.vaultBalance && crucible.totalBaseDeposited && crucible.totalBaseDeposited > BigInt(0)) {
-                          const vaultBalanceSOL = Number(crucible.vaultBalance) / 1e9;
-                          const totalDepositedSOL = Number(crucible.totalBaseDeposited) / 1e9;
-                          const yieldSOL = vaultBalanceSOL - totalDepositedSOL; // Actual yield = vault excess over net deposits
-                          const yieldValue = yieldSOL * solPrice; // Convert to USD
-                          return Math.max(0, yieldValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        }
-                        // Fallback: calculate from exchange rate if on-chain data not available
-                        if (crucible.exchangeRate && crucible.totalWrapped && crucible.totalWrapped > BigInt(0)) {
-                          const exchangeRateDecimal = Number(crucible.exchangeRate) / Number(RATE_SCALE);
-                          const totalWrappedSOL = Number(crucible.totalWrapped) / 1e9;
-                          const vaultBalanceSOL = exchangeRateDecimal * totalWrappedSOL;
-                          // Approximate: use totalWrapped as proxy for deposits (less accurate)
-                          const yieldSOL = vaultBalanceSOL * (1 - 1 / exchangeRateDecimal);
-                          const yieldValue = yieldSOL * solPrice;
-                          return Math.max(0, yieldValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        }
-                        return '0.00';
+                        // Calculate ALL TIME yield earned: totalFeesAccrued (80% vault share of all fees)
+                        // This represents all yield generated from fees, regardless of withdrawals
+                        const allTimeYield = crucible.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD
+                        return allTimeYield.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                       })()}
                     </span>
-                    <div className="text-xs text-forge-gray-500 mt-1">Value generated from exchange rate growth</div>
+                    <div className="text-xs text-forge-gray-500 mt-1">All-time yield from fees (includes withdrawn yield)</div>
                   </div>
                 </div>
 

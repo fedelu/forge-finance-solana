@@ -192,8 +192,10 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         ? (vaultBalance * BigInt(1_000_000)) / ctokenSupply 
         : BigInt(1_000_000)
       
-      // Calculate effective APR from yield percentage (use real yield if available)
-      const effectiveApr = yieldPercentage > 0 ? yieldPercentage / 100 : safeApyCompounded
+      // APY should be based on fee generation rate (volatility farming), NOT exchange rate
+      // Exchange rate-based APY is incorrect because users can deposit at different rates
+      // Use volatility farming metrics which calculate APY from fee generation rate
+      const effectiveApr = safeApyCompounded // Use fee-based APY, not exchange rate-based
       
       const crucibleData: CrucibleData = {
         id: 'sol-crucible',
@@ -212,7 +214,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         totalWrapped: ctokenSupply, // Use fetched supply
         userPtokenBalance: BigInt(0),
         estimatedBaseValue: BigInt(0),
-        currentAPY: yieldPercentage > 0 ? yieldPercentage : safeApyCompounded * 100, // Show real yield % if available
+        currentAPY: safeApyCompounded * 100, // APY based on fee generation rate, not exchange rate
         // total_fees_accrued tracks only the 80% vault fee share
         // Total Fees = 100% of all fees (80% vault + 20% treasury)
         totalFeesCollected: (Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD) / 0.8, // 100% of fees in USD
