@@ -501,6 +501,7 @@ export default function DocsPage() {
           </div>
         </main>
       </div>
+    </div>
     </>
   )
 }
