@@ -1,7 +1,6 @@
 import React from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
-import { useRouter } from 'next/router'
 import { 
   CheckCircleIcon,
   XCircleIcon,
@@ -9,7 +8,6 @@ import {
 } from '@heroicons/react/24/outline'
 
 export default function DocsPage() {
-  const router = useRouter()
 
   return (
     <>
