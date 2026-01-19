@@ -181,8 +181,9 @@ pub mod forge_crucibles {
     pub fn close_leveraged_position(
         ctx: Context<CloseLeveragedPosition>,
         position_id: Pubkey,
+        max_slippage_bps: u64,
     ) -> Result<()> {
-        lvf::close_leveraged_position(ctx, position_id)
+        lvf::close_leveraged_position(ctx, position_id, max_slippage_bps)
     }
 
     /// Open a standard LP position (base token + USDC, equal value)

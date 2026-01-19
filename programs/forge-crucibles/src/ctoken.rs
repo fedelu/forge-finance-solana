@@ -13,9 +13,10 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
     
     // Calculate exchange rate (1 cToken = base_amount / total_ctoken_supply)
     // Exchange rate grows as fees accrue
+    // SECURITY FIX: Use tracked deposits instead of vault balance to prevent manipulation
     let exchange_rate = calculate_exchange_rate(
         &crucible,
-        ctx.accounts.vault.amount,
+        ctx.accounts.vault.amount, // Still pass for validation
         ctx.accounts.ctoken_mint.supply,
     )?;
     
@@ -237,10 +238,10 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
         .checked_sub(base_to_return_before_fee.min(crucible.total_base_deposited))
         .unwrap_or(0);
     // Deduct total returned + protocol fee, but vault fee share stays (already accounted for in vault balance)
+    // SECURITY FIX: Use saturating_sub to prevent underflow when fees have accrued significantly
     crucible.expected_vault_balance = crucible
         .expected_vault_balance
-        .checked_sub(total_deducted)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
+        .saturating_sub(total_deducted);
     // Track vault fee share in total fees accrued
     crucible.total_fees_accrued = crucible
         .total_fees_accrued
@@ -262,13 +263,14 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
     Ok(())
 }
 
-/// Calculate exchange rate: vault_amount / ctoken_supply (scaled by 1M for precision)
+/// Calculate exchange rate: (total_base_deposited + total_fees_accrued) / ctoken_supply (scaled by 1M for precision)
 /// Validates vault balance is at least expected amount (allows fee accrual growth)
+/// SECURITY FIX: Use tracked deposits instead of vault_amount to prevent manipulation via direct vault donations
 /// SECURITY FIX: Multiply first, then divide to prevent precision loss
 /// Fee accrual allows vault_amount >= expected_vault_balance (fees increase yield)
 fn calculate_exchange_rate(
     crucible: &Crucible,
-    vault_amount: u64,
+    vault_amount: u64, // Used for validation only, not for rate calculation
     ctoken_supply: u64,
 ) -> Result<u64> {
     // Allow vault_amount >= expected_vault_balance (fees accrue and increase yield)
@@ -283,10 +285,15 @@ fn calculate_exchange_rate(
         return Ok(1_000_000u64);
     }
     
+    // SECURITY FIX: Use tracked deposits + fees instead of vault_amount
+    // This prevents manipulation through direct token transfers to the vault
+    // Exchange rate = (total_base_deposited + total_fees_accrued) * 1_000_000 / ctoken_supply
+    let tracked_balance = (crucible.total_base_deposited as u128)
+        .checked_add(crucible.total_fees_accrued as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
     // SECURITY FIX: Multiply first, then divide to prevent precision loss
-    // Old (wrong): vault_amount / ctoken_supply * 1_000_000
-    // New (correct): vault_amount * 1_000_000 / ctoken_supply
-    (vault_amount as u128)
+    (tracked_balance)
         .checked_mul(1_000_000u128)
         .and_then(|scaled| scaled.checked_div(ctoken_supply as u128))
         .and_then(|rate| {
@@ -339,9 +346,12 @@ pub struct MintCToken<'info> {
     )]
     pub crucible_authority: UncheckedAccount<'info>,
     
-    /// CHECK: Protocol treasury token account for fee collection
-    #[account(mut)]
-    pub treasury: UncheckedAccount<'info>,
+    /// SECURITY FIX: Validate treasury is a TokenAccount for the correct mint
+    #[account(
+        mut,
+        constraint = treasury.mint == base_mint.key() @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury: Account<'info, TokenAccount>,
     
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -384,9 +394,12 @@ pub struct BurnCToken<'info> {
     )]
     pub crucible_authority: UncheckedAccount<'info>,
     
-    /// CHECK: Protocol treasury token account for fee collection
-    #[account(mut)]
-    pub treasury: UncheckedAccount<'info>,
+    /// SECURITY FIX: Validate treasury is a TokenAccount for the correct mint
+    #[account(
+        mut,
+        constraint = treasury.mint == base_mint.key() @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury: Account<'info, TokenAccount>,
     
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

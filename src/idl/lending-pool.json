@@ -1,66 +1,143 @@
 {
   "address": "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx",
-  "version": "0.1.0",
-  "name": "lending_pool_usdc",
+  "metadata": {
+    "name": "lending_pool_usdc",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "USDC Lending Pool for Forge Protocol"
+  },
   "instructions": [
     {
-      "name": "initialize",
+      "name": "borrow_usdc",
+      "docs": [
+        "Borrow USDC from the lending pool"
+      ],
+      "discriminator": [
+        31,
+        120,
+        217,
+        32,
+        182,
+        137,
+        251,
+        34
+      ],
       "accounts": [
         {
           "name": "pool",
-          "isMut": true,
-          "isSigner": false
+          "writable": true
         },
         {
-          "name": "usdcMint",
-          "isMut": false,
-          "isSigner": false
+          "name": "borrower",
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "authority",
-          "isMut": true,
-          "isSigner": true
+          "name": "borrower_account",
+          "docs": [
+            "SECURITY FIX: Borrower account - auto-initializes if doesn't exist"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  114,
+                  114,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "borrower"
+              }
+            ]
+          }
         },
         {
-          "name": "systemProgram",
-          "isMut": false,
-          "isSigner": false
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "borrower_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "initialLiquidity",
+          "name": "amount",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "depositUsdc",
+      "name": "deposit_usdc",
+      "docs": [
+        "Deposit USDC to the lending pool (lenders)"
+      ],
+      "discriminator": [
+        184,
+        148,
+        250,
+        169,
+        224,
+        213,
+        34,
+        126
+      ],
       "accounts": [
         {
           "name": "pool",
-          "isMut": true,
-          "isSigner": false
+          "writable": true
         },
         {
           "name": "user",
-          "isMut": true,
-          "isSigner": true
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "userUsdcAccount",
-          "isMut": true,
-          "isSigner": false
+          "name": "user_usdc_account",
+          "writable": true
         },
         {
-          "name": "poolVault",
-          "isMut": true,
-          "isSigner": false
+          "name": "pool_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              }
+            ]
+          }
         },
         {
-          "name": "tokenProgram",
-          "isMut": false,
-          "isSigner": false
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": [
@@ -71,37 +148,160 @@
       ]
     },
     {
-      "name": "borrowUsdc",
+      "name": "get_available_liquidity",
+      "docs": [
+        "Get available liquidity (view function simulation)"
+      ],
+      "discriminator": [
+        155,
+        195,
+        74,
+        33,
+        135,
+        4,
+        219,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "pool"
+        }
+      ],
+      "args": [],
+      "returns": "u64"
+    },
+    {
+      "name": "initialize",
+      "docs": [
+        "Initialize the lending pool with USDC"
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
       "accounts": [
         {
           "name": "pool",
-          "isMut": true,
-          "isSigner": false
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "initial_liquidity",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "repay_usdc",
+      "docs": [
+        "Repay borrowed USDC"
+      ],
+      "discriminator": [
+        20,
+        104,
+        199,
+        119,
+        196,
+        22,
+        114,
+        79
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true
         },
         {
           "name": "borrower",
-          "isMut": true,
-          "isSigner": true
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "borrowerAccount",
-          "isMut": true,
-          "isSigner": false
+          "name": "borrower_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  114,
+                  114,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "borrower"
+              }
+            ]
+          }
         },
         {
-          "name": "poolVault",
-          "isMut": true,
-          "isSigner": false
+          "name": "borrower_usdc_account",
+          "writable": true
         },
         {
-          "name": "borrowerUsdcAccount",
-          "isMut": true,
-          "isSigner": false
+          "name": "pool_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              }
+            ]
+          }
         },
         {
-          "name": "tokenProgram",
-          "isMut": false,
-          "isSigner": false
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": [
@@ -110,169 +310,74 @@
           "type": "u64"
         }
       ]
-    },
-    {
-      "name": "repayUsdc",
-      "accounts": [
-        {
-          "name": "pool",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "borrower",
-          "isMut": true,
-          "isSigner": true
-        },
-        {
-          "name": "borrowerAccount",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "borrowerUsdcAccount",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "poolVault",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "tokenProgram",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "getAvailableLiquidity",
-      "accounts": [
-        {
-          "name": "pool",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": []
     }
   ],
   "accounts": [
     {
-      "name": "LendingPool",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "usdcMint",
-            "type": "publicKey"
-          },
-          {
-            "name": "totalLiquidity",
-            "type": "u64"
-          },
-          {
-            "name": "totalBorrowed",
-            "type": "u64"
-          },
-          {
-            "name": "borrowRate",
-            "type": "u64"
-          },
-          {
-            "name": "lenderRate",
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
+      "name": "BorrowerAccount",
+      "discriminator": [
+        36,
+        64,
+        147,
+        86,
+        52,
+        110,
+        151,
+        126
+      ]
     },
     {
-      "name": "BorrowerAccount",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "borrower",
-            "type": "publicKey"
-          },
-          {
-            "name": "amountBorrowed",
-            "type": "u64"
-          }
-        ]
-      }
+      "name": "LendingPool",
+      "discriminator": [
+        208,
+        40,
+        242,
+        82,
+        186,
+        18,
+        75,
+        36
+      ]
     }
   ],
   "events": [
     {
-      "name": "USDCDeposited",
-      "fields": [
-        {
-          "name": "lender",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "amount",
-          "type": "u64",
-          "index": false
-        },
-        {
-          "name": "totalLiquidity",
-          "type": "u64",
-          "index": false
-        }
+      "name": "USDCBorrowed",
+      "discriminator": [
+        152,
+        157,
+        112,
+        197,
+        255,
+        255,
+        118,
+        6
       ]
     },
     {
-      "name": "USDCBorrowed",
-      "fields": [
-        {
-          "name": "borrower",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "amount",
-          "type": "u64",
-          "index": false
-        },
-        {
-          "name": "totalBorrowed",
-          "type": "u64",
-          "index": false
-        }
+      "name": "USDCDeposited",
+      "discriminator": [
+        75,
+        200,
+        113,
+        3,
+        12,
+        197,
+        106,
+        215
       ]
     },
     {
       "name": "USDCRepaid",
-      "fields": [
-        {
-          "name": "borrower",
-          "type": "publicKey",
-          "index": false
-        },
-        {
-          "name": "amount",
-          "type": "u64",
-          "index": false
-        },
-        {
-          "name": "remainingDebt",
-          "type": "u64",
-          "index": false
-        }
+      "discriminator": [
+        239,
+        10,
+        158,
+        150,
+        192,
+        176,
+        228,
+        139
       ]
     }
   ],
@@ -288,7 +393,114 @@
       "msg": "Repay amount exceeds debt"
     }
   ],
-  "metadata": {
-    "address": "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx"
-  }
+  "types": [
+    {
+      "name": "BorrowerAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "borrower",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_borrowed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendingPool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_liquidity",
+            "type": "u64"
+          },
+          {
+            "name": "total_borrowed",
+            "type": "u64"
+          },
+          {
+            "name": "borrow_rate",
+            "type": "u64"
+          },
+          {
+            "name": "lender_rate",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "USDCBorrowed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "borrower",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_borrowed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "USDCDeposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lender",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_liquidity",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "USDCRepaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "borrower",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "remaining_debt",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
 }

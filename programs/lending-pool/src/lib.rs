@@ -55,6 +55,14 @@ pub mod lending_pool_usdc {
             amount <= pool.total_liquidity.checked_sub(pool.total_borrowed).unwrap_or(0),
             LendingPoolError::InsufficientLiquidity
         );
+        
+        // SECURITY FIX: Initialize borrower account if it was just created
+        // init_if_needed handles account creation, we just need to set initial values
+        let borrower_account = &mut ctx.accounts.borrower_account;
+        if borrower_account.borrower == Pubkey::default() {
+            borrower_account.borrower = ctx.accounts.borrower.key();
+            borrower_account.amount_borrowed = 0;
+        }
 
         // Transfer USDC from pool vault to borrower
         // Note: In production, pool would be a PDA and sign transfers
@@ -77,8 +85,12 @@ pub mod lending_pool_usdc {
             .ok_or(ProgramError::ArithmeticOverflow)?;
 
         // Record borrower debt
+        // Initialize borrower account if it was just created
         let borrower_account = &mut ctx.accounts.borrower_account;
-        borrower_account.borrower = ctx.accounts.borrower.key();
+        if borrower_account.borrower == Pubkey::default() {
+            borrower_account.borrower = ctx.accounts.borrower.key();
+            borrower_account.amount_borrowed = 0;
+        }
         borrower_account.amount_borrowed = borrower_account.amount_borrowed
             .checked_add(amount)
             .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -188,7 +200,14 @@ pub struct BorrowUSDC<'info> {
     #[account(mut)]
     pub borrower: Signer<'info>,
 
-    #[account(mut)]
+    /// SECURITY FIX: Borrower account - auto-initializes if doesn't exist  
+    #[account(
+        init_if_needed,
+        payer = borrower,
+        space = 8 + BorrowerAccount::LEN,
+        seeds = [b"borrower", borrower.key().as_ref()],
+        bump
+    )]
     pub borrower_account: Account<'info, BorrowerAccount>,
 
     #[account(mut)]
@@ -198,6 +217,7 @@ pub struct BorrowUSDC<'info> {
     pub borrower_usdc_account: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -254,7 +274,7 @@ pub struct BorrowerAccount {
 }
 
 impl BorrowerAccount {
-    pub const LEN: usize = 32 + 8;
+    pub const LEN: usize = 32 + 8; // borrower (32) + amount_borrowed (8)
 }
 
 #[event]

@@ -21,3 +21,4 @@ anchor-lang = { version = "0.30.0", features = ["init-if-needed"] }
 anchor-spl = { version = "0.30.0", features = ["metadata"] }
 lending-pool = { path = "../lending-pool", features = ["cpi"] }
 mpl-token-metadata = "4.1.2"
+pyth-solana-receiver-sdk = "0.6.1"

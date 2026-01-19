@@ -13,6 +13,7 @@ pub struct Market {
     pub interest_model: InterestRateModelConfig,
     pub liquidation_threshold_bps: u64,
     pub paused: bool,
+    pub pause_proposed_at: Option<u64>, // Timestamp when pause was proposed (for timelock)
     pub bump: u8,
 }
 
@@ -29,6 +30,8 @@ impl Market {
         InterestRateModelConfig::SIZE +
         8 +  // liquidation_threshold_bps
         1 +  // paused
+        1 +  // pause_proposed_at Option discriminator
+        8 +  // pause_proposed_at u64 (if Some)
         1;   // bump
 }
 

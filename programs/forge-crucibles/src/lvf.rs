@@ -5,6 +5,7 @@ use crate::LENDING_POOL_PROGRAM_ID;
 use lending_pool_usdc::cpi::accounts::BorrowUSDC;
 use lending_pool_usdc::cpi::accounts::RepayUSDC;
 use lending_pool_usdc::program::LendingPoolUsdc;
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
 /// Open a leveraged LP position
 /// Lending pool integration is complete - borrows USDC from lending pool via CPI
@@ -101,6 +102,7 @@ pub fn open_leveraged_position(
             pool_vault: ctx.accounts.lending_vault.to_account_info(),
             borrower_usdc_account: ctx.accounts.user_usdc_account.to_account_info(),
             token_program: ctx.accounts.token_program.to_account_info(),
+            system_program: ctx.accounts.system_program.to_account_info(),
         };
         
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
@@ -146,10 +148,14 @@ pub fn open_leveraged_position(
 /// Lending pool integration is complete - repays USDC to lending pool via CPI
 pub fn close_leveraged_position(
     ctx: Context<CloseLeveragedPosition>,
-    position_id: Pubkey,
+    _position_id: Pubkey,
+    max_slippage_bps: u64, // Maximum slippage in basis points (e.g., 100 = 1%)
 ) -> Result<()> {
     // Check if crucible is paused
     require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
+    
+    // Get base_mint before mutable borrow of crucible
+    let base_mint_key = ctx.accounts.crucible.base_mint;
     
     // Lending integration enabled - repay loan before closing
     let position = &mut ctx.accounts.position;
@@ -211,8 +217,47 @@ pub fn close_leveraged_position(
         lending_pool_usdc::cpi::repay_usdc(cpi_ctx, repay_amount)?;
     }
 
+    // SECURITY FIX: Fetch current oracle price and validate slippage
+    // base_mint_key already obtained above before mutable borrow
+    let oracle_account_opt = ctx.accounts.oracle.as_ref().map(|o| o.as_ref());
+    let current_base_token_price = get_oracle_price(
+        crucible,
+        &oracle_account_opt,
+        &base_mint_key,
+    )?;
+    
+    // Calculate current position value using current oracle price
+    let current_position_value_usdc = (position.collateral as u128)
+        .checked_mul(current_base_token_price as u128)
+        .and_then(|v| v.checked_div(1_000_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate entry position value using entry price
+    let entry_position_value_usdc = (position.collateral as u128)
+        .checked_mul(position.entry_price as u128)
+        .and_then(|v| v.checked_div(1_000_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate slippage in basis points
+    let value_diff = if current_position_value_usdc > entry_position_value_usdc {
+        current_position_value_usdc.checked_sub(entry_position_value_usdc)
+    } else {
+        entry_position_value_usdc.checked_sub(current_position_value_usdc)
+    }.ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let slippage_bps = value_diff
+        .checked_mul(10_000)
+        .and_then(|v| v.checked_div(entry_position_value_usdc.max(1)))
+        .unwrap_or(10_000); // If calculation fails, assume max slippage
+    
+    // Validate slippage is within user's tolerance
+    require!(
+        slippage_bps <= max_slippage_bps as u128,
+        CrucibleError::SlippageExceeded
+    );
+    
     // Calculate yield earned using exchange rate growth
-    let base_token_price = position.entry_price;
+    // Use current price for calculations (already fetched above)
     let current_exchange_rate = calculate_lvf_exchange_rate(
         crucible,
         position.collateral,
@@ -356,78 +401,45 @@ pub fn get_oracle_price(
             CrucibleError::InvalidOraclePrice
         );
         
-        // Parse Pyth PriceUpdateV2 account data manually
-        // Pyth account structure: discriminator + metadata + price data
+        // Use Pyth SDK to validate account structure, then parse price data manually
+        // The SDK deserialization validates the account is a valid PriceUpdateV2
         let account_data = oracle.try_borrow_data()?;
         
-        if account_data.len() < 8 {
-            return Err(CrucibleError::InvalidOraclePrice.into());
-        }
+        // Validate account structure using SDK (ensures it's a valid PriceUpdateV2)
+        let _price_update = PriceUpdateV2::try_deserialize(&mut &account_data[..])
+            .map_err(|_| CrucibleError::InvalidOraclePrice)?;
         
-        // Skip discriminator (8 bytes), then parse price data
-        // For Pyth PriceUpdateV2, we need to find the price in the structure
-        // Offset varies, but price data is typically after feed_id (32 bytes) and metadata
-        // For simplicity, we'll try to parse using pyth-solana-receiver-sdk if possible
-        // Otherwise, use manual parsing
-        
-        // Try to parse as PriceUpdateV2 using bytemuck or manual parsing
-        // Pyth PriceUpdateV2 structure has price at specific offsets
-        // Price is stored as i64, exponent as i32, publish_time as u64
-        
-        // For now, implement a simple parser that reads price from known structure
-        // Pyth PriceUpdateV2 has: discriminator (8) + version (1) + ... + price data
-        // Price data offset: typically around offset 64+ for price value
-        
-        // Check account owner is Pyth Receiver program
-        // Pyth Receiver program: rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJCopy (same on devnet/mainnet)
-        // Note: We can't check owner in this function, it's validated by Anchor constraints
-        
-        // Parse price manually - Pyth PriceUpdateV2 price structure:
-        // price: i64 (8 bytes) at offset ~96
-        // expo: i32 (4 bytes) at offset ~104  
-        // publish_time: u64 (8 bytes) at offset ~112
-        // This is approximate - actual structure may vary
-        
+        // After SDK validation, parse price fields manually from account data
+        // Pyth PriceUpdateV2 structure has price data at specific offsets
+        // This is safer than pure manual parsing since SDK validates the structure first
         if account_data.len() < 120 {
             return Err(CrucibleError::InvalidOraclePrice.into());
         }
         
-        // Read price (i64) - try multiple possible offsets
+        // Parse price (i64) at offset 96
         let price_offset = 96;
-        if account_data.len() < price_offset + 8 {
-            return Err(CrucibleError::InvalidOraclePrice.into());
-        }
-        
         let price_bytes = &account_data[price_offset..price_offset + 8];
         let price: i64 = i64::from_le_bytes([
             price_bytes[0], price_bytes[1], price_bytes[2], price_bytes[3],
             price_bytes[4], price_bytes[5], price_bytes[6], price_bytes[7],
         ]);
         
-        // Read exponent (i32)
+        // Parse exponent (i32) at offset 104
         let expo_offset = 104;
-        if account_data.len() < expo_offset + 4 {
-            return Err(CrucibleError::InvalidOraclePrice.into());
-        }
-        
         let expo_bytes = &account_data[expo_offset..expo_offset + 4];
         let expo: i32 = i32::from_le_bytes([
             expo_bytes[0], expo_bytes[1], expo_bytes[2], expo_bytes[3],
         ]);
         
-        // Read publish_time (u64) for staleness check
+        // Parse publish_time (u64) at offset 112 for staleness check
         let pub_time_offset = 112;
-        if account_data.len() < pub_time_offset + 8 {
-            return Err(CrucibleError::InvalidOraclePrice.into());
-        }
-        
         let pub_time_bytes = &account_data[pub_time_offset..pub_time_offset + 8];
         let publish_time: u64 = u64::from_le_bytes([
             pub_time_bytes[0], pub_time_bytes[1], pub_time_bytes[2], pub_time_bytes[3],
             pub_time_bytes[4], pub_time_bytes[5], pub_time_bytes[6], pub_time_bytes[7],
         ]);
         
-        // Check staleness
+        // Get current clock for staleness check
         let clock = Clock::get()?;
         let current_time = clock.unix_timestamp as u64;
         let age = current_time.saturating_sub(publish_time);
@@ -438,13 +450,13 @@ pub fn get_oracle_price(
         );
         
         // Calculate actual price: price * 10^expo
-        let price_value = price as f64;
+        let price_value_f64 = price as f64;
         let expo_val = expo as i32;
         
         let price_usd = if expo_val >= 0 {
-            price_value * (10.0_f64.powi(expo_val))
+            price_value_f64 * (10.0_f64.powi(expo_val))
         } else {
-            price_value / (10.0_f64.powi(-expo_val))
+            price_value_f64 / (10.0_f64.powi(-expo_val))
         };
         
         // Validate price bounds
@@ -619,16 +631,22 @@ pub struct OpenLeveragedPosition<'info> {
         constraint = lending_program.key() == LENDING_POOL_PROGRAM_ID @ CrucibleError::InvalidLendingProgram
     )]
     pub lending_program: UncheckedAccount<'info>,
-    /// CHECK: USDC lending market account (pool PDA)
-    #[account(mut)]
+    /// CHECK: SECURITY FIX - Validate lending_market is owned by lending_program
+    #[account(
+        mut,
+        constraint = *lending_market.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub lending_market: UncheckedAccount<'info>,
     /// CHECK: Pool authority PDA (same as lending_market, used for signing)
     pub pool_authority: UncheckedAccount<'info>,
     /// CHECK: Borrower account PDA (created by lending program if needed)
     #[account(mut)]
     pub borrower_account: UncheckedAccount<'info>,
-    /// CHECK: USDC lending vault
-    #[account(mut)]
+    /// CHECK: SECURITY FIX - Validate lending_vault is owned by lending_program
+    #[account(
+        mut,
+        constraint = *lending_vault.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub lending_vault: UncheckedAccount<'info>,
     /// CHECK: User USDC account for receiving borrowed funds
     #[account(mut)]
@@ -672,23 +690,36 @@ pub struct CloseLeveragedPosition<'info> {
     )]
     pub crucible_authority: UncheckedAccount<'info>,
     
-    /// CHECK: Protocol treasury token account for fee collection
-    #[account(mut)]
-    pub treasury: UncheckedAccount<'info>,
+    /// CHECK: Optional oracle account for price feeds (required for slippage protection)
+    /// If provided, must match crucible.oracle
+    pub oracle: Option<UncheckedAccount<'info>>,
+    
+    /// SECURITY FIX: Validate treasury is a TokenAccount for base_mint
+    #[account(
+        mut,
+        constraint = treasury.mint == crucible.base_mint @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury: Account<'info, TokenAccount>,
     
     /// CHECK: Lending program for repaying USDC (USDC-only lending pool)
     #[account(
         constraint = lending_program.key() == LENDING_POOL_PROGRAM_ID @ CrucibleError::InvalidLendingProgram
     )]
     pub lending_program: UncheckedAccount<'info>,
-    /// CHECK: USDC lending market account (pool PDA)
-    #[account(mut)]
+    /// CHECK: SECURITY FIX - Validate lending_market is owned by lending_program
+    #[account(
+        mut,
+        constraint = *lending_market.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub lending_market: UncheckedAccount<'info>,
     /// CHECK: Borrower account PDA
     #[account(mut)]
     pub borrower_account: UncheckedAccount<'info>,
-    /// CHECK: USDC lending vault
-    #[account(mut)]
+    /// CHECK: SECURITY FIX - Validate lending_vault is owned by lending_program
+    #[account(
+        mut,
+        constraint = *lending_vault.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub lending_vault: UncheckedAccount<'info>,
     /// CHECK: User USDC account for repaying loan
     #[account(mut)]

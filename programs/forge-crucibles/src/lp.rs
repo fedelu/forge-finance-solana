@@ -174,14 +174,6 @@ pub fn open_lp_position(
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, protocol_fee_base)?;
     }
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.user_base_token_account.to_account_info(),
-        to: ctx.accounts.crucible_base_vault.to_account_info(),
-        authority: ctx.accounts.user.to_account_info(),
-    };
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-    token::transfer(cpi_ctx, base_amount)?;
 
     // Transfer USDC to crucible vault (net amount)
     let cpi_accounts = Transfer {
@@ -515,12 +507,18 @@ pub struct OpenLPPosition<'info> {
     /// CHECK: Optional oracle account for price feeds
     /// If provided, must match crucible.oracle
     pub oracle: Option<UncheckedAccount<'info>>,
-    /// CHECK: Protocol treasury token account for base token fees
-    #[account(mut)]
-    pub treasury_base: UncheckedAccount<'info>,
-    /// CHECK: Protocol treasury token account for USDC fees
-    #[account(mut)]
-    pub treasury_usdc: UncheckedAccount<'info>,
+    /// SECURITY FIX: Validate treasury_base is a TokenAccount for base_mint
+    #[account(
+        mut,
+        constraint = treasury_base.mint == base_mint.key() @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury_base: Account<'info, TokenAccount>,
+    /// SECURITY FIX: Validate treasury_usdc is a TokenAccount for USDC
+    #[account(
+        mut,
+        constraint = treasury_usdc.mint == user_usdc_account.mint @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury_usdc: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -552,12 +550,18 @@ pub struct CloseLPPosition<'info> {
         bump = crucible.bump,
     )]
     pub crucible_authority: UncheckedAccount<'info>,
-    /// CHECK: Protocol treasury token account for base token fees
-    #[account(mut)]
-    pub treasury_base: UncheckedAccount<'info>,
-    /// CHECK: Protocol treasury token account for USDC fees
-    #[account(mut)]
-    pub treasury_usdc: UncheckedAccount<'info>,
+    /// SECURITY FIX: Validate treasury_base is a TokenAccount for base_mint
+    #[account(
+        mut,
+        constraint = treasury_base.mint == crucible.base_mint @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury_base: Account<'info, TokenAccount>,
+    /// SECURITY FIX: Validate treasury_usdc is a TokenAccount for USDC
+    #[account(
+        mut,
+        constraint = treasury_usdc.mint == user_usdc_account.mint @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury_usdc: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
 }
 

@@ -857,14 +857,16 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
         const cruciblePDA = new PublicKey(crucibleAddress)
         
-        // Fetch crucible account to get treasury (using direct fetcher)
+        // Fetch crucible account to get treasury and oracle (using direct fetcher)
         let treasuryAccount: PublicKey
+        let oracleAccount: PublicKey | null = null
         try {
           const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
           if (!crucibleAccount) {
             throw new Error('Crucible account not found')
           }
           treasuryAccount = crucibleAccount.treasury
+          oracleAccount = crucibleAccount.oracle || null
         } catch (error) {
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
@@ -894,8 +896,10 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         
         // Call close_leveraged_position instruction
         // Note: Repayment is handled by the instruction via CPI
+        // SECURITY FIX: Added max_slippage_bps parameter (100 = 1% slippage tolerance)
+        const maxSlippageBps = 100; // 1% slippage tolerance
         const txSignature = await program.methods
-          .closeLeveragedPosition(positionPDA)
+          .closeLeveragedPosition(positionPDA, maxSlippageBps)
           .accounts({
             user: currentPublicKey,
             crucible: cruciblePDA,
@@ -903,6 +907,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             userTokenAccount: userTokenAccount,
             crucibleVault: baseVaultPDA,
             crucibleAuthority: crucibleAuthorityPDA,
+            oracle: oracleAccount || SystemProgram.programId, // Use system program if no oracle
             treasury: treasuryAccount,
             lendingProgram: new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.LENDING_POOL),
             lendingMarket: lendingPoolPDA,

@@ -78,15 +78,59 @@ pub mod lending {
         };
         market.liquidation_threshold_bps = params.liquidation_threshold_bps;
         market.paused = false;
+        market.pause_proposed_at = None;
         market.bump = ctx.bumps.market;
 
         Ok(())
     }
 
+    /// Propose to pause/unpause the market (requires timelock delay)
     pub fn pause_market(ctx: Context<PauseMarket>, paused: bool) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require_keys_eq!(market.authority, ctx.accounts.authority.key(), LendingError::Unauthorized);
-        market.paused = paused;
+        
+        // SECURITY FIX: Implement timelock for pause operations
+        // For unpausing, allow immediate execution (emergency recovery)
+        // For pausing, require timelock delay via execute_pause
+        if !paused && market.paused {
+            // Unpausing - allow immediately for emergency recovery
+            market.paused = false;
+            market.pause_proposed_at = None;
+        } else if paused && !market.paused {
+            // Proposing to pause - set proposal timestamp, don't pause yet
+            let clock = Clock::get()?;
+            market.pause_proposed_at = Some(clock.unix_timestamp as u64);
+            // Pause will be executed via execute_pause after timelock
+        }
+        
+        Ok(())
+    }
+    
+    /// Execute pause after timelock delay
+    pub fn execute_pause(ctx: Context<PauseMarket>) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_keys_eq!(market.authority, ctx.accounts.authority.key(), LendingError::Unauthorized);
+        
+        const TIMELOCK_DELAY_SECONDS: u64 = 86400; // 24 hours delay
+        
+        require!(
+            market.pause_proposed_at.is_some(),
+            LendingError::NoPauseProposal
+        );
+        
+        let proposed_at = market.pause_proposed_at.unwrap();
+        let clock = Clock::get()?;
+        let elapsed = (clock.unix_timestamp as u64).saturating_sub(proposed_at);
+        
+        require!(
+            elapsed >= TIMELOCK_DELAY_SECONDS,
+            LendingError::TimelockNotExpired
+        );
+        
+        // Execute the pause
+        market.paused = true;
+        market.pause_proposed_at = None;
+        
         Ok(())
     }
 
@@ -364,6 +408,8 @@ pub enum LendingError {
     #[msg("Unauthorized")] Unauthorized,
     #[msg("Unimplemented")] Unimplemented,
     #[msg("Insufficient liquidity")] InsufficientLiquidity,
+    #[msg("Timelock has not expired")] TimelockNotExpired,
+    #[msg("No pause proposal exists")] NoPauseProposal,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]

@@ -99,6 +99,9 @@
         },
         {
           "name": "treasury",
+          "docs": [
+            "SECURITY FIX: Validate treasury is a TokenAccount for the correct mint"
+          ],
           "writable": true
         },
         {
@@ -223,7 +226,17 @@
           }
         },
         {
+          "name": "oracle",
+          "docs": [
+            "If provided, must match crucible.oracle"
+          ],
+          "optional": true
+        },
+        {
           "name": "treasury",
+          "docs": [
+            "SECURITY FIX: Validate treasury is a TokenAccount for base_mint"
+          ],
           "writable": true
         },
         {
@@ -254,6 +267,10 @@
         {
           "name": "position_id",
           "type": "pubkey"
+        },
+        {
+          "name": "max_slippage_bps",
+          "type": "u64"
         }
       ]
     },
@@ -357,10 +374,16 @@
         },
         {
           "name": "treasury_base",
+          "docs": [
+            "SECURITY FIX: Validate treasury_base is a TokenAccount for base_mint"
+          ],
           "writable": true
         },
         {
           "name": "treasury_usdc",
+          "docs": [
+            "SECURITY FIX: Validate treasury_usdc is a TokenAccount for USDC"
+          ],
           "writable": true
         },
         {
@@ -756,6 +779,9 @@
         },
         {
           "name": "treasury",
+          "docs": [
+            "SECURITY FIX: Validate treasury is a TokenAccount for the correct mint"
+          ],
           "writable": true
         },
         {
@@ -1078,10 +1104,16 @@
         },
         {
           "name": "treasury_base",
+          "docs": [
+            "SECURITY FIX: Validate treasury_base is a TokenAccount for base_mint"
+          ],
           "writable": true
         },
         {
           "name": "treasury_usdc",
+          "docs": [
+            "SECURITY FIX: Validate treasury_usdc is a TokenAccount for USDC"
+          ],
           "writable": true
         },
         {
