@@ -18,14 +18,16 @@ export default function DocsPage() {
       <div className="min-h-screen flex flex-col">
         <div className="flex-1">
           {/* Navigation Back Button */}
-          <div className="px-4 py-4 lg:px-8 max-w-4xl mx-auto">
-            <Link 
-              href="/demo"
-              className="inline-flex items-center gap-2 text-forge-gray-300 hover:text-forge-primary transition-colors duration-200 group"
-            >
-              <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-200" />
-              <span className="text-sm font-medium">Back to Protocol</span>
-            </Link>
+          <div className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10">
+            <div className="px-6 py-4 lg:px-12 max-w-4xl mx-auto">
+              <Link 
+                href="/demo"
+                className="inline-flex items-center gap-2.5 text-forge-gray-300 hover:text-forge-primary transition-all duration-200 group font-medium"
+              >
+                <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-200" />
+                <span className="text-sm">Back to Protocol</span>
+              </Link>
+            </div>
           </div>
 
           {/* Main Content */}
@@ -490,9 +492,6 @@ export default function DocsPage() {
             {/* Footer */}
             <div className="mt-16 pt-8 border-t border-white/10">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-forge-gray-500">
-                <div>
-                  <p className="text-forge-gray-400">Ready to use the protocol? <Link href="/demo" className="text-forge-primary hover:text-forge-primary-light font-medium">Go to Protocol →</Link></p>
-                </div>
                 <div>
                   <p>© 2026 Forge Protocol. All rights reserved.</p>
                 </div>
