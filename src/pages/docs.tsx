@@ -114,6 +114,7 @@ export default function DocsPage() {
                     <li><strong className="text-white">Market Volatility Creates Opportunities</strong>: When asset prices fluctuate, price deviations between wrapped tokens (cTokens) and underlying assets create arbitrage opportunities</li>
                     <li><strong className="text-white">Arbitrageurs Capture Spreads</strong>: Traders automatically wrap/unwrap tokens to capture price differences</li>
                     <li><strong className="text-white">Fees Generate Yield</strong>: Each wrap/unwrap transaction generates fees - 80% accumulates in the vault, increasing the exchange rate (vault_balance / ctoken_supply), which generates yield for all cToken holders</li>
+                    <li><strong className="text-white">Direct Arbitrage Deposits</strong>: Arbitrageurs can deposit profits directly via <code className="px-1.5 py-0.5 rounded bg-forge-primary/20 text-forge-primary">deposit_arbitrage_profit</code> - 80% goes to vault (increases yield), 20% to treasury, with 1% reward for the arbitrageur</li>
                     <li><strong className="text-white">Exchange Rate Growth</strong>: As fees accumulate in the vault, each cToken becomes worth more base tokens over time - this is how yield is realized</li>
                     <li><strong className="text-white">Compounding Flywheel</strong>: More fees in vault → higher exchange rate → more value per cToken → attracts more deposits → more fees</li>
                   </ol>
@@ -145,6 +146,100 @@ export default function DocsPage() {
                     <div>Increased TVL = More Fee Revenue</div>
                     <div className="text-forge-primary">↓</div>
                     <div className="text-forge-primary">Cycle Repeats (Compounding Growth)</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Arbitrage Revenue Mechanism */}
+            <section id="arbitrage-revenue" className="mb-16 scroll-mt-24">
+              <h2 className="text-3xl font-bold mb-6 text-white">Arbitrage Revenue to Crucible Yield</h2>
+              
+              <div className="space-y-6">
+                <div className="p-6 rounded-2xl border border-forge-primary/30 bg-gradient-to-br from-forge-primary/10 to-transparent backdrop-blur-sm">
+                  <h3 className="text-xl font-semibold mb-4 text-white">How Arbitrage Revenue Flows to Yield</h3>
+                  <p className="text-forge-gray-300 mb-4 leading-relaxed">
+                    Forge Protocol includes a dedicated mechanism that allows arbitrageurs to route their profits directly into crucible vaults, increasing yield for all cToken holders. This creates a <strong className="text-forge-primary">direct revenue stream</strong> from arbitrage activity that benefits the entire protocol.
+                  </p>
+                  
+                  <div className="mt-6 space-y-4">
+                    <div className="p-4 rounded-lg bg-black/40 border border-white/10">
+                      <h4 className="font-semibold text-white mb-2">The Arbitrage Deposit Mechanism</h4>
+                      <p className="text-sm text-forge-gray-300 mb-3">
+                        Arbitrageurs can use the <code className="px-2 py-1 rounded bg-forge-primary/20 text-forge-primary">deposit_arbitrage_profit</code> instruction to deposit their profits directly into the crucible vault.
+                      </p>
+                      <div className="space-y-2 text-sm text-forge-gray-400">
+                        <div className="flex items-start gap-2">
+                          <span className="text-forge-primary">•</span>
+                          <span><strong className="text-white">80% goes to vault</strong> - Increases exchange rate and yield for all cToken holders</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-forge-primary">•</span>
+                          <span><strong className="text-white">20% goes to treasury</strong> - Protocol revenue for operations and development</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-forge-primary">•</span>
+                          <span><strong className="text-white">1% reward</strong> - Arbitrageurs receive cTokens as an incentive to route profits back</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-lg bg-forge-primary/10 border border-forge-primary/20">
+                      <h4 className="font-semibold text-white mb-2">Example: Arbitrage Deposit</h4>
+                      <div className="text-sm text-forge-gray-300 space-y-1 font-mono">
+                        <div>Arbitrageur profits: 1,000 SOL</div>
+                        <div className="text-forge-primary">↓ deposit_arbitrage_profit(1000)</div>
+                        <div>Vault receives: 800 SOL (80%) → Increases yield</div>
+                        <div>Treasury receives: 200 SOL (20%) → Protocol revenue</div>
+                        <div>Arbitrageur receives: ~10 cSOL (1% reward)</div>
+                        <div className="text-forge-primary mt-2">Result: All cToken holders benefit from increased exchange rate</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
+                  <h3 className="text-xl font-semibold mb-4 text-white">Why This Matters</h3>
+                  <div className="space-y-3 text-forge-gray-300">
+                    <div>
+                      <strong className="text-white">Direct Yield Increase:</strong> Arbitrage profits flow directly into the vault, increasing the exchange rate (vault_balance / ctoken_supply) which benefits all cToken holders proportionally.
+                    </div>
+                    <div>
+                      <strong className="text-white">Sustainable Revenue:</strong> Unlike token emissions, arbitrage revenue comes from real market activity and price inefficiencies, creating sustainable yield.
+                    </div>
+                    <div>
+                      <strong className="text-white">Incentive Alignment:</strong> The 1% cToken reward incentivizes arbitrageurs to route profits back to the protocol, creating a positive feedback loop.
+                    </div>
+                    <div>
+                      <strong className="text-white">Automatic Distribution:</strong> The 80/20 split is handled automatically by the smart contract, ensuring fair distribution without manual intervention.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 rounded-xl border border-forge-primary/30 bg-gradient-to-br from-forge-primary/10 to-transparent backdrop-blur-sm">
+                  <h3 className="text-xl font-semibold mb-4 text-white">How It Works Technically</h3>
+                  <ol className="space-y-3 text-forge-gray-300 list-decimal list-inside">
+                    <li><strong className="text-white">Arbitrageur executes trade</strong> - Captures price difference between cToken and base token</li>
+                    <li><strong className="text-white">Calculates net profit</strong> - After accounting for swap fees, wrap/unwrap fees, and gas costs</li>
+                    <li><strong className="text-white">Calls deposit_arbitrage_profit</strong> - Deposits profit amount to crucible</li>
+                    <li><strong className="text-white">Smart contract splits</strong> - 80% to vault, 20% to treasury automatically</li>
+                    <li><strong className="text-white">Vault balance increases</strong> - total_fees_accrued increases by 80% of deposit</li>
+                    <li><strong className="text-white">Exchange rate grows</strong> - (total_base_deposited + total_fees_accrued) / ctoken_supply increases</li>
+                    <li><strong className="text-white">Yield increases</strong> - All cToken holders benefit from higher exchange rate</li>
+                    <li><strong className="text-white">Arbitrageur rewarded</strong> - Receives 1% of deposit as cTokens</li>
+                  </ol>
+                </div>
+
+                <div className="mt-6 p-6 rounded-xl border border-white/10 bg-black/40 backdrop-blur-sm">
+                  <h4 className="font-semibold mb-3 text-white">Integration with Existing Yield Sources</h4>
+                  <p className="text-sm text-forge-gray-300 mb-3">
+                    Arbitrage deposits are seamlessly integrated with existing yield mechanisms:
+                  </p>
+                  <div className="space-y-2 text-sm text-forge-gray-400">
+                    <div>• Arbitrage deposits increase <code className="px-1.5 py-0.5 rounded bg-forge-primary/20 text-forge-primary">total_fees_accrued</code></div>
+                    <div>• Exchange rate calculation includes arbitrage revenue: <code className="px-1.5 py-0.5 rounded bg-forge-primary/20 text-forge-primary">(total_base_deposited + total_fees_accrued) / ctoken_supply</code></div>
+                    <div>• Yield displays automatically include arbitrage contributions</div>
+                    <div>• No separate tracking needed - everything flows through the same mechanism</div>
                   </div>
                 </div>
               </div>
@@ -279,10 +374,15 @@ export default function DocsPage() {
                       <td className="py-3 px-4 text-forge-primary">10%</td>
                       <td className="py-3 px-4 text-sm">Charged if position becomes undercollateralized</td>
                     </tr>
-                    <tr>
+                    <tr className="border-b border-white/5">
                       <td className="py-3 px-4">Lending Yield Fee</td>
                       <td className="py-3 px-4 text-forge-primary">10%</td>
                       <td className="py-3 px-4 text-sm">Protocol takes 10% of lending yield</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4">Arbitrage Deposit</td>
+                      <td className="py-3 px-4 text-forge-primary">80/20 Split</td>
+                      <td className="py-3 px-4 text-sm">80% to vault (yield), 20% to treasury, 1% reward to arbitrageur</td>
                     </tr>
                   </tbody>
                 </table>
@@ -296,15 +396,20 @@ export default function DocsPage() {
                       <CheckCircleIcon className="w-5 h-5 text-forge-primary" />
                       <span className="font-semibold text-white">80% → Crucible Stakers</span>
                     </div>
-                    <p className="text-sm text-forge-gray-400 ml-7">Distributed to cToken holders based on their stake</p>
+                    <p className="text-sm text-forge-gray-400 ml-7">Distributed to cToken holders based on their stake. Includes wrap/unwrap fees, LP fees, LVF fees, and arbitrage deposits.</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <CheckCircleIcon className="w-5 h-5 text-forge-primary" />
                       <span className="font-semibold text-white">20% → FORGE Protocol</span>
                     </div>
-                    <p className="text-sm text-forge-gray-400 ml-7">Protocol treasury for development and operations</p>
+                    <p className="text-sm text-forge-gray-400 ml-7">Protocol treasury for development and operations. Includes 20% of all fees and arbitrage deposits.</p>
                   </div>
+                </div>
+                <div className="mt-4 p-4 rounded-lg bg-forge-primary/10 border border-forge-primary/20">
+                  <p className="text-sm text-forge-gray-300">
+                    <strong className="text-white">Arbitrage Deposits:</strong> When arbitrageurs deposit profits via <code className="px-1.5 py-0.5 rounded bg-forge-primary/20 text-forge-primary">deposit_arbitrage_profit</code>, they receive a 1% cToken reward as an incentive, while 80% goes to vault (increasing yield) and 20% goes to treasury.
+                  </p>
                 </div>
               </div>
             </section>
@@ -321,6 +426,7 @@ export default function DocsPage() {
                   </p>
                   <ul className="space-y-2 text-forge-gray-300">
                     <li>• <strong className="text-white">Wrap/Unwrap Fees</strong>: 0.5-0.75% on all token wrapping operations (volatility-driven)</li>
+                    <li>• <strong className="text-white">Arbitrage Deposits</strong>: 80% of arbitrage profits routed directly to vault (increases yield)</li>
                     <li>• <strong className="text-white">LP Position Fees</strong>: 1% open + 2% close + 10% yield fee</li>
                     <li>• <strong className="text-white">Liquidation Fees</strong>: 10% on liquidated positions</li>
                     <li>• <strong className="text-white">Lending Fees</strong>: 10% of lending yield (interest rate spread)</li>
