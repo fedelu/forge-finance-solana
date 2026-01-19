@@ -125,5 +125,9 @@ pub enum CrucibleError {
     InvalidMetadataAccount,
     #[msg("Invalid program")]
     InvalidProgram,
+    #[msg("Position is not liquidatable")]
+    PositionNotLiquidatable,
+    #[msg("Invalid health check")]
+    InvalidHealthCheck,
 }
 

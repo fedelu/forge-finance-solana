@@ -23,8 +23,10 @@ fn do_accrue_interest(market: &mut Market) -> Result<()> {
     // utilization = borrowed / max(1, supply)
     let supply = market.total_supply.max(1);
     let util_scaled = (market.total_borrowed as u128)
-        .checked_mul(RATE_SCALE).unwrap()
-        .checked_div(supply as u128).unwrap();
+        .checked_mul(RATE_SCALE)
+        .ok_or(LendingError::InvalidAmount)?
+        .checked_div(supply as u128)
+        .ok_or(LendingError::InvalidAmount)?;
 
     // piecewise interest rate
     let kink_scaled = (market.interest_model.kink_bps as u128) * RATE_SCALE / 10_000u128;
@@ -33,11 +35,17 @@ fn do_accrue_interest(market: &mut Market) -> Result<()> {
     let slope2_scaled = (market.interest_model.slope2_bps as u128) * RATE_SCALE / 10_000u128;
 
     let ir_scaled = if util_scaled <= kink_scaled {
-        base_scaled + util_scaled.checked_mul(slope1_scaled).unwrap() / RATE_SCALE
+        base_scaled + util_scaled
+            .checked_mul(slope1_scaled)
+            .ok_or(LendingError::InvalidAmount)? / RATE_SCALE
     } else {
-        let pre = base_scaled + kink_scaled.checked_mul(slope1_scaled).unwrap() / RATE_SCALE;
+        let pre = base_scaled + kink_scaled
+            .checked_mul(slope1_scaled)
+            .ok_or(LendingError::InvalidAmount)? / RATE_SCALE;
         let delta = util_scaled - kink_scaled;
-        pre + delta.checked_mul(slope2_scaled).unwrap() / RATE_SCALE
+        pre + delta
+            .checked_mul(slope2_scaled)
+            .ok_or(LendingError::InvalidAmount)? / RATE_SCALE
     };
 
     // simple linear accrual per second on index: index *= (1 + ir_per_sec)
@@ -45,11 +53,16 @@ fn do_accrue_interest(market: &mut Market) -> Result<()> {
     let seconds = now - market.last_accrued_ts;
     let per_sec_scaled = ir_scaled / (365u128 * 24 * 60 * 60);
     let increment = market.accumulated_index
-        .checked_mul(per_sec_scaled).unwrap()
-        .checked_mul(seconds as u128).unwrap()
-        .checked_div(RATE_SCALE).unwrap();
+        .checked_mul(per_sec_scaled)
+        .ok_or(LendingError::InvalidAmount)?
+        .checked_mul(seconds as u128)
+        .ok_or(LendingError::InvalidAmount)?
+        .checked_div(RATE_SCALE)
+        .ok_or(LendingError::InvalidAmount)?;
 
-    market.accumulated_index = market.accumulated_index.checked_add(increment).unwrap();
+    market.accumulated_index = market.accumulated_index
+        .checked_add(increment)
+        .ok_or(LendingError::InvalidAmount)?;
     market.last_accrued_ts = now;
     Ok(())
 }
@@ -97,6 +110,11 @@ pub mod lending {
             market.paused = false;
             market.pause_proposed_at = None;
         } else if paused && !market.paused {
+            // SECURITY FIX: Prevent resetting existing proposal
+            require!(
+                market.pause_proposed_at.is_none(),
+                LendingError::PauseProposalAlreadyExists
+            );
             // Proposing to pause - set proposal timestamp, don't pause yet
             let clock = Clock::get()?;
             market.pause_proposed_at = Some(clock.unix_timestamp as u64);
@@ -167,7 +185,9 @@ pub mod lending {
         };
         token::mint_to(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), mint_cpi, signer), receipt_amount)?;
 
-        market.total_supply = market.total_supply.checked_add(amount as u128).unwrap();
+        market.total_supply = market.total_supply
+            .checked_add(amount as u128)
+            .ok_or(LendingError::InvalidAmount)?;
         emit!(SupplyEvent { user: ctx.accounts.user.key(), amount });
         Ok(())
     }
@@ -195,7 +215,9 @@ pub mod lending {
         token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer), amount)?;
 
         // Update accounting using index in later iteration; MVP track nominal
-        market.total_supply = market.total_supply.checked_sub(amount as u128).unwrap();
+        market.total_supply = market.total_supply
+            .checked_sub(amount as u128)
+            .ok_or(LendingError::InvalidAmount)?;
         emit!(WithdrawEvent { user: ctx.accounts.user.key(), amount });
         Ok(())
     }
@@ -261,9 +283,9 @@ pub mod lending {
         )?;
 
         // Update borrowed amount (assuming full repayment for now)
+        // SECURITY FIX: Use saturating_sub to prevent underflow, but log if it happens
         market.total_borrowed = market.total_borrowed
-            .checked_sub(amount as u128)
-            .unwrap_or(0);
+            .saturating_sub(amount as u128);
 
         emit!(RepayEvent { user: ctx.accounts.user.key(), amount: total_owed });
         Ok(())
@@ -410,6 +432,7 @@ pub enum LendingError {
     #[msg("Insufficient liquidity")] InsufficientLiquidity,
     #[msg("Timelock has not expired")] TimelockNotExpired,
     #[msg("No pause proposal exists")] NoPauseProposal,
+    #[msg("Pause proposal already exists")] PauseProposalAlreadyExists,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]

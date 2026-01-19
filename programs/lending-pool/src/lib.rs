@@ -51,19 +51,14 @@ pub mod lending_pool_usdc {
     pub fn borrow_usdc(ctx: Context<BorrowUSDC>, amount: u64) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
 
+        let available = pool.total_liquidity
+            .checked_sub(pool.total_borrowed)
+            .ok_or(LendingPoolError::InsufficientLiquidity)?;
         require!(
-            amount <= pool.total_liquidity.checked_sub(pool.total_borrowed).unwrap_or(0),
+            amount <= available,
             LendingPoolError::InsufficientLiquidity
         );
         
-        // SECURITY FIX: Initialize borrower account if it was just created
-        // init_if_needed handles account creation, we just need to set initial values
-        let borrower_account = &mut ctx.accounts.borrower_account;
-        if borrower_account.borrower == Pubkey::default() {
-            borrower_account.borrower = ctx.accounts.borrower.key();
-            borrower_account.amount_borrowed = 0;
-        }
-
         // Transfer USDC from pool vault to borrower
         // Note: In production, pool would be a PDA and sign transfers
         // For MVP, we use a simple token transfer
@@ -85,7 +80,9 @@ pub mod lending_pool_usdc {
             .ok_or(ProgramError::ArithmeticOverflow)?;
 
         // Record borrower debt
-        // Initialize borrower account if it was just created
+        // SECURITY FIX: Initialize borrower account if it was just created
+        // init_if_needed handles account creation, we just need to set initial values
+        // Note: Initialization happens after transfer to ensure account is created
         let borrower_account = &mut ctx.accounts.borrower_account;
         if borrower_account.borrower == Pubkey::default() {
             borrower_account.borrower = ctx.accounts.borrower.key();
@@ -125,13 +122,10 @@ pub mod lending_pool_usdc {
         token::transfer(cpi_ctx, amount)?;
 
         // Update pool state
-        pool.total_borrowed = pool.total_borrowed
-            .checked_sub(amount)
-            .unwrap_or(0);
+        // Use saturating_sub for repayments to prevent underflow
+        pool.total_borrowed = pool.total_borrowed.saturating_sub(amount);
 
-        borrower_account.amount_borrowed = borrower_account.amount_borrowed
-            .checked_sub(amount)
-            .unwrap_or(0);
+        borrower_account.amount_borrowed = borrower_account.amount_borrowed.saturating_sub(amount);
 
         emit!(USDCRepaid {
             borrower: ctx.accounts.borrower.key(),
@@ -147,7 +141,7 @@ pub mod lending_pool_usdc {
         let pool = &ctx.accounts.pool;
         let available = pool.total_liquidity
             .checked_sub(pool.total_borrowed)
-            .unwrap_or(0);
+            .ok_or(LendingPoolError::InsufficientLiquidity)?;
         Ok(available)
     }
 }

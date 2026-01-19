@@ -248,6 +248,10 @@
         },
         {
           "name": "borrower_account",
+          "docs": [
+            "Note: Using UncheckedAccount since BorrowerAccount is from another program",
+            "PDA derivation validated in instruction"
+          ],
           "writable": true
         },
         {
@@ -499,6 +503,66 @@
       ]
     },
     {
+      "name": "health_check",
+      "docs": [
+        "Check position health (LTV in basis points)"
+      ],
+      "discriminator": [
+        115,
+        90,
+        99,
+        168,
+        138,
+        18,
+        157,
+        131
+      ],
+      "accounts": [
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "LeveragedPosition"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle",
+          "docs": [
+            "If provided, must match crucible.oracle"
+          ],
+          "optional": true
+        }
+      ],
+      "args": [],
+      "returns": "u64"
+    },
+    {
       "name": "initialize_crucible",
       "docs": [
         "Initialize a new crucible for a base token"
@@ -600,6 +664,152 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "liquidate_position",
+      "docs": [
+        "Liquidate an undercollateralized leveraged position"
+      ],
+      "discriminator": [
+        187,
+        74,
+        229,
+        149,
+        102,
+        81,
+        221,
+        68
+      ],
+      "accounts": [
+        {
+          "name": "liquidator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "LeveragedPosition"
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_owner"
+        },
+        {
+          "name": "crucible_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "Crucible"
+              }
+            ]
+          }
+        },
+        {
+          "name": "liquidator_token_account",
+          "writable": true
+        },
+        {
+          "name": "oracle",
+          "docs": [
+            "If provided, must match crucible.oracle"
+          ],
+          "optional": true
+        },
+        {
+          "name": "lending_program"
+        },
+        {
+          "name": "lending_market",
+          "writable": true
+        },
+        {
+          "name": "borrower_account",
+          "docs": [
+            "Note: Using UncheckedAccount since BorrowerAccount is from another program",
+            "PDA derivation validated in instruction"
+          ],
+          "writable": true
+        },
+        {
+          "name": "lending_vault",
+          "writable": true
+        },
+        {
+          "name": "liquidator_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
     },
     {
       "name": "mint_ctoken",
@@ -959,10 +1169,17 @@
           "writable": true
         },
         {
-          "name": "pool_authority"
+          "name": "pool_authority",
+          "docs": [
+            "SECURITY FIX: Validate pool_authority is owned by lending_program"
+          ]
         },
         {
           "name": "borrower_account",
+          "docs": [
+            "SECURITY FIX: Validate borrower_account is a PDA owned by lending_program",
+            "Note: Using UncheckedAccount with constraint since we can't derive seeds from lending program"
+          ],
           "writable": true
         },
         {
@@ -1237,6 +1454,19 @@
       ]
     },
     {
+      "name": "LeveragedPositionLiquidated",
+      "discriminator": [
+        237,
+        131,
+        57,
+        230,
+        108,
+        99,
+        115,
+        166
+      ]
+    },
+    {
       "name": "LeveragedPositionOpened",
       "discriminator": [
         63,
@@ -1345,6 +1575,16 @@
       "code": 6018,
       "name": "InvalidProgram",
       "msg": "Invalid program"
+    },
+    {
+      "code": 6019,
+      "name": "PositionNotLiquidatable",
+      "msg": "Position is not liquidatable"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidHealthCheck",
+      "msg": "Invalid health check"
     }
   ],
   "types": [
@@ -1671,6 +1911,38 @@
           },
           {
             "name": "yield_earned",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LeveragedPositionLiquidated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidator",
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral_seized",
+            "type": "u64"
+          },
+          {
+            "name": "debt_repaid",
+            "type": "u64"
+          },
+          {
+            "name": "liquidation_bonus",
             "type": "u64"
           }
         ]

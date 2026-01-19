@@ -93,6 +93,16 @@ pub fn open_leveraged_position(
         if pool_data.len() < 73 {
             return Err(ProgramError::InvalidAccountData.into());
         }
+        // SECURITY FIX: Validate borrower_account PDA derivation
+        let (expected_borrower_pda, _bump) = Pubkey::find_program_address(
+            &[b"borrower", ctx.accounts.user.key().as_ref()],
+            &ctx.accounts.lending_program.key(),
+        );
+        require!(
+            ctx.accounts.borrower_account.key() == expected_borrower_pda,
+            CrucibleError::InvalidLendingProgram
+        );
+        
         // Create CPI context for borrowing
         let cpi_program = ctx.accounts.lending_program.to_account_info();
         let cpi_accounts = BorrowUSDC {
@@ -309,6 +319,33 @@ pub fn close_leveraged_position(
         .checked_sub(total_fee)
         .ok_or(ProgramError::ArithmeticOverflow)?;
 
+    // SECURITY FIX: Add slippage protection for final token amounts after fees
+    // Calculate expected minimum tokens based on entry price
+    let expected_min_tokens = entry_position_value_usdc
+        .checked_mul(1_000_000)
+        .and_then(|v| v.checked_div(position.entry_price as u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate actual tokens received after fees
+    let actual_tokens = tokens_after_fee as u128;
+    
+    // Validate slippage on final amount
+    let token_slippage_bps = if actual_tokens < expected_min_tokens {
+        let diff = expected_min_tokens
+            .checked_sub(actual_tokens)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        diff.checked_mul(10_000)
+            .and_then(|v| v.checked_div(expected_min_tokens.max(1)))
+            .ok_or(ProgramError::ArithmeticOverflow)?
+    } else {
+        0
+    };
+    
+    require!(
+        token_slippage_bps <= max_slippage_bps as u128,
+        CrucibleError::SlippageExceeded
+    );
+
     // Transfer vault fee share to vault (increases yield)
     if vault_fee_share > 0 {
         // Fee already accounted in tokens_to_return calculation
@@ -388,7 +425,7 @@ pub fn get_oracle_price(
     _base_mint: &Pubkey,
 ) -> Result<u64> {
     const MAX_STALENESS_SECONDS: u64 = 300; // 5 minutes max staleness
-    const MIN_PRICE_USD: f64 = 0.000001; // $0.000001 minimum
+    const MIN_PRICE_USD: f64 = 0.001; // $0.001 minimum - prevents rounding attacks
     const MAX_PRICE_USD: f64 = 1_000_000.0; // $1,000,000 maximum
     
     if let Some(oracle_pubkey) = crucible.oracle {
@@ -468,7 +505,9 @@ pub fn get_oracle_price(
         // Scale to 1_000_000 (e.g., $100.50 = 100_500_000)
         let price_scaled = (price_usd * 1_000_000.0) as u64;
         
-        require!(price_scaled > 0, CrucibleError::InvalidOraclePrice);
+        // SECURITY FIX: Validate minimum scaled price to prevent rounding attacks
+        // Minimum $0.001 after scaling = 1_000 (prevents prices that round to 1)
+        require!(price_scaled >= 1_000, CrucibleError::InvalidOraclePrice);
         
         Ok(price_scaled)
     } else {
@@ -537,12 +576,19 @@ fn calculate_lvf_exchange_rate(
         .and_then(|v| v.checked_div(slots_per_year))
         .ok_or(ProgramError::ArithmeticOverflow)?;
 
-    // SECURITY FIX: Calculate exchange rate growth with proper precision
+    // SECURITY FIX: Calculate exchange rate growth with proper precision and overflow protection
     // Multiply first, then divide to prevent precision loss
+    // Break down calculations into smaller steps with explicit overflow checks
     // growth = (base_rate * effective_apy * years_elapsed) / (100 * 1_000_000 * 1_000_000)
-    let growth_numerator = (base_rate as u128)
+    
+    // Step 1: base_rate * effective_apy
+    let step1 = (base_rate as u128)
         .checked_mul(effective_apy)
-        .and_then(|v| v.checked_mul(years_elapsed))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Step 2: step1 * years_elapsed
+    let growth_numerator = step1
+        .checked_mul(years_elapsed)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
     let growth_denominator = 100u128
@@ -556,6 +602,14 @@ fn calculate_lvf_exchange_rate(
     let growth = growth_numerator
         .checked_div(growth_denominator)
         .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // SECURITY FIX: Add maximum position duration check to prevent extreme values
+    // Maximum 10 years (approximately)
+    const MAX_SLOTS: u64 = 78_840_000 * 10; // 10 years
+    require!(
+        slots_elapsed <= MAX_SLOTS,
+        CrucibleError::InvalidLeverage
+    );
     
     // Add minimum threshold to prevent zero yields for small positions
     // Minimum growth of 1 unit (scaled) to ensure some yield accrual
@@ -573,6 +627,264 @@ fn calculate_lvf_exchange_rate(
     }
 
     Ok(exchange_rate as u64)
+}
+
+/// Check position health (LTV in basis points)
+/// Returns LTV (Loan-to-Value) in basis points: (debt * 10000) / collateral_value
+/// Lower is better. If LTV > liquidation_threshold, position is liquidatable.
+pub fn health_check(
+    ctx: Context<HealthCheck>,
+) -> Result<u64> {
+    let position = &ctx.accounts.position;
+    let crucible = &ctx.accounts.crucible;
+    let clock = Clock::get()?;
+    
+    require!(position.is_open, CrucibleError::PositionNotOpen);
+    
+    // Get base_mint before any borrows
+    let base_mint_key = ctx.accounts.crucible.base_mint;
+    
+    // Fetch current oracle price
+    let oracle_account_opt = ctx.accounts.oracle.as_ref().map(|o| o.as_ref());
+    let current_base_token_price = get_oracle_price(
+        crucible,
+        &oracle_account_opt,
+        &base_mint_key,
+    )?;
+    
+    // Calculate current collateral value in USDC
+    let collateral_value_usdc = (position.collateral as u128)
+        .checked_mul(current_base_token_price as u128)
+        .and_then(|v| v.checked_div(1_000_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate total debt (borrowed + accrued interest)
+    let slots_elapsed = clock.slot.checked_sub(position.created_at).unwrap_or(0);
+    let slots_per_year = 78_840_000u128; // Approximate slots per year (400ms per slot)
+    let borrow_rate = 10u64; // 10% APY (from lending-pool state)
+    let rate_decimal = (borrow_rate as u128) * 1_000_000 / 100; // Convert to scaled decimal
+    
+    let years_elapsed = (slots_elapsed as u128)
+        .checked_mul(1_000_000)
+        .and_then(|v| v.checked_div(slots_per_year))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Interest = borrowed_usdc × (rate_decimal / 1_000_000) × (years_elapsed / 1_000_000)
+    let interest = (position.borrowed_usdc as u128)
+        .checked_mul(rate_decimal)
+        .and_then(|v| v.checked_mul(years_elapsed))
+        .and_then(|v| v.checked_div(1_000_000_000_000u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let total_debt = (position.borrowed_usdc as u128)
+        .checked_add(interest)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate LTV in basis points: (debt * 10000) / collateral_value
+    // Prevent division by zero
+    if collateral_value_usdc == 0 {
+        return Err(CrucibleError::InvalidHealthCheck.into());
+    }
+    
+    let ltv_bps = total_debt
+        .checked_mul(10_000)
+        .and_then(|v| v.checked_div(collateral_value_usdc))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Ensure LTV fits in u64
+    if ltv_bps > u64::MAX as u128 {
+        return Ok(u64::MAX);
+    }
+    
+    Ok(ltv_bps as u64)
+}
+
+/// Liquidate an undercollateralized leveraged position
+/// Liquidator receives a bonus for repaying the debt
+pub fn liquidate_position(
+    ctx: Context<LiquidatePosition>,
+) -> Result<()> {
+    // Check if crucible is paused
+    require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
+    
+    // Get base_mint before mutable borrow
+    let base_mint_key = ctx.accounts.crucible.base_mint;
+    
+    let position = &mut ctx.accounts.position;
+    let crucible = &mut ctx.accounts.crucible;
+    let clock = Clock::get()?;
+    
+    require!(position.is_open, CrucibleError::PositionNotOpen);
+    
+    // Check position health
+    let oracle_account_opt = ctx.accounts.oracle.as_ref().map(|o| o.as_ref());
+    let current_base_token_price = get_oracle_price(
+        crucible,
+        &oracle_account_opt,
+        &base_mint_key,
+    )?;
+    
+    // Calculate current collateral value in USDC
+    let collateral_value_usdc = (position.collateral as u128)
+        .checked_mul(current_base_token_price as u128)
+        .and_then(|v| v.checked_div(1_000_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate total debt (borrowed + accrued interest)
+    let slots_elapsed = clock.slot.checked_sub(position.created_at).unwrap_or(0);
+    let slots_per_year = 78_840_000u128;
+    let borrow_rate = 10u64; // 10% APY
+    let rate_decimal = (borrow_rate as u128) * 1_000_000 / 100;
+    
+    let years_elapsed = (slots_elapsed as u128)
+        .checked_mul(1_000_000)
+        .and_then(|v| v.checked_div(slots_per_year))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let interest = (position.borrowed_usdc as u128)
+        .checked_mul(rate_decimal)
+        .and_then(|v| v.checked_mul(years_elapsed))
+        .and_then(|v| v.checked_div(1_000_000_000_000u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let total_debt = (position.borrowed_usdc as u128)
+        .checked_add(interest)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate LTV in basis points
+    if collateral_value_usdc == 0 {
+        return Err(CrucibleError::InvalidHealthCheck.into());
+    }
+    
+    let ltv_bps = total_debt
+        .checked_mul(10_000)
+        .and_then(|v| v.checked_div(collateral_value_usdc))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Liquidation threshold: 85% LTV (8500 basis points)
+    // Position is liquidatable if LTV > 85%
+    const LIQUIDATION_THRESHOLD_BPS: u128 = 8500;
+    
+    require!(
+        ltv_bps > LIQUIDATION_THRESHOLD_BPS,
+        CrucibleError::PositionNotLiquidatable
+    );
+    
+    // Calculate liquidation bonus: 5% of debt (500 basis points)
+    const LIQUIDATION_BONUS_BPS: u128 = 500;
+    let liquidation_bonus = total_debt
+        .checked_mul(LIQUIDATION_BONUS_BPS)
+        .and_then(|v| v.checked_div(10_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Total amount to repay: debt + bonus
+    let total_repay_amount = total_debt
+        .checked_add(liquidation_bonus)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Ensure amounts fit in u64
+    let total_repay_amount_u64 = if total_repay_amount > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        total_repay_amount as u64
+    };
+    
+    let liquidation_bonus_u64 = if liquidation_bonus > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        liquidation_bonus as u64
+    };
+    
+    // SECURITY FIX: Validate borrower_account PDA derivation
+    let (expected_borrower_pda, _bump) = Pubkey::find_program_address(
+        &[b"borrower", position.owner.as_ref()],
+        &ctx.accounts.lending_program.key(),
+    );
+    require!(
+        ctx.accounts.borrower_account.key() == expected_borrower_pda,
+        CrucibleError::InvalidLendingProgram
+    );
+    
+    // Repay debt via CPI to lending pool
+    let cpi_program = ctx.accounts.lending_program.to_account_info();
+    let cpi_accounts = RepayUSDC {
+        pool: ctx.accounts.lending_market.to_account_info(),
+        borrower: ctx.accounts.position_owner.to_account_info(), // Position owner, not liquidator
+        borrower_account: ctx.accounts.borrower_account.to_account_info(),
+        borrower_usdc_account: ctx.accounts.liquidator_usdc_account.to_account_info(), // Liquidator pays
+        pool_vault: ctx.accounts.lending_vault.to_account_info(),
+        token_program: ctx.accounts.token_program.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+    
+    // Liquidator repays the debt
+    lending_pool_usdc::cpi::repay_usdc(cpi_ctx, total_repay_amount_u64)?;
+    
+    // Calculate collateral to seize: enough to cover debt repayment
+    // We seize collateral equivalent to debt value (in base tokens)
+    let collateral_to_seize = total_debt
+        .checked_mul(1_000_000)
+        .and_then(|v| v.checked_div(current_base_token_price as u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Add liquidation bonus to seized collateral
+    let bonus_collateral = liquidation_bonus
+        .checked_mul(1_000_000)
+        .and_then(|v| v.checked_div(current_base_token_price as u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let total_collateral_seized = collateral_to_seize
+        .checked_add(bonus_collateral)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Ensure we don't seize more than available
+    let total_collateral_seized_u64 = if total_collateral_seized > position.collateral as u128 {
+        position.collateral // Seize all if needed
+    } else if total_collateral_seized > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        total_collateral_seized as u64
+    };
+    
+    // Transfer seized collateral to liquidator
+    let seeds = &[
+        b"crucible",
+        crucible.base_mint.as_ref(),
+        &[crucible.bump],
+    ];
+    let signer = &[&seeds[..]];
+    
+    let cpi_accounts = Transfer {
+        from: ctx.accounts.crucible_vault.to_account_info(),
+        to: ctx.accounts.liquidator_token_account.to_account_info(),
+        authority: ctx.accounts.crucible_authority.to_account_info(),
+    };
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+    token::transfer(cpi_ctx, total_collateral_seized_u64)?;
+    
+    // Update position state
+    position.is_open = false;
+    position.collateral = position.collateral
+        .checked_sub(total_collateral_seized_u64)
+        .unwrap_or(0);
+    position.borrowed_usdc = 0; // Debt repaid
+    
+    // Update crucible state
+    crucible.total_leveraged_positions = crucible.total_leveraged_positions
+        .checked_sub(1)
+        .unwrap_or(0);
+    
+    emit!(LeveragedPositionLiquidated {
+        position_id: position.id,
+        owner: position.owner,
+        liquidator: ctx.accounts.liquidator.key(),
+        collateral_seized: total_collateral_seized_u64,
+        debt_repaid: total_repay_amount_u64,
+        liquidation_bonus: liquidation_bonus_u64,
+    });
+    
+    Ok(())
 }
 
 #[derive(Accounts)]
@@ -638,9 +950,18 @@ pub struct OpenLeveragedPosition<'info> {
     )]
     pub lending_market: UncheckedAccount<'info>,
     /// CHECK: Pool authority PDA (same as lending_market, used for signing)
+    /// SECURITY FIX: Validate pool_authority is owned by lending_program
+    #[account(
+        constraint = *pool_authority.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub pool_authority: UncheckedAccount<'info>,
-    /// CHECK: Borrower account PDA (created by lending program if needed)
-    #[account(mut)]
+    /// SECURITY FIX: Validate borrower_account is a PDA owned by lending_program
+    /// Note: Using UncheckedAccount with constraint since we can't derive seeds from lending program
+    /// CHECK: SECURITY FIX - Validate borrower_account is a PDA owned by lending_program
+    #[account(
+        mut,
+        constraint = *borrower_account.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub borrower_account: UncheckedAccount<'info>,
     /// CHECK: SECURITY FIX - Validate lending_vault is owned by lending_program
     #[account(
@@ -712,8 +1033,14 @@ pub struct CloseLeveragedPosition<'info> {
         constraint = *lending_market.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
     )]
     pub lending_market: UncheckedAccount<'info>,
-    /// CHECK: Borrower account PDA
-    #[account(mut)]
+    /// CHECK: SECURITY FIX - Validate borrower_account is a PDA owned by lending_program
+    /// Note: Using UncheckedAccount since BorrowerAccount is from another program
+    /// PDA derivation validated in instruction
+    /// CHECK: SECURITY FIX - Validate borrower_account is a PDA owned by lending_program
+    #[account(
+        mut,
+        constraint = *borrower_account.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
     pub borrower_account: UncheckedAccount<'info>,
     /// CHECK: SECURITY FIX - Validate lending_vault is owned by lending_program
     #[account(
@@ -764,5 +1091,107 @@ pub struct LeveragedPositionClosed {
     pub owner: Pubkey,
     pub collateral_returned: u64,
     pub yield_earned: u64,
+}
+
+#[event]
+pub struct LeveragedPositionLiquidated {
+    pub position_id: Pubkey,
+    pub owner: Pubkey,
+    pub liquidator: Pubkey,
+    pub collateral_seized: u64,
+    pub debt_repaid: u64,
+    pub liquidation_bonus: u64,
+}
+
+#[derive(Accounts)]
+pub struct HealthCheck<'info> {
+    #[account(mut)]
+    pub crucible: Box<Account<'info, Crucible>>,
+    
+    #[account(
+        seeds = [b"position", position.owner.as_ref(), crucible.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, LeveragedPosition>>,
+    
+    /// CHECK: Optional oracle account for price feeds
+    /// If provided, must match crucible.oracle
+    pub oracle: Option<UncheckedAccount<'info>>,
+}
+
+#[derive(Accounts)]
+pub struct LiquidatePosition<'info> {
+    #[account(mut)]
+    pub liquidator: Signer<'info>,
+    
+    #[account(mut)]
+    pub crucible: Box<Account<'info, Crucible>>,
+    
+    #[account(
+        mut,
+        seeds = [b"position", position.owner.as_ref(), crucible.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, LeveragedPosition>>,
+    
+    /// CHECK: Position owner (for debt repayment)
+    pub position_owner: UncheckedAccount<'info>,
+    
+    #[account(
+        mut,
+        seeds = [b"vault", crucible.key().as_ref()],
+        bump = crucible.vault_bump,
+    )]
+    pub crucible_vault: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: Crucible authority PDA
+    #[account(
+        seeds = [b"crucible", crucible.base_mint.as_ref()],
+        bump = crucible.bump,
+    )]
+    pub crucible_authority: UncheckedAccount<'info>,
+    
+    /// CHECK: Liquidator's token account for receiving seized collateral
+    #[account(mut)]
+    pub liquidator_token_account: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: Optional oracle account for price feeds
+    /// If provided, must match crucible.oracle
+    pub oracle: Option<UncheckedAccount<'info>>,
+    
+    /// CHECK: Lending program for repaying USDC debt
+    #[account(
+        constraint = lending_program.key() == LENDING_POOL_PROGRAM_ID @ CrucibleError::InvalidLendingProgram
+    )]
+    pub lending_program: UncheckedAccount<'info>,
+    
+    /// CHECK: SECURITY FIX - Validate lending_market is owned by lending_program
+    #[account(
+        mut,
+        constraint = *lending_market.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
+    pub lending_market: UncheckedAccount<'info>,
+    
+    /// CHECK: SECURITY FIX - Validate borrower_account is a PDA owned by lending_program
+    /// Note: Using UncheckedAccount since BorrowerAccount is from another program
+    /// PDA derivation validated in instruction
+    #[account(
+        mut,
+        constraint = *borrower_account.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
+    pub borrower_account: UncheckedAccount<'info>,
+    
+    /// CHECK: SECURITY FIX - Validate lending_vault is owned by lending_program
+    #[account(
+        mut,
+        constraint = *lending_vault.owner == lending_program.key() @ CrucibleError::InvalidLendingProgram
+    )]
+    pub lending_vault: UncheckedAccount<'info>,
+    
+    /// CHECK: Liquidator's USDC account for repaying debt
+    #[account(mut)]
+    pub liquidator_usdc_account: UncheckedAccount<'info>,
+    
+    pub token_program: Program<'info, Token>,
 }
 

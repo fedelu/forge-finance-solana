@@ -20,6 +20,14 @@ pub fn open_lp_position(
 
     // Get base token price from oracle
     // Require oracle to be configured for SOL crucible
+    // SECURITY FIX: Validate oracle account matches crucible configuration
+    if let Some(crucible_oracle) = crucible.oracle {
+        require!(
+            ctx.accounts.oracle.as_ref().map(|o| o.key()) == Some(crucible_oracle),
+            CrucibleError::InvalidOraclePrice
+        );
+    }
+    
     let oracle_account_opt = ctx.accounts.oracle.as_ref().map(|o| o.as_ref());
     let base_token_price = get_oracle_price(
         crucible,

@@ -186,6 +186,20 @@ pub mod forge_crucibles {
         lvf::close_leveraged_position(ctx, position_id, max_slippage_bps)
     }
 
+    /// Check position health (LTV in basis points)
+    pub fn health_check(
+        ctx: Context<HealthCheck>,
+    ) -> Result<u64> {
+        lvf::health_check(ctx)
+    }
+
+    /// Liquidate an undercollateralized leveraged position
+    pub fn liquidate_position(
+        ctx: Context<LiquidatePosition>,
+    ) -> Result<()> {
+        lvf::liquidate_position(ctx)
+    }
+
     /// Open a standard LP position (base token + USDC, equal value)
     pub fn open_lp_position(
         ctx: Context<OpenLPPosition>,
@@ -216,6 +230,9 @@ pub mod forge_crucibles {
         metadata::create_ctoken_metadata(ctx, name, symbol, uri, seller_fee_basis_points, is_mutable)
     }
 }
+
+// Re-export account structs for use in client code
+pub use lvf::{HealthCheck, LiquidatePosition};
 
 /// Initialize crucible accounts struct - optimized for stack size
 #[derive(Accounts)]
