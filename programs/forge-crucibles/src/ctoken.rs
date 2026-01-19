@@ -263,6 +263,132 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
     Ok(())
 }
 
+/// Deposit arbitrage profits directly to crucible vault
+/// This allows arbitrageurs to route profits to cToken holders, increasing yield
+/// 80% of deposit goes to vault (increases yield), 20% goes to treasury (protocol revenue)
+/// Optionally rewards arbitrageur with 1% of deposit as cTokens as incentive
+pub fn deposit_arbitrage_profit(
+    ctx: Context<DepositArbitrageProfit>,
+    amount: u64,
+) -> Result<()> {
+    // Check if crucible is paused
+    require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
+    
+    let crucible = &mut ctx.accounts.crucible;
+    let clock = Clock::get()?;
+    
+    require!(amount > 0, CrucibleError::InvalidAmount);
+    
+    // Calculate current exchange rate
+    let exchange_rate = calculate_exchange_rate(
+        &crucible,
+        ctx.accounts.vault.amount,
+        ctx.accounts.ctoken_mint.supply,
+    )?;
+    
+    // Split deposit: 80% to vault, 20% to treasury
+    let vault_share = amount
+        .checked_mul(80u64)
+        .and_then(|v| v.checked_div(100u64))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let treasury_share = amount
+        .checked_sub(vault_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Transfer vault share to vault (increases yield for cToken holders)
+    if vault_share > 0 {
+        let cpi_accounts = token::Transfer {
+            from: ctx.accounts.arbitrageur_token_account.to_account_info(),
+            to: ctx.accounts.vault.to_account_info(),
+            authority: ctx.accounts.arbitrageur.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        token::transfer(cpi_ctx, vault_share)?;
+    }
+    
+    // Transfer treasury share to treasury (protocol revenue)
+    if treasury_share > 0 {
+        // Validate treasury account matches crucible.treasury
+        require!(
+            ctx.accounts.treasury.key() == crucible.treasury,
+            CrucibleError::InvalidTreasury
+        );
+        
+        let cpi_accounts = token::Transfer {
+            from: ctx.accounts.arbitrageur_token_account.to_account_info(),
+            to: ctx.accounts.treasury.to_account_info(),
+            authority: ctx.accounts.arbitrageur.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        token::transfer(cpi_ctx, treasury_share)?;
+    }
+    
+    // Calculate reward for arbitrageur: 1% of deposit as cTokens
+    // This incentivizes arbitrageurs to route profits back to the protocol
+    let reward_amount = amount
+        .checked_mul(1u64)
+        .and_then(|v| v.checked_div(100u64))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Mint reward cTokens to arbitrageur (1% incentive)
+    let reward_ctokens = if reward_amount > 0 && ctx.accounts.ctoken_mint.supply > 0 {
+        reward_amount
+            .checked_mul(1_000_000u64)
+            .and_then(|scaled| scaled.checked_div(exchange_rate))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    
+    if reward_ctokens > 0 {
+        let seeds = &[
+            b"crucible",
+            crucible.base_mint.as_ref(),
+            &[crucible.bump],
+        ];
+        let signer = &[&seeds[..]];
+        
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.ctoken_mint.to_account_info(),
+            to: ctx.accounts.arbitrageur_ctoken_account.to_account_info(),
+            authority: ctx.accounts.crucible_authority.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::mint_to(cpi_ctx, reward_ctokens)?;
+    }
+    
+    // Update crucible state
+    // All arbitrage profit vault share goes to fees accrued (increases exchange rate)
+    crucible.total_fees_accrued = crucible
+        .total_fees_accrued
+        .checked_add(vault_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Update expected vault balance (includes arbitrage deposit vault share)
+    crucible.expected_vault_balance = crucible
+        .expected_vault_balance
+        .checked_add(vault_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    crucible.last_update_slot = clock.slot;
+    
+    emit!(ArbitrageProfitDeposited {
+        crucible: crucible.key(),
+        arbitrageur: ctx.accounts.arbitrageur.key(),
+        amount,
+        vault_share,
+        treasury_share,
+        reward_ctokens,
+        exchange_rate,
+        timestamp: clock.unix_timestamp,
+    });
+    
+    Ok(())
+}
+
 /// Calculate exchange rate: (total_base_deposited + total_fees_accrued) / ctoken_supply (scaled by 1M for precision)
 /// Validates vault balance is at least expected amount (allows fee accrual growth)
 /// SECURITY FIX: Use tracked deposits instead of vault_amount to prevent manipulation via direct vault donations
@@ -405,6 +531,58 @@ pub struct BurnCToken<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct DepositArbitrageProfit<'info> {
+    #[account(mut)]
+    pub arbitrageur: Signer<'info>,
+    
+    #[account(
+        mut,
+        has_one = base_mint @ CrucibleError::InvalidBaseMint,
+    )]
+    pub crucible: Box<Account<'info, Crucible>>,
+    
+    pub base_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub ctoken_mint: Account<'info, Mint>,
+    
+    #[account(mut)]
+    pub arbitrageur_token_account: Box<Account<'info, TokenAccount>>,
+    
+    #[account(
+        init_if_needed,
+        payer = arbitrageur,
+        associated_token::mint = ctoken_mint,
+        associated_token::authority = arbitrageur,
+    )]
+    pub arbitrageur_ctoken_account: Box<Account<'info, TokenAccount>>,
+    
+    #[account(
+        mut,
+        seeds = [b"vault", crucible.key().as_ref()],
+        bump = crucible.vault_bump,
+    )]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: PDA authority for the crucible
+    #[account(
+        seeds = [b"crucible", crucible.base_mint.as_ref()],
+        bump = crucible.bump,
+    )]
+    pub crucible_authority: UncheckedAccount<'info>,
+    
+    /// SECURITY FIX: Validate treasury is a TokenAccount for the correct mint
+    #[account(
+        mut,
+        constraint = treasury.mint == base_mint.key() @ CrucibleError::InvalidTreasury
+    )]
+    pub treasury: Account<'info, TokenAccount>,
+    
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
 #[event]
 pub struct CTokenMinted {
     pub crucible: Pubkey,
@@ -427,6 +605,18 @@ pub struct CTokenBurned {
     pub unwrap_fee: u64,
     pub vault_fee_share: u64,
     pub protocol_fee_share: u64,
+}
+
+#[event]
+pub struct ArbitrageProfitDeposited {
+    pub crucible: Pubkey,
+    pub arbitrageur: Pubkey,
+    pub amount: u64,
+    pub vault_share: u64,
+    pub treasury_share: u64,
+    pub reward_ctokens: u64,
+    pub exchange_rate: u64,
+    pub timestamp: i64,
 }
 
 // Error codes are now defined in state.rs

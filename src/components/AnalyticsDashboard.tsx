@@ -32,6 +32,8 @@ export const AnalyticsDashboard: React.FC = () => {
     const price = (token: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000 } as any)[token] || 1;
     
     // Calculate APY earnings from cToken holdings
+    // APY includes yield from fees (wrap/unwrap, LP, LVF) and arbitrage deposits
+    // All revenue flows through total_fees_accrued (80% vault share) which increases exchange rate
     let totalAPYEarnings = 0;
     
     crucibles.forEach(crucible => {
@@ -42,6 +44,7 @@ export const AnalyticsDashboard: React.FC = () => {
         const baseTokenValue = cTokenValue * price(crucible.baseToken);
         
         // Calculate annual APY earnings (APY rate * value)
+        // APY includes yield from fees and arbitrage deposits (via exchange rate growth)
         const annualAPY = baseTokenValue * (crucible.apr || 0);
         totalAPYEarnings += annualAPY;
       }

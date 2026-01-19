@@ -216,10 +216,11 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         estimatedBaseValue: BigInt(0),
         currentAPY: safeApyCompounded * 100, // APY based on fee generation rate, not exchange rate
         // total_fees_accrued tracks only the 80% vault fee share
-        // Total Fees = 100% of all fees (80% vault + 20% treasury)
+        // Total Fees = 100% of all fees (80% vault + 20% treasury) + 100% of arbitrage deposits (80% vault + 20% treasury)
         totalFeesCollected: (Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD) / 0.8, // 100% of fees in USD
         // Yield Earned = Vault fee share (80% of fees that generate yield for cToken holders)
-        apyEarnedByUsers: (Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD), // 80% vault fee share that generates yield
+        // Includes: wrap/unwrap fees (80%), LP position fees (80%), LVF position fees (80%), and arbitrage deposits (80%)
+        apyEarnedByUsers: (Number(crucibleAccount.totalFeesAccrued) / 1e9 * solPriceUSD), // 80% vault fee share that generates yield (includes arbitrage revenue)
         totalDeposited: 0,
         totalWithdrawn: 0,
         totalBaseDeposited: crucibleAccount.totalBaseDeposited, // Total net deposits
@@ -316,13 +317,24 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       }, 2000)
     }
     
+    // Listen for arbitrage profit deposits
+    const handleArbitrageDeposit = () => {
+      console.log('🔄 Arbitrage deposit event received, refreshing crucible data...')
+      // Wait a bit for the transaction to confirm
+      setTimeout(() => {
+        fetchCrucibleData()
+      }, 2000)
+    }
+    
     window.addEventListener('depositComplete', handleDeposit)
     window.addEventListener('wrapPositionOpened', handleDeposit)
+    window.addEventListener('arbitrageProfitDeposited', handleArbitrageDeposit)
     
     return () => {
       clearInterval(interval)
       window.removeEventListener('depositComplete', handleDeposit)
       window.removeEventListener('wrapPositionOpened', handleDeposit)
+      window.removeEventListener('arbitrageProfitDeposited', handleArbitrageDeposit)
     }
   }, [fetchCrucibleData])
 

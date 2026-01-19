@@ -129,5 +129,7 @@ pub enum CrucibleError {
     PositionNotLiquidatable,
     #[msg("Invalid health check")]
     InvalidHealthCheck,
+    #[msg("Invalid amount - must be greater than zero")]
+    InvalidAmount,
 }
 

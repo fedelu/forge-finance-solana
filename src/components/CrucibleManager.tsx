@@ -95,9 +95,10 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
                 ${(() => {
                   // Calculate ALL TIME yield earned: totalFeesAccrued (80% vault share of all fees)
-                  // This represents all yield generated from fees, regardless of withdrawals
+                  // This represents all yield generated from fees and arbitrage deposits, regardless of withdrawals
+                  // Includes: wrap/unwrap fees (80%), LP position fees (80%), LVF position fees (80%), and arbitrage deposits (80%)
                   return crucibles.reduce((sum, c) => {
-                    const allTimeYield = c.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD
+                    const allTimeYield = c.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD (includes arbitrage revenue)
                     return sum + allTimeYield;
                   }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 })()}
@@ -258,8 +259,9 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     <span className="font-heading text-lg text-forge-primary">
                       ${(() => {
                         // Calculate ALL TIME yield earned: totalFeesAccrued (80% vault share of all fees)
-                        // This represents all yield generated from fees, regardless of withdrawals
-                        const allTimeYield = crucible.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD
+                        // This represents all yield generated from fees and arbitrage deposits, regardless of withdrawals
+                        // Includes: wrap/unwrap fees (80%), LP position fees (80%), LVF position fees (80%), and arbitrage deposits (80%)
+                        const allTimeYield = crucible.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD (includes arbitrage revenue)
                         return allTimeYield.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                       })()}
                     </span>

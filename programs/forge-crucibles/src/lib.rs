@@ -168,6 +168,15 @@ pub mod forge_crucibles {
         ctoken::burn_ctoken(ctx, ctokens_amount)
     }
 
+    /// Deposit arbitrage profits directly to crucible vault
+    /// 80% goes to vault (increases yield), 20% goes to treasury (protocol revenue)
+    pub fn deposit_arbitrage_profit(
+        ctx: Context<DepositArbitrageProfit>,
+        amount: u64,
+    ) -> Result<()> {
+        ctoken::deposit_arbitrage_profit(ctx, amount)
+    }
+
     /// Open a leveraged LP position (TOKEN/USDC)
     pub fn open_leveraged_position(
         ctx: Context<OpenLeveragedPosition>,
