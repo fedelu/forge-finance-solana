@@ -1,20 +1,40 @@
 import React from 'react'
+import Head from 'next/head'
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 import { 
   CheckCircleIcon,
-  XCircleIcon
+  XCircleIcon,
+  ArrowLeftIcon
 } from '@heroicons/react/24/outline'
 
 export default function DocsPage() {
+  const router = useRouter()
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="flex-1">
-        {/* Main Content */}
-        <main className="px-4 py-8 lg:px-8 max-w-4xl mx-auto">
-          <div className="prose prose-invert prose-lg max-w-none">
-            {/* Enhanced Header Section */}
-            <div className="mb-12 lg:mb-16 relative pt-8 lg:pt-12">
+    <>
+      <Head>
+        <title>Forge Protocol Documentation</title>
+        <meta name="description" content="Complete guide to understanding and using Forge Protocol - A permissionless DeFi protocol on Solana" />
+      </Head>
+      <div className="min-h-screen flex flex-col">
+        <div className="flex-1">
+          {/* Navigation Back Button */}
+          <div className="px-4 py-4 lg:px-8 max-w-4xl mx-auto">
+            <Link 
+              href="/demo"
+              className="inline-flex items-center gap-2 text-forge-gray-300 hover:text-forge-primary transition-colors duration-200 group"
+            >
+              <ArrowLeftIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-200" />
+              <span className="text-sm font-medium">Back to Protocol</span>
+            </Link>
+          </div>
+
+          {/* Main Content */}
+          <main className="px-4 py-8 lg:px-8 max-w-4xl mx-auto">
+            <div className="prose prose-invert prose-lg max-w-none">
+              {/* Enhanced Header Section */}
+              <div className="mb-12 lg:mb-16 relative pt-8 lg:pt-12">
               {/* Decorative background elements */}
               <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
                 <div className="absolute top-0 left-0 w-64 h-64 lg:w-96 lg:h-96 bg-forge-primary/5 rounded-full blur-3xl"></div>
@@ -473,7 +493,7 @@ export default function DocsPage() {
             <div className="mt-16 pt-8 border-t border-white/10">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-forge-gray-500">
                 <div>
-                  <p className="text-forge-gray-400">For more information, visit the <Link href="/demo" className="text-forge-primary hover:text-forge-primary-light">Demo</Link> page</p>
+                  <p className="text-forge-gray-400">Ready to use the protocol? <Link href="/demo" className="text-forge-primary hover:text-forge-primary-light font-medium">Go to Protocol →</Link></p>
                 </div>
                 <div>
                   <p>© 2026 Forge Protocol. All rights reserved.</p>
@@ -483,7 +503,7 @@ export default function DocsPage() {
           </div>
         </main>
       </div>
-    </div>
+    </>
   )
 }
 
