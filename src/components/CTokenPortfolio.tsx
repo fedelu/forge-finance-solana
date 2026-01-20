@@ -371,7 +371,7 @@ export default function CTokenPortfolio() {
               <div className="text-forge-gray-400 text-sm font-medium">Total Deposited Value</div>
             </div>
             <div className="text-3xl font-heading text-white">
-              ${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${formatUSD(totalPortfolioValue)}
             </div>
           </div>
         </div>

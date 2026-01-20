@@ -3,6 +3,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from 'recharts'
 import { useCrucible } from '../hooks/useCrucible'
 import { usePrice } from '../contexts/PriceContext'
+import { formatUSD } from '../utils/math'
 
 interface CTokenPriceChartProps {
   isOpen: boolean
@@ -110,14 +111,14 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
             <div className="bg-gradient-to-br from-forge-primary/10 to-forge-primary/5 rounded-xl p-4 border border-forge-primary/20">
               <div className="text-sm text-forge-gray-300 mb-1">Start Price</div>
               <div className="text-2xl font-bold text-forge-primary">
-                ${todayPrice.toFixed(4)}
+                ${formatUSD(todayPrice)}
               </div>
               <div className="text-xs text-forge-gray-400 mt-1">At deposit</div>
             </div>
             <div className="bg-gradient-to-br from-forge-accent/10 to-forge-accent/5 rounded-xl p-4 border border-forge-accent/20">
               <div className="text-sm text-forge-gray-300 mb-1">End Price (1 year)</div>
               <div className="text-2xl font-bold text-forge-accent">
-                ${yearEndPrice.toFixed(4)}
+                ${formatUSD(yearEndPrice)}
               </div>
               <div className="text-xs text-forge-gray-400 mt-1">After 1 year</div>
             </div>
@@ -167,7 +168,7 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
                   tick={{ fill: '#9CA3AF' }}
                   label={{ value: 'Price ($)', angle: -90, position: 'insideLeft' }}
                   domain={['dataMin - 0.01', 'dataMax + 0.01']}
-                  tickFormatter={(value) => `$${value.toFixed(3)}`}
+                  tickFormatter={(value) => `$${formatUSD(value)}`}
                 />
                 <Tooltip 
                   contentStyle={{ 
@@ -176,7 +177,7 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
                     borderRadius: '0.5rem',
                     color: '#fff'
                   }}
-                  formatter={(value: number) => `$${value.toFixed(6)}`}
+                  formatter={(value: number) => `$${formatUSD(value)}`}
                   labelFormatter={(label: string) => {
                     const data = chartData[parseInt(label)]
                     return `Day ${data.day} (${data.label})`
@@ -202,9 +203,9 @@ export function CTokenPriceChart({ isOpen, onClose, crucibleId }: CTokenPriceCha
             <h4 className="text-sm font-semibold text-forge-primary mb-2">How it works</h4>
             <div className="text-xs text-forge-gray-300 space-y-1">
               <div>• At deposit: 1 {crucible.baseToken} = 1 {crucible.ptokenSymbol} (1:1 exchange rate)</div>
-              <div>• Initial {crucible.ptokenSymbol} price: ${todayPrice.toFixed(4)} (same as {crucible.baseToken})</div>
+              <div>• Initial {crucible.ptokenSymbol} price: ${formatUSD(todayPrice)} (same as {crucible.baseToken})</div>
               <div>• Over time: 80% of wrap/unwrap fees accumulate in vault, increasing the exchange rate (vault_balance / ctoken_supply)</div>
-              <div>• After 1 year: {crucible.ptokenSymbol} reaches ${yearEndPrice.toFixed(4)} (${priceIncreasePercent.toFixed(2)}% price increase)</div>
+              <div>• After 1 year: {crucible.ptokenSymbol} reaches ${formatUSD(yearEndPrice)} (${priceIncreasePercent.toFixed(2)}% price increase)</div>
               <div>• Withdrawal: Exchange {crucible.ptokenSymbol} back to {crucible.baseToken} at the higher price</div>
               <div>• Result: You receive MORE {crucible.baseToken} than originally deposited</div>
             </div>

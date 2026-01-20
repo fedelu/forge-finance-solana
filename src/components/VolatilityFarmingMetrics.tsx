@@ -8,6 +8,7 @@ import {
   formatDailyReturn,
   formatCurrency
 } from '../utils/volatilityFarming';
+import { formatUSD } from '../utils/math';
 
 interface VolatilityFarmingMetricsProps {
   className?: string;
@@ -40,7 +41,7 @@ export default function VolatilityFarmingMetrics({ className = '' }: VolatilityF
               </div>
               <div className="flex justify-between">
                 <span className="text-forge-gray-400">Token Price:</span>
-                <span className="text-forge-accent font-satoshi">${solPrice.toFixed(2)}</span>
+                <span className="text-forge-accent font-satoshi">${formatUSD(solPrice)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-forge-gray-400">TVL:</span>

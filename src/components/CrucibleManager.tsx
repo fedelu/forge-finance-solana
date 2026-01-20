@@ -113,7 +113,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               </div>
               <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total Transaction Fees</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
-                ${crucibles.reduce((sum, c) => sum + (c.totalFeesCollected || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${formatUSD(crucibles.reduce((sum, c) => sum + (c.totalFeesCollected || 0), 0))}
               </p>
             </div>
           </div>
