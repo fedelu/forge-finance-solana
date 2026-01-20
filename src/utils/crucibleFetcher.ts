@@ -227,7 +227,17 @@ export async function fetchCrucibleDirect(
     })
     
     return crucibleData
-  } catch (error) {
+  } catch (error: any) {
+    // Check if it's an account not found error - this is normal if crucible doesn't exist
+    const errorMessage = error?.message || error?.toString() || ''
+    if (errorMessage.includes('could not find') || 
+        errorMessage.includes('Account does not exist') ||
+        errorMessage.includes('Account not found') ||
+        errorMessage.includes('invalid account') ||
+        errorMessage.includes('crucible')) {
+      // Silently return null - this is normal if crucible doesn't exist yet
+      return null
+    }
     console.error('❌ Error fetching crucible directly:', error)
     return null
   }

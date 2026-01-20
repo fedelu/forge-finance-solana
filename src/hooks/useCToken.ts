@@ -112,8 +112,16 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           const ctokenSupply = await fetchCTokenSupply(connection, crucibleAccount.ctokenMint.toString())
           exchangeRate = calculateRealExchangeRate(vaultBalance, ctokenSupply)
         }
-      } catch (error) {
-        console.warn('Could not fetch crucible account, using default exchange rate:', error)
+      } catch (error: any) {
+        // Check if it's an account not found error - this is normal if crucible doesn't exist
+        const errorMessage = error?.message || error?.toString() || ''
+        if (!errorMessage.includes('could not find') && 
+            !errorMessage.includes('Account does not exist') &&
+            !errorMessage.includes('Account not found') &&
+            !errorMessage.includes('crucible')) {
+          // Only log if it's not a "not found" error
+          console.warn('Could not fetch crucible account, using default exchange rate:', error)
+        }
       }
       
       // Fetch user's cToken balance
@@ -142,8 +150,16 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         exchangeRate,
         estimatedValue,
       })
-    } catch (error) {
-      console.error('Error fetching cToken balance:', error)
+    } catch (error: any) {
+      // Check if it's an account not found error - this is normal if crucible doesn't exist
+      const errorMessage = error?.message || error?.toString() || ''
+      if (!errorMessage.includes('could not find') && 
+          !errorMessage.includes('Account does not exist') &&
+          !errorMessage.includes('Account not found') &&
+          !errorMessage.includes('crucible')) {
+        // Only log if it's not a "not found" error
+        console.error('Error fetching cToken balance:', error)
+      }
       // Fallback if on-chain fetch fails - show zero balances with initial exchange rate
       const initialExchangeRate = 1.0
       setBalance({

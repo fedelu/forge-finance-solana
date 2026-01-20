@@ -170,6 +170,17 @@ export async function getBorrowerAccount(
 ): Promise<BorrowerAccountState | null> {
   try {
     const [borrowerPDA] = getBorrowerAccountPDA(borrower)
+    
+    // Check if account exists before trying to fetch
+    const connection = program.provider.connection
+    const accountInfo = await connection.getAccountInfo(borrowerPDA)
+    
+    if (!accountInfo) {
+      // Account doesn't exist - user hasn't borrowed yet
+      return null
+    }
+    
+    // Account exists, now fetch it
     const borrowerAccount = await (program.account as any).borrowerAccount.fetch(borrowerPDA)
     
     // Check if account data is valid
@@ -194,9 +205,14 @@ export async function getBorrowerAccount(
       borrower: borrowerAccount.borrower,
       amountBorrowed: amountBorrowed,
     }
-  } catch (error) {
-    // Account might not exist if user hasn't borrowed
-    console.warn('Error fetching borrower account (this is normal if user has not borrowed):', error)
+  } catch (error: any) {
+    // Account might not exist if user hasn't borrowed, or there's a deserialization error
+    // Check if it's a specific Anchor error about account not found
+    if (error?.code === 1100 || error?.message?.includes('Account does not exist') || error?.message?.includes('size')) {
+      // Account doesn't exist - this is normal
+      return null
+    }
+    console.warn('Error fetching borrower account:', error)
     return null
   }
 }

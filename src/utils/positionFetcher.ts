@@ -165,10 +165,14 @@ export async function fetchCTokenBalance(
       estimatedBaseValue,
     }
   } catch (error: any) {
-    // Account might not exist if user hasn't deposited
-    if (error?.message?.includes('could not find') || 
-        error?.message?.includes('Account does not exist') ||
-        error?.message?.includes('invalid account')) {
+    // Account might not exist if user hasn't deposited or crucible doesn't exist
+    const errorMessage = error?.message || error?.toString() || ''
+    if (errorMessage.includes('could not find') || 
+        errorMessage.includes('Account does not exist') ||
+        errorMessage.includes('Account not found') ||
+        errorMessage.includes('invalid account') ||
+        errorMessage.includes('crucible')) {
+      // Silently return null - this is normal if crucible or account doesn't exist
       return null
     }
     console.warn('Error fetching cToken balance:', error)

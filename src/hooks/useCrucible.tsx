@@ -280,16 +280,21 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
             })
           }
         } catch (balanceError: any) {
-          // Log the error for debugging
-          console.warn('Error fetching cToken balance for user:', {
-            publicKey: publicKey?.toString(),
-            error: balanceError?.message,
-            errorDetails: balanceError
-          })
-          // User might not have any cTokens, that's okay - but log for debugging
-          if (balanceError?.message?.includes('could not find') || 
-              balanceError?.message?.includes('Account does not exist')) {
+          // Check if it's an account not found error - this is normal if crucible or account doesn't exist
+          const errorMessage = balanceError?.message || balanceError?.toString() || ''
+          if (errorMessage.includes('could not find') || 
+              errorMessage.includes('Account does not exist') ||
+              errorMessage.includes('Account not found') ||
+              errorMessage.includes('crucible')) {
+            // Silently handle - this is normal if crucible or account doesn't exist
             console.log('No cToken balance found for user (this is normal if no position exists)')
+          } else {
+            // Log other errors for debugging
+            console.warn('Error fetching cToken balance for user:', {
+              publicKey: publicKey?.toString(),
+              error: balanceError?.message,
+              errorDetails: balanceError
+            })
           }
         }
       }
