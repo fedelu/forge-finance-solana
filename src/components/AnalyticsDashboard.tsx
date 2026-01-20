@@ -4,7 +4,7 @@ import { useBalance } from '../contexts/BalanceContext';
 import { useWallet } from '../contexts/WalletContext';
 import { usePrice } from '../contexts/PriceContext';
 import { useCrucible } from '../hooks/useCrucible';
-import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE } from '../utils/math';
+import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
 // import { DynamicTokenBalances } from './DynamicTokenBalances'; // Temporarily disabled
 import { 
