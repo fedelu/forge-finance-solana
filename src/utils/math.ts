@@ -122,6 +122,39 @@ export function formatNumberWithCommas(num: number, decimals: number = 2): strin
 }
 
 /**
+ * Format USD or USDC amount (0 decimal places)
+ * @param amount - Amount to format
+ * @returns Formatted string (e.g., "1,234")
+ */
+export function formatUSD(amount: number): string {
+  return Math.round(amount).toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+}
+
+/**
+ * Format USDC amount (0 decimal places)
+ * @param amount - Amount to format
+ * @returns Formatted string (e.g., "1,234")
+ */
+export function formatUSDC(amount: number): string {
+  return formatUSD(amount);
+}
+
+/**
+ * Format SOL amount (3 decimal places)
+ * @param amount - Amount to format
+ * @returns Formatted string (e.g., "1,234.567")
+ */
+export function formatSOL(amount: number): string {
+  return amount.toLocaleString('en-US', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3
+  });
+}
+
+/**
  * Calculate the current cToken price based on exchange rate
  * @param baseTokenPrice - Price of the base token in USD
  * @param exchangeRate - Current exchange rate (scaled by RATE_SCALE)

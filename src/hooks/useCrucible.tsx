@@ -8,7 +8,10 @@ import {
   parseAmount,
   getEstimatedForgeValue,
   getExchangeRateDecimal,
-  RATE_SCALE 
+  RATE_SCALE,
+  formatUSD,
+  formatUSDC,
+  formatSOL
 } from '../utils/math';
 import { calculateVolatilityFarmingMetrics, CRUCIBLE_CONFIGS, DEFAULT_CONFIG, formatAPY, formatCurrency } from '../utils/volatilityFarming';
 import {
@@ -484,7 +487,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       // Trigger re-render
       setCrucibleUpdateTrigger(prev => prev + 1);
       
-      console.log(`Withdrew ${usdcAmount.toFixed(2)} USDC from ${crucibleId} (${(UNWRAP_FEE_RATE * 100).toFixed(2)}% fee: ${feeAmount.toFixed(2)})`);
+      console.log(`Withdrew ${formatUSDC(usdcAmount)} USDC from ${crucibleId} (${(UNWRAP_FEE_RATE * 100).toFixed(2)}% fee: ${formatUSDC(feeAmount)})`);
     }
   }, []);
 

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { lendingPool } from '../contracts/lendingPool'
 import { usePrice } from '../contexts/PriceContext'
+import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 interface LeverageState {
   leverage: number // 1 or 2
@@ -73,7 +74,7 @@ export function useLeverage({ initialCollateral = 0, baseAPY = 0 }: UseLeverageP
         // Check if pool has enough liquidity
         const availableLiquidity = lendingPool.getAvailableLiquidity()
         if (borrowAmountUSDC > availableLiquidity) {
-          throw new Error(`Insufficient liquidity. Available: ${availableLiquidity.toFixed(2)} USDC`)
+          throw new Error(`Insufficient liquidity. Available: ${formatUSDC(availableLiquidity)} USDC`)
         }
 
         // Borrow from pool

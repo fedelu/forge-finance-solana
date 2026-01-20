@@ -278,15 +278,15 @@ export const AnalyticsDashboard: React.FC = () => {
                 </div>
                 <div className="relative text-right ml-4">
                   <p className="text-white font-heading text-base mb-1">
-                    {tx.amount.toFixed(2)} {tx.token}
+                    {tx.token === 'SOL' || tx.token === 'cSOL' ? formatSOL(tx.amount) : formatUSD(tx.amount)} {tx.token}
                     {tx.usdcDeposited !== undefined && tx.usdcDeposited > 0 && (
-                      <span className="text-forge-primary ml-2 font-heading">+ {tx.usdcDeposited.toFixed(2)} USDC</span>
+                      <span className="text-forge-primary ml-2 font-heading">+ {formatUSDC(tx.usdcDeposited)} USDC</span>
                     )}
                     {tx.usdcReceived !== undefined && tx.usdcReceived > 0 && (
-                      <span className="text-forge-primary ml-2 font-heading">+ {tx.usdcReceived.toFixed(2)} USDC</span>
+                      <span className="text-forge-primary ml-2 font-heading">+ {formatUSDC(tx.usdcReceived)} USDC</span>
                     )}
                     {tx.borrowedAmount !== undefined && tx.borrowedAmount > 0 && (
-                      <span className="text-orange-400 ml-2 font-heading">+ {tx.borrowedAmount.toFixed(2)} USDC (borrowed)</span>
+                      <span className="text-orange-400 ml-2 font-heading">+ {formatUSDC(tx.borrowedAmount)} USDC (borrowed)</span>
                     )}
                   </p>
                   <p className="text-forge-gray-400 text-sm font-satoshi mb-1">

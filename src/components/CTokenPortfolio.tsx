@@ -9,7 +9,7 @@ import { useBalance } from '../contexts/BalanceContext'
 import { usePrice } from '../contexts/PriceContext'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
 import LVFPositionCard from './LVFPositionCard'
-import { formatNumberWithCommas } from '../utils/math'
+import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { calculateBorrowInterest } from '../utils/lendingProgram'
 
 interface CTokenPosition {
@@ -465,12 +465,12 @@ export default function CTokenPortfolio() {
                       </td>
                       <td className="text-right py-5 px-6">
                         <div className="text-white font-semibold text-base">
-                          {ctokenBalance.toFixed(2)} {position.ctokenSymbol}
+                          {formatSOL(ctokenBalance)} {position.ctokenSymbol}
                         </div>
                       </td>
                       <td className="text-right py-5 px-6">
                         <div className="text-white font-semibold text-base">
-                          ${valueUSD.toFixed(2)} USD
+                          ${formatUSD(valueUSD)} USD
                         </div>
                       </td>
                       <td className="text-right py-5 px-6">
@@ -585,18 +585,18 @@ export default function CTokenPortfolio() {
                       </td>
                       <td className="text-right py-4 px-4">
                         <div className="text-white text-base font-heading">
-                          ${collateralValueUSD.toFixed(2)} USD
+                          ${formatUSD(collateralValueUSD)} USD
                         </div>
                         <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
-                          {position.baseAmount.toFixed(2)} {position.baseToken}
+                          {formatSOL(position.baseAmount)} {position.baseToken}
                           {depositUSDC > 0 && (
-                            <span className="ml-2 text-green-400 font-heading">+ {depositUSDC.toFixed(2)} USDC</span>
+                            <span className="ml-2 text-green-400 font-heading">+ {formatUSDC(depositUSDC)} USDC</span>
                           )}
                         </div>
                       </td>
                       <td className="text-right py-4 px-4">
                         <span className={`text-base font-heading ${borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'}`}>
-                          {borrowedUSDC > 0 ? `${borrowedUSDC.toFixed(2)} USDC` : '-'}
+                          {borrowedUSDC > 0 ? `${formatUSDC(borrowedUSDC)} USDC` : '-'}
                         </span>
                       </td>
                       <td className="text-right py-4 px-4">
@@ -623,7 +623,7 @@ export default function CTokenPortfolio() {
                         <span className="text-green-400 text-base font-heading">{lpAPY.toFixed(2)}%</span>
                       </td>
                       <td className="text-right py-4 px-4">
-                        <span className="text-white text-base font-heading">${totalValue.toFixed(2)}</span>
+                        <span className="text-white text-base font-heading">${formatUSD(totalValue)}</span>
                       </td>
                     </tr>
                   )
@@ -736,7 +736,7 @@ export default function CTokenPortfolio() {
                             <td className="text-right py-4 px-6">
                               <button
                                 onClick={async () => {
-                                  if (confirm(`Withdraw ${position.suppliedAmount.toFixed(2)} USDC?`)) {
+                                  if (confirm(`Withdraw ${formatUSDC(position.suppliedAmount)} USDC?`)) {
                                     try {
                                       await withdrawLending(position.marketPubkey, position.suppliedAmount.toString())
                                       alert('Withdrawal successful!')
@@ -789,7 +789,7 @@ export default function CTokenPortfolio() {
                               <button
                                 onClick={async () => {
                                   const totalOwed = position.borrowedAmount! + borrowedInterest
-                                  if (confirm(`Repay ${totalOwed.toFixed(2)} USDC (principal + interest)?`)) {
+                                  if (confirm(`Repay ${formatUSDC(totalOwed)} USDC (principal + interest)?`)) {
                                     try {
                                       await repayLending(totalOwed)
                                       alert('Repayment successful!')
@@ -1056,19 +1056,19 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
       <td className="text-right py-4 px-4">
         <div className="flex flex-col items-end">
           <div className="text-white text-base font-heading">
-            {collateralInBaseTokens > 0 ? collateralInBaseTokens.toFixed(2) : '0.00'} {position.baseTokenSymbol}
+            {collateralInBaseTokens > 0 ? formatSOL(collateralInBaseTokens) : '0.000'} {position.baseTokenSymbol}
           </div>
           <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
-            {ctokenBalanceDisplay > 0 ? `${ctokenBalanceDisplay.toFixed(2)} ${position.ctokenSymbol}` : 'No position'}
+            {ctokenBalanceDisplay > 0 ? `${formatSOL(ctokenBalanceDisplay)} ${position.ctokenSymbol}` : 'No position'}
           </div>
           <div className="text-forge-gray-400 text-xs font-satoshi mt-0.5" title="Value of your cTokens in base tokens (collateral)">
-            ≈ ${collateralValueUSD.toFixed(2)} USD
+            ≈ ${formatUSD(collateralValueUSD)} USD
           </div>
         </div>
       </td>
       <td className="text-right py-4 px-4">
         {borrowedUSDC > 0 ? (
-          <span className="text-orange-400 text-base font-heading">{borrowedUSDC.toFixed(2)} USDC</span>
+          <span className="text-orange-400 text-base font-heading">{formatUSDC(borrowedUSDC)} USDC</span>
         ) : (
           <span className="text-forge-gray-500 font-satoshi" title="No borrowed funds">-</span>
         )}
@@ -1172,7 +1172,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
             <div className="panel-muted rounded-lg p-4">
               <div className="text-forge-gray-400 text-sm font-satoshi mb-1">cToken Balance</div>
               <div className="text-white text-lg font-heading">
-                {ctokenBalance.toFixed(2)} {position.ctokenSymbol}
+                {formatSOL(ctokenBalance)} {position.ctokenSymbol}
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
@@ -1181,10 +1181,10 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
                 <span className="ml-1 text-xs" title="The base token value of your position">(ℹ️)</span>
               </div>
               <div className="text-white text-lg font-heading">
-                {userBalance.baseDeposited.toFixed(2)} {position.baseTokenSymbol}
+                {formatSOL(userBalance.baseDeposited)} {position.baseTokenSymbol}
               </div>
               <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
-                cToken Balance: {ctokenBalance.toFixed(2)} {position.ctokenSymbol}
+                cToken Balance: {formatSOL(ctokenBalance)} {position.ctokenSymbol}
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
@@ -1192,7 +1192,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
               <div className={`text-lg font-heading ${
                 borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'
               }`}>
-                {borrowedUSDC > 0 ? `${borrowedUSDC.toFixed(2)} USDC` : '-'}
+                {borrowedUSDC > 0 ? `${formatUSDC(borrowedUSDC)} USDC` : '-'}
               </div>
             </div>
             <div className="panel-muted rounded-lg p-4">
@@ -1219,7 +1219,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
             <div className="panel-muted rounded-lg p-4">
               <div className="text-forge-gray-400 text-sm font-satoshi mb-1">Exchange Rate</div>
               <div className="text-white text-lg font-heading">
-                1 {position.ctokenSymbol} = {exchangeRate.toFixed(2)} {position.baseTokenSymbol}
+                1 {position.ctokenSymbol} = {formatSOL(exchangeRate)} {position.baseTokenSymbol}
               </div>
             </div>
           </div>

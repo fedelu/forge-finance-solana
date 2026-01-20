@@ -18,6 +18,7 @@ import { buildMintCtokenInstruction } from '../utils/anchorProgram'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 import { SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
+import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 interface CTokenDepositModalProps {
   isOpen: boolean
@@ -189,7 +190,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           const availableBalance = solBalance - minReserve
           
           if (depositAmount > availableBalance) {
-            alert(`⚠️ Insufficient SOL balance!\n\nYou have: ${solBalance.toFixed(4)} SOL\nAvailable (after reserving ${minReserve} SOL for fees): ${availableBalance.toFixed(4)} SOL\n\nRequested: ${depositAmount.toFixed(4)} SOL`)
+            alert(`⚠️ Insufficient SOL balance!\n\nYou have: ${formatSOL(solBalance)} SOL\nAvailable (after reserving ${formatSOL(minReserve)} SOL for fees): ${formatSOL(availableBalance)} SOL\n\nRequested: ${formatSOL(depositAmount)} SOL`)
             setSubmitting(false)
             return
           }
@@ -382,7 +383,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
             
             // Show success message with transaction link
             const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`
-            alert(`✅ Deposit Complete!\n\n${depositAmount} SOL → ${ctokensReceived.toFixed(4)} ${ctokenSymbol}\nTransaction: ${signature.substring(0, 8)}...\n\nView on Explorer: ${explorerUrl}`)
+            alert(`✅ Deposit Complete!\n\n${formatSOL(depositAmount)} SOL → ${formatSOL(ctokensReceived)} ${ctokenSymbol}\nTransaction: ${signature.substring(0, 8)}...\n\nView on Explorer: ${explorerUrl}`)
             
             setAmount('')
             onClose()
@@ -461,7 +462,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         if (leverage === 1) {
           // Standard LP: deposit equal USDC
           if (usdcDetails.depositUSDC > usdcBalance) {
-            alert(`Insufficient USDC balance. You need ${usdcDetails.depositUSDC.toFixed(2)} USDC but only have ${usdcBalance.toFixed(2)} USDC.`)
+            alert(`Insufficient USDC balance. You need ${formatUSDC(usdcDetails.depositUSDC)} USDC but only have ${formatUSDC(usdcBalance)} USDC.`)
             return
           }
           
@@ -519,7 +520,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           // Leveraged LP: deposit + borrow USDC
           // First check if user has enough for deposit part
           if (usdcDetails.depositUSDC > 0 && usdcDetails.depositUSDC > usdcBalance) {
-            alert(`Insufficient USDC balance. You need ${usdcDetails.depositUSDC.toFixed(2)} USDC for deposit but only have ${usdcBalance.toFixed(2)} USDC.`)
+            alert(`Insufficient USDC balance. You need ${formatUSDC(usdcDetails.depositUSDC)} USDC for deposit but only have ${formatUSDC(usdcBalance)} USDC.`)
             return
           }
           
@@ -532,7 +533,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           if (usdcDetails.borrowUSDC > 0) {
             const availableLiquidity = lendingPool.getAvailableLiquidity()
             if (usdcDetails.borrowUSDC > availableLiquidity) {
-              alert(`Insufficient liquidity. Available: ${availableLiquidity.toFixed(2)} USDC`)
+              alert(`Insufficient liquidity. Available: ${formatUSDC(availableLiquidity)} USDC`)
               return
             }
             
@@ -741,7 +742,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               />
               {amount && (
                 <div className="absolute right-12 top-1/2 -translate-y-1/2 text-forge-gray-500 text-xs">
-                  ≈ ${baseValueUSD.toFixed(2)}
+                  ≈ ${formatUSD(baseValueUSD)}
                 </div>
               )}
             </div>
@@ -764,7 +765,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               </span>
               {leverage === 1 && (
                 <span className="ml-auto text-xs text-forge-gray-500">
-                  Balance: {usdcBalance.toFixed(2)} USDC
+                  Balance: {formatUSDC(usdcBalance)} USDC
                 </span>
               )}
             </label>
@@ -784,7 +785,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                 )}
                 {leverage > 1 && (
                   <span className="text-blue-400 text-xs font-medium">
-                    {usdcDetails.depositUSDC > 0 ? `${usdcDetails.depositUSDC.toFixed(2)} deposit + ` : ''}{usdcDetails.borrowUSDC.toFixed(2)} borrowed
+                    {usdcDetails.depositUSDC > 0 ? `${formatUSDC(usdcDetails.depositUSDC)} deposit + ` : ''}{formatUSDC(usdcDetails.borrowUSDC)} borrowed
                   </span>
                 )}
               </div>
@@ -800,7 +801,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               <span className="font-medium">Insufficient USDC Balance</span>
             </div>
             <p className="text-red-300 text-sm mt-1">
-              You need {usdcDetails.depositUSDC.toFixed(2)} USDC but only have {usdcBalance.toFixed(2)} USDC in your wallet.
+              You need {formatUSDC(usdcDetails.depositUSDC)} USDC but only have {formatUSDC(usdcBalance)} USDC in your wallet.
             </p>
           </div>
         )}
@@ -812,7 +813,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               <span className="font-medium">Insufficient Lending Pool Liquidity</span>
             </div>
             <p className="text-red-300 text-sm mt-1">
-              Need to borrow {usdcDetails.borrowUSDC.toFixed(2)} USDC but pool only has {availableLiquidity.toFixed(2)} USDC available.
+              Need to borrow {formatUSDC(usdcDetails.borrowUSDC)} USDC but pool only has {formatUSDC(availableLiquidity)} USDC available.
             </p>
           </div>
         )}
@@ -878,13 +879,13 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                     <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
                       <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Deposit</span>
                       <span className="text-sm font-heading text-white">
-                        {usdcDetails.depositUSDC.toFixed(2)} USDC
+                        {formatUSDC(usdcDetails.depositUSDC)} USDC
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
                       <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Borrow</span>
                       <span className="text-sm font-heading text-forge-primary-light">
-                        {usdcDetails.borrowUSDC.toFixed(2)} USDC
+                        {formatUSDC(usdcDetails.borrowUSDC)} USDC
                       </span>
                     </div>
                   </>
@@ -894,7 +895,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                       {leverage === 1 ? 'USDC Deposited' : 'USDC Borrowed'}
                     </span>
                     <span className={`text-sm font-heading ${leverage === 1 ? 'text-white' : 'text-forge-primary-light'}`}>
-                      {usdcDetails.totalUSDC.toFixed(2)} USDC
+                      {formatUSDC(usdcDetails.totalUSDC)} USDC
                     </span>
                   </div>
                 )}

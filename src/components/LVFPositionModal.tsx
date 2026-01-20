@@ -8,6 +8,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext'
 import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { INFERNO_OPEN_FEE_RATE } from '../config/fees'
+import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 interface LVFPositionModalProps {
   isOpen: boolean
@@ -57,14 +58,14 @@ export default function LVFPositionModal({
       // Check base token balance
       const baseTokenBalance = getBalance(baseTokenSymbol)
       if (collateralAmount > baseTokenBalance) {
-        alert(`Insufficient ${baseTokenSymbol} balance. You need ${collateralAmount.toFixed(2)} ${baseTokenSymbol} but only have ${baseTokenBalance.toFixed(2)} ${baseTokenSymbol}.`)
+        alert(`Insufficient ${baseTokenSymbol} balance. You need ${formatSOL(collateralAmount)} ${baseTokenSymbol} but only have ${formatSOL(baseTokenBalance)} ${baseTokenSymbol}.`)
         return
       }
 
       // Check lending pool liquidity
       const availableLiquidity = lendingPool.getAvailableLiquidity()
       if (borrowedUSDC > availableLiquidity) {
-        alert(`Insufficient liquidity. Available: ${availableLiquidity.toFixed(2)} USDC`)
+        alert(`Insufficient liquidity. Available: ${formatUSDC(availableLiquidity)} USDC`)
         return
       }
 
@@ -192,7 +193,7 @@ export default function LVFPositionModal({
               />
               {amount && (
                 <div className="absolute right-16 top-1/2 -translate-y-1/2 text-forge-gray-500 text-sm">
-                  ≈ ${(parseFloat(amount) * baseTokenPrice).toFixed(2)}
+                  ≈ ${formatUSD(parseFloat(amount) * baseTokenPrice)}
                 </div>
               )}
             </div>
@@ -249,7 +250,7 @@ export default function LVFPositionModal({
                 <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
                   <span className="text-forge-gray-400 text-sm">Collateral</span>
                   <span className="text-white font-bold text-lg">
-                    {amount ? parseFloat(amount).toFixed(4) : '0.0000'} {baseTokenSymbol}
+                    {amount ? formatSOL(parseFloat(amount)) : '0.000'} {baseTokenSymbol}
                   </span>
                 </div>
                 {amount && (
@@ -262,13 +263,13 @@ export default function LVFPositionModal({
                       Opening Fee (1%)
                       </span>
                       <span className="text-red-400 font-semibold">
-                        -{(parseFloat(amount) * INFERNO_OPEN_FEE_RATE).toFixed(2)} {baseTokenSymbol}
+                        -{formatSOL(parseFloat(amount) * INFERNO_OPEN_FEE_RATE)} {baseTokenSymbol}
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-2 px-3 panel-muted rounded-lg">
                       <span className="text-forge-gray-400 text-xs">Collateral After Fee</span>
                       <span className="text-forge-gray-300 font-semibold">
-                        {(parseFloat(amount) * (1 - INFERNO_OPEN_FEE_RATE)).toFixed(2)} {baseTokenSymbol}
+                        {formatSOL(parseFloat(amount) * (1 - INFERNO_OPEN_FEE_RATE))} {baseTokenSymbol}
                       </span>
                     </div>
                   </>
@@ -284,13 +285,13 @@ export default function LVFPositionModal({
                     </svg>
                   </div>
                   <span className="text-orange-400 font-medium">
-                    {borrowedUSDC.toFixed(2)} USDC
+                    {formatUSDC(borrowedUSDC)} USDC
                   </span>
                 </div>
                 <div className="flex justify-between text-xs pt-1">
                   <span className="text-forge-gray-500">Interest Rate (5% APY)</span>
                   <span className="text-forge-gray-400">
-                    {(borrowedUSDC * 0.05).toFixed(2)} USDC/year
+                    {formatUSDC(borrowedUSDC * 0.05)} USDC/year
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -329,7 +330,7 @@ export default function LVFPositionModal({
               <span className="font-medium">Insufficient Lending Pool Liquidity</span>
             </div>
             <p className="text-red-300 text-sm mt-1">
-              Need to borrow {borrowedUSDC.toFixed(2)} USDC but pool only has {availableLiquidity.toFixed(2)} USDC available.
+              Need to borrow {formatUSDC(borrowedUSDC)} USDC but pool only has {formatUSDC(availableLiquidity)} USDC available.
             </p>
           </div>
         )}

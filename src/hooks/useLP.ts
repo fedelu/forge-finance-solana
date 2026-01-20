@@ -10,6 +10,7 @@ import { fetchCrucibleDirect } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveLPPositionPDA, deriveUSDCVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet'
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
+import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 export interface LPPosition {
   id: string
@@ -235,7 +236,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
       const tolerance = Math.max(baseValue, usdcValue) * 0.01 // 1% tolerance
 
       if (Math.abs(baseValue - usdcValue) > tolerance) {
-        throw new Error(`Amounts must be equal value. Base value: $${baseValue.toFixed(2)}, USDC value: $${usdcValue.toFixed(2)}`)
+        throw new Error(`Amounts must be equal value. Base value: $${formatUSD(baseValue)}, USDC value: $${formatUSD(usdcValue)}`)
       }
 
       setLoading(true)

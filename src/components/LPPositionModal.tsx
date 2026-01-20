@@ -6,6 +6,7 @@ import { useBalance } from '../contexts/BalanceContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
+import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 interface LPPositionModalProps {
   isOpen: boolean
@@ -44,7 +45,7 @@ export default function LPPositionModal({
   const handleBaseAmountChange = (value: string) => {
     setBaseAmount(value)
     if (value && parseFloat(value) > 0) {
-      const calculatedUSDC = (parseFloat(value) * baseTokenPrice).toFixed(2)
+      const calculatedUSDC = formatUSDC(parseFloat(value) * baseTokenPrice)
       setUsdcAmount(calculatedUSDC)
     } else {
       setUsdcAmount('')
@@ -55,7 +56,7 @@ export default function LPPositionModal({
   const handleUSDCAmountChange = (value: string) => {
     setUsdcAmount(value)
     if (value && parseFloat(value) > 0) {
-      const calculatedBase = (parseFloat(value) / baseTokenPrice).toFixed(4)
+      const calculatedBase = formatSOL(parseFloat(value) / baseTokenPrice)
       setBaseAmount(calculatedBase)
     } else {
       setBaseAmount('')
@@ -83,13 +84,13 @@ export default function LPPositionModal({
     const usdcAmt = parseFloat(usdcAmount)
     
     if (baseAmt > baseTokenBalance) {
-      alert(`Insufficient ${baseTokenSymbol} balance. You need ${baseAmt.toFixed(4)} ${baseTokenSymbol} but only have ${baseTokenBalance.toFixed(4)} ${baseTokenSymbol}.`)
+      alert(`Insufficient ${baseTokenSymbol} balance. You need ${formatSOL(baseAmt)} ${baseTokenSymbol} but only have ${formatSOL(baseTokenBalance)} ${baseTokenSymbol}.`)
       return
     }
     
     const usdcBal = getBalance('USDC')
     if (usdcAmt > usdcBal) {
-      alert(`Insufficient USDC balance. You need ${usdcAmt.toFixed(2)} USDC but only have ${usdcBal.toFixed(2)} USDC.`)
+      alert(`Insufficient USDC balance. You need ${formatUSDC(usdcAmt)} USDC but only have ${formatUSDC(usdcBal)} USDC.`)
       return
     }
 
@@ -134,7 +135,7 @@ export default function LPPositionModal({
   }
 
   const totalValue = baseAmount && usdcAmount
-    ? (parseFloat(baseAmount) * baseTokenPrice + parseFloat(usdcAmount)).toFixed(2)
+    ? formatUSD(parseFloat(baseAmount) * baseTokenPrice + parseFloat(usdcAmount))
     : '0.00'
 
   if (!isOpen) return null
@@ -185,7 +186,7 @@ export default function LPPositionModal({
               />
               {baseAmount && (
                 <div className="absolute right-16 top-1/2 -translate-y-1/2 text-forge-gray-500 text-sm">
-                  ≈ ${(parseFloat(baseAmount) * baseTokenPrice).toFixed(2)}
+                  ≈ ${formatUSD(parseFloat(baseAmount) * baseTokenPrice)}
                 </div>
               )}
             </div>
@@ -243,13 +244,13 @@ export default function LPPositionModal({
               <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
                 <span className="text-forge-gray-400 text-sm">{baseTokenSymbol} Deposited</span>
                 <span className="text-white font-semibold">
-                  {parseFloat(baseAmount).toFixed(4)} {baseTokenSymbol}
+                  {formatSOL(parseFloat(baseAmount))} {baseTokenSymbol}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg">
                 <span className="text-forge-gray-400 text-sm">USDC Deposited</span>
                 <span className="text-white font-semibold">
-                  {parseFloat(usdcAmount).toFixed(2)} USDC
+                  {formatUSDC(parseFloat(usdcAmount))} USDC
                 </span>
               </div>
               <div className="flex justify-between items-center py-2.5 px-3 panel-muted rounded-lg border border-forge-gray-700/50">

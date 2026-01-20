@@ -21,7 +21,7 @@ import { useCToken } from '../hooks/useCToken'
 import { useLeverage } from '../hooks/useLeverage'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useLP } from '../hooks/useLP'
-import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE } from '../utils/math'
+import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 // Use CrucibleData from useCrucible hook instead of defining separate interface
 type Crucible = CrucibleData
@@ -245,7 +245,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                           : initialExchangeRate;
                         const exchangeRateDecimal = Number(exchangeRate) / Number(RATE_SCALE);
                         const cruciblePrice = solPrice * exchangeRateDecimal;
-                        return `$${cruciblePrice.toFixed(2)}`;
+                        return `$${formatUSD(cruciblePrice)}`;
                       })()}
                     </span>
                   </div>

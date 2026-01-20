@@ -10,7 +10,7 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useWallet } from '../contexts/WalletContext'
 import { usePrice } from '../contexts/PriceContext'
-import { formatNumberWithCommas, RATE_SCALE } from '../utils/math'
+import { formatNumberWithCommas, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
 
@@ -737,8 +737,8 @@ export default function ClosePositionModal({
                   </button>
                 </div>
                 <div className="mt-1 text-xs text-forge-gray-400 space-y-1">
-                  <div>Available: {(availableLeveragedPosition.collateral || 0).toFixed(2)} c{baseTokenSymbol}</div>
-                  <div>Available: {(availableLeveragedPosition.depositUSDC || 0).toFixed(2)} USDC</div>
+                  <div>Available: {formatSOL(availableLeveragedPosition.collateral || 0)} c{baseTokenSymbol}</div>
+                  <div>Available: {formatUSDC(availableLeveragedPosition.depositUSDC || 0)} USDC</div>
                 </div>
               </div>
 

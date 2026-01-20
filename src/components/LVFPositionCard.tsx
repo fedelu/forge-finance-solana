@@ -3,7 +3,7 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useBalance } from '../contexts/BalanceContext'
 import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
-import { formatNumberWithCommas } from '../utils/math'
+import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 
 interface LVFPositionCardProps {
@@ -55,7 +55,7 @@ export default function LVFPositionCard({
     const principalFeeUSD = collateralValueUSD * INFERNO_CLOSE_FEE_RATE
     const baseAmountAfterFee = position.collateral * (1 - INFERNO_CLOSE_FEE_RATE)
     
-    const feeMessage = `Closing fee: ${principalFeeUSD.toFixed(2)} USD (${(INFERNO_CLOSE_FEE_RATE * 100).toFixed(2)}% on principal) + ${(INFERNO_YIELD_FEE_RATE * 100).toFixed(0)}% of accrued yield.\nYou'll receive approximately ${baseAmountAfterFee.toFixed(2)} ${baseTokenSymbol} plus net yield.`
+    const feeMessage = `Closing fee: ${formatUSD(principalFeeUSD)} USD (${(INFERNO_CLOSE_FEE_RATE * 100).toFixed(2)}% on principal) + ${(INFERNO_YIELD_FEE_RATE * 100).toFixed(0)}% of accrued yield.\nYou'll receive approximately ${formatSOL(baseAmountAfterFee)} ${baseTokenSymbol} plus net yield.`
     
     if (!confirm(`Are you sure you want to close this leveraged position?\n\n${feeMessage}`)) {
       return
@@ -171,13 +171,13 @@ export default function LVFPositionCard({
         <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-forge-gray-700/50">
           <div className="text-xs text-forge-gray-400 mb-1">Collateral</div>
           <div className="text-white font-bold text-base">
-            {position.collateral.toFixed(2)} {position.token}
+            {formatSOL(position.collateral)} {position.token}
           </div>
         </div>
         <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-orange-500/20">
           <div className="text-xs text-forge-gray-400 mb-1">Borrowed</div>
           <div className="text-orange-400 font-bold text-base">
-            {position.borrowedUSDC.toFixed(2)} USDC
+            {formatUSDC(position.borrowedUSDC)} USDC
           </div>
         </div>
         <div className={`panel-muted backdrop-blur-sm rounded-lg p-3 border ${
@@ -202,7 +202,7 @@ export default function LVFPositionCard({
         <div className="panel-muted backdrop-blur-sm rounded-lg p-3 border border-forge-gray-700/50">
           <div className="text-xs text-forge-gray-400 mb-1">Current Value</div>
           <div className="text-white font-bold text-base">
-            ${position.currentValue.toFixed(2)}
+            ${formatUSD(position.currentValue)}
           </div>
         </div>
       </div>
@@ -217,7 +217,7 @@ export default function LVFPositionCard({
         <div className="text-right">
           <div className="text-xs text-forge-gray-400 mb-1">Yield Earned</div>
           <div className="text-green-400 font-bold text-base">
-            +{position.yieldEarned.toFixed(4)} {position.token}
+            +{formatSOL(position.yieldEarned)} {position.token}
           </div>
         </div>
       </div>

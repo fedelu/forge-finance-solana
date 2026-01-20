@@ -12,7 +12,7 @@ import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useWallet } from '../contexts/WalletContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { usePrice } from '../contexts/PriceContext'
-import { formatNumberWithCommas } from '../utils/math'
+import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { UNWRAP_FEE_RATE, INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { getCruciblesProgram } from '../utils/anchorProgram'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
@@ -442,7 +442,7 @@ export default function CTokenWithdrawModal({
                         {displayPairSymbol}/USDC {isLeveraged && leverage && `${leverage}x`}
                       </div>
                       <div className="text-xs text-forge-gray-400 mt-1">
-                        {baseAmount?.toFixed(2) || '0.00'} {baseTokenSymbol} + {usdcAmount?.toFixed(2) || '0.00'} USDC
+                        {baseAmount ? formatSOL(baseAmount) : '0.000'} {baseTokenSymbol} + {usdcAmount ? formatUSDC(usdcAmount) : '0'} USDC
                       </div>
                     </div>
                     <button

@@ -1,5 +1,6 @@
 import React from 'react'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 interface LeverageControlProps {
   leverage: number
@@ -103,7 +104,7 @@ export default function LeverageControl({
                 5% APY
               </div>
               <div className="text-[10px] text-forge-gray-500 mt-1">
-                Annual cost: {(borrowed * 0.05).toFixed(2)} USDC
+                Annual cost: {formatUSDC(borrowed * 0.05)} USDC
               </div>
             </div>
           </div>
