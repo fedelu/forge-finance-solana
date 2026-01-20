@@ -81,7 +81,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               </div>
               <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total TVL</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
-                ${crucibles.reduce((sum, c) => sum + c.tvl, 0).toLocaleString()}
+                ${formatUSD(crucibles.reduce((sum, c) => sum + c.tvl, 0))}
               </p>
             </div>
           </div>
@@ -93,15 +93,13 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               </div>
               <p className="text-forge-gray-300 text-xs font-satoshi font-medium mb-1">Total Yield Earned (All Time)</p>
               <p className="text-2xl font-heading font-semibold text-white group-hover:text-forge-accent transition-colors duration-300">
-                ${(() => {
+                ${formatUSD(crucibles.reduce((sum, c) => {
                   // Calculate ALL TIME yield earned: totalFeesAccrued (80% vault share of all fees)
                   // This represents all yield generated from fees and arbitrage deposits, regardless of withdrawals
                   // Includes: wrap/unwrap fees (80%), LP position fees (80%), LVF position fees (80%), and arbitrage deposits (80%)
-                  return crucibles.reduce((sum, c) => {
-                    const allTimeYield = c.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD (includes arbitrage revenue)
-                    return sum + allTimeYield;
-                  }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                })()}
+                  const allTimeYield = c.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD (includes arbitrage revenue)
+                  return sum + allTimeYield;
+                }, 0))}
               </p>
             </div>
           </div>
@@ -193,7 +191,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       </svg>
                       TVL
                     </span>
-                    <span className="font-heading text-lg text-white">${crucible.tvl.toLocaleString()}</span>
+                    <span className="font-heading text-lg text-white">${formatUSD(crucible.tvl)}</span>
                   </div>
                   {/* APY Display */}
                   <div className="space-y-2 py-3.5 px-4 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50">
@@ -257,13 +255,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       Total Yield Earned (All Time)
                     </span>
                     <span className="font-heading text-lg text-forge-primary">
-                      ${(() => {
-                        // Calculate ALL TIME yield earned: totalFeesAccrued (80% vault share of all fees)
-                        // This represents all yield generated from fees and arbitrage deposits, regardless of withdrawals
-                        // Includes: wrap/unwrap fees (80%), LP position fees (80%), LVF position fees (80%), and arbitrage deposits (80%)
-                        const allTimeYield = crucible.apyEarnedByUsers || 0; // This is totalFeesAccrued in USD (includes arbitrage revenue)
-                        return allTimeYield.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                      })()}
+                      ${formatUSD(crucible.apyEarnedByUsers || 0)}
                     </span>
                   </div>
                 </div>
