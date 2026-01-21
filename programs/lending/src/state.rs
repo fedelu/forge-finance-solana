@@ -47,4 +47,15 @@ impl InterestRateModelConfig {
     pub const SIZE: usize = 8 * 4;
 }
 
+#[account]
+pub struct BorrowerAccount {
+    pub borrower: Pubkey,
+    pub principal: u128, // Principal amount borrowed (in base token units)
+    pub borrow_index: u128, // accumulated_index when user borrowed (for interest calculation)
+}
+
+impl BorrowerAccount {
+    pub const LEN: usize = 32 + 16 + 16; // borrower (32) + principal (16) + borrow_index (16)
+}
+
 

@@ -12,6 +12,19 @@ pub mod forge_core {
         ctx: Context<InitializeProtocol>,
         protocol_config: ProtocolConfig,
     ) -> Result<()> {
+        // SECURITY FIX (AUDIT-002): Validate fee rate bounds (0-10,000 bps)
+        require!(
+            protocol_config.protocol_fee_rate <= 10_000,
+            ForgeError::InvalidConfig
+        );
+        
+        // SECURITY FIX (AUDIT-001): Validate max_crucibles is reasonable (max 1 million)
+        const MAX_CRUCIBLES_LIMIT: u64 = 1_000_000;
+        require!(
+            protocol_config.max_crucibles > 0 && protocol_config.max_crucibles <= MAX_CRUCIBLES_LIMIT,
+            ForgeError::InvalidConfig
+        );
+        
         let forge_protocol = &mut ctx.accounts.forge_protocol;
         let clock = Clock::get()?;
 
@@ -35,6 +48,31 @@ pub mod forge_core {
     ) -> Result<()> {
         let forge_protocol = &mut ctx.accounts.forge_protocol;
         
+        // SECURITY FIX: Explicitly verify authority matches
+        require_keys_eq!(
+            forge_protocol.authority,
+            ctx.accounts.authority.key(),
+            ForgeError::Unauthorized
+        );
+        
+        // SECURITY FIX (AUDIT-001, AUDIT-002): Validate bounds before updating
+        require!(
+            new_config.protocol_fee_rate <= 10_000,
+            ForgeError::InvalidConfig
+        );
+        
+        const MAX_CRUCIBLES_LIMIT: u64 = 1_000_000;
+        require!(
+            new_config.max_crucibles > 0 && new_config.max_crucibles <= MAX_CRUCIBLES_LIMIT,
+            ForgeError::InvalidConfig
+        );
+        
+        // SECURITY FIX: Prevent reducing max_crucibles below current count
+        require!(
+            new_config.max_crucibles >= forge_protocol.crucible_count,
+            ForgeError::InvalidConfig
+        );
+        
         forge_protocol.protocol_fee_rate = new_config.protocol_fee_rate;
         forge_protocol.max_crucibles = new_config.max_crucibles;
 
@@ -50,7 +88,20 @@ pub mod forge_core {
         let crucible_registry = &mut ctx.accounts.crucible_registry;
         let forge_protocol = &mut ctx.accounts.forge_protocol;
 
+        // SECURITY FIX: Check if protocol is active before allowing crucible registration
+        require!(forge_protocol.is_active, ForgeError::ProtocolInactive);
         require!(forge_protocol.crucible_count < forge_protocol.max_crucibles, ForgeError::MaxCruciblesReached);
+        
+        // SECURITY FIX: Validate crucible_id is not zero (prevents invalid IDs)
+        require!(crucible_id > 0, ForgeError::InvalidConfig);
+        
+        // SECURITY FIX: Prevent duplicate crucible registration
+        // Anchor's init constraint already prevents duplicate crucible.key() registrations,
+        // but we add explicit check for clarity and to prevent accidental re-registration attempts
+        require!(
+            crucible_registry.crucible == Pubkey::default(),
+            ForgeError::InvalidConfig
+        );
 
         crucible_registry.id = crucible_id;
         crucible_registry.crucible = ctx.accounts.crucible.key();
@@ -70,6 +121,22 @@ pub mod forge_core {
         ctx: Context<CollectFees>,
         amount: u64,
     ) -> Result<()> {
+        // SECURITY FIX (AUDIT-004): Validate amount is non-zero and reasonable
+        require!(amount > 0, ForgeError::InvalidConfig);
+        
+        // SECURITY FIX (AUDIT-005): Verify fee vault has sufficient balance
+        require!(
+            ctx.accounts.fee_vault.amount >= amount,
+            ForgeError::InvalidConfig
+        );
+        
+        // SECURITY FIX: Maximum amount to prevent overflow (1 billion tokens)
+        const MAX_FEE_COLLECTION_AMOUNT: u64 = 1_000_000_000_000_000_000;
+        require!(
+            amount <= MAX_FEE_COLLECTION_AMOUNT,
+            ForgeError::InvalidConfig
+        );
+        
         let cpi_accounts = Transfer {
             from: ctx.accounts.fee_vault.to_account_info(),
             to: ctx.accounts.treasury.to_account_info(),
@@ -94,6 +161,20 @@ pub mod forge_core {
         is_active: bool,
     ) -> Result<()> {
         let forge_protocol = &mut ctx.accounts.forge_protocol;
+        
+        // SECURITY FIX: Explicitly verify authority matches protocol authority
+        require_keys_eq!(
+            forge_protocol.authority,
+            ctx.accounts.authority.key(),
+            ForgeError::Unauthorized
+        );
+        
+        // SECURITY FIX: Prevent redundant state changes
+        require!(
+            forge_protocol.is_active != is_active,
+            ForgeError::InvalidConfig
+        );
+        
         forge_protocol.is_active = is_active;
 
         msg!("Protocol status set to: {}", is_active);
@@ -218,4 +299,6 @@ pub enum ForgeError {
     Unauthorized,
     #[msg("Invalid configuration")]
     InvalidConfig,
+    #[msg("Insufficient balance")]
+    InsufficientBalance,
 }

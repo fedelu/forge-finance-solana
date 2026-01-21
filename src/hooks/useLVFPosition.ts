@@ -29,6 +29,7 @@ import { getCruciblesProgram } from '../utils/anchorProgram'
 import { fetchCrucibleDirect } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA, deriveLeveragedPositionPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
+import { getLeveragedPositions, setLeveragedPositions, type StoredLeveragedPosition } from '../utils/localStorage'
 
 interface LeveragedPosition {
   id: string
@@ -206,16 +207,16 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
               fetchedFromChain = true
               console.log('✅ Fetched LVF position from on-chain:', onChainPosition.id)
               
-              // Update localStorage cache with on-chain data
+              // SECURITY FIX: Update localStorage cache with on-chain data using secure utility
               try {
-                const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
-                const existingIndex = allStoredPositions.findIndex((p: LeveragedPosition) => p.id === onChainPosition.id)
+                const allStoredPositions = getLeveragedPositions()
+                const existingIndex = allStoredPositions.findIndex((p: StoredLeveragedPosition) => p.id === onChainPosition.id)
                 if (existingIndex >= 0) {
-                  allStoredPositions[existingIndex] = onChainPosition
+                  allStoredPositions[existingIndex] = onChainPosition as StoredLeveragedPosition
                 } else {
-                  allStoredPositions.push(onChainPosition)
+                  allStoredPositions.push(onChainPosition as StoredLeveragedPosition)
                 }
-                localStorage.setItem('leveraged_positions', JSON.stringify(allStoredPositions))
+                setLeveragedPositions(allStoredPositions)
               } catch (cacheError) {
                 console.warn('Failed to update localStorage cache:', cacheError)
               }
@@ -241,7 +242,8 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       if (!fetchedFromChain && !walletContext?.connection) {
         console.log('📦 No connection available, falling back to localStorage cache')
         try {
-          const storedPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
+          // SECURITY FIX: Use secure localStorage utility
+          const storedPositions = getLeveragedPositions()
           
           // Get all possible wallet address formats
           const walletAddresses = [
@@ -252,14 +254,14 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           ].filter(Boolean) as string[]
           
           // Filter positions for this crucible and wallet
-          const cachedPositions = storedPositions.filter((p: LeveragedPosition) => {
+          const cachedPositions = storedPositions.filter((p: StoredLeveragedPosition) => {
             const ownerMatch = walletAddresses.some(addr => p.owner === addr || p.owner?.toLowerCase() === addr?.toLowerCase())
             const tokenMatch = p.token === baseTokenSymbol
             const isOpen = p.isOpen === true
             return ownerMatch && tokenMatch && isOpen
           })
           
-          userPositions.push(...cachedPositions)
+          userPositions.push(...cachedPositions as LeveragedPosition[])
           console.log('📦 Loaded', cachedPositions.length, 'positions from localStorage cache')
         } catch (e) {
           console.warn('Failed to load positions from localStorage cache:', e)
@@ -503,17 +505,17 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
 
         console.log('📦 Creating position object:', newPosition)
         
-        // Store to localStorage FIRST (synchronously, before state update)
+        // SECURITY FIX: Store to localStorage FIRST using secure utility
         // This ensures components can read it when events fire
         try {
-          const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
-          const existingIndex = allStoredPositions.findIndex((p: LeveragedPosition) => p.id === newPosition.id)
+          const allStoredPositions = getLeveragedPositions()
+          const existingIndex = allStoredPositions.findIndex((p: StoredLeveragedPosition) => p.id === newPosition.id)
           if (existingIndex >= 0) {
-            allStoredPositions[existingIndex] = newPosition
+            allStoredPositions[existingIndex] = newPosition as StoredLeveragedPosition
           } else {
-            allStoredPositions.push(newPosition)
+            allStoredPositions.push(newPosition as StoredLeveragedPosition)
           }
-          localStorage.setItem('leveraged_positions', JSON.stringify(allStoredPositions))
+          setLeveragedPositions(allStoredPositions)
           console.log('✅ Stored leveraged position to localStorage:', newPosition.id, 'Total stored:', allStoredPositions.length)
         } catch (e) {
           console.error('❌ Failed to store position to localStorage:', e)
@@ -661,18 +663,18 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Try to find position in state first
         let position = positions.find((p) => p.id === positionId && p.isOpen)
         
-        // If not found in state, try loading from localStorage
+        // SECURITY FIX: If not found in state, try loading from localStorage using secure utility
         if (!position) {
           console.log('⚠️ Position not found in state, loading from localStorage...')
           try {
-            const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
-            const storedPosition = allStoredPositions.find((p: LeveragedPosition) => 
+            const allStoredPositions = getLeveragedPositions()
+            const storedPosition = allStoredPositions.find((p: StoredLeveragedPosition) => 
               p.id === positionId && 
               p.isOpen && 
               (p.owner === currentPublicKey.toBase58() || p.owner === currentPublicKey.toString())
             )
             if (storedPosition) {
-              position = storedPosition
+              position = storedPosition as LeveragedPosition
               console.log('✅ Found position in localStorage:', position.id)
             }
           } catch (e) {
@@ -1032,13 +1034,13 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             
             const updated = prev.map((p) => p.id === positionId ? updatedPosition : p)
             
-            // Update localStorage
+            // SECURITY FIX: Update localStorage using secure utility
             try {
-              const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
-              const updatedAll = allStoredPositions.map((p: LeveragedPosition) => 
-                p.id === positionId ? updatedPosition : p
+              const allStoredPositions = getLeveragedPositions()
+              const updatedAll = allStoredPositions.map((p: StoredLeveragedPosition) => 
+                p.id === positionId ? updatedPosition as StoredLeveragedPosition : p
               )
-              localStorage.setItem('leveraged_positions', JSON.stringify(updatedAll))
+              setLeveragedPositions(updatedAll)
               console.log('✅ Updated leveraged position (partial close):', positionId, 'Remaining collateral:', remainingCollateral)
             } catch (e) {
               console.warn('Failed to update positions:', e)
@@ -1048,11 +1050,11 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           } else {
             // Remove position completely (full close)
             const updated = prev.filter((p) => p.id !== positionId)
-            // Update localStorage for ALL positions (from all crucibles)
+            // SECURITY FIX: Update localStorage for ALL positions using secure utility
             try {
-              const allStoredPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]')
-              const filteredAll = allStoredPositions.filter((p: LeveragedPosition) => p.id !== positionId)
-              localStorage.setItem('leveraged_positions', JSON.stringify(filteredAll))
+              const allStoredPositions = getLeveragedPositions()
+              const filteredAll = allStoredPositions.filter((p: StoredLeveragedPosition) => p.id !== positionId)
+              setLeveragedPositions(filteredAll)
               console.log('✅ Removed leveraged position (full close):', positionId)
             } catch (e) {
               console.warn('Failed to update positions:', e)

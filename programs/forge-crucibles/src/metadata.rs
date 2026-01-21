@@ -17,6 +17,9 @@ pub fn create_ctoken_metadata(
 ) -> Result<()> {
     let crucible = &ctx.accounts.crucible;
     
+    // SECURITY FIX: Check if crucible is paused before allowing metadata creation
+    require!(!crucible.paused, CrucibleError::ProtocolPaused);
+    
     // Validate that ctoken_mint matches crucible's ctoken_mint
     require!(
         ctx.accounts.ctoken_mint.key() == crucible.ctoken_mint,
@@ -37,6 +40,37 @@ pub fn create_ctoken_metadata(
     require!(
         metadata_pda == ctx.accounts.metadata.key(),
         CrucibleError::InvalidMetadataAccount
+    );
+    
+    // SECURITY FIX (AUDIT-046): Verify URI validation (length limits)
+    // Maximum URI length: 200 characters (Metaplex standard)
+    const MAX_URI_LENGTH: usize = 200;
+    require!(
+        uri.len() <= MAX_URI_LENGTH,
+        CrucibleError::InvalidConfig
+    );
+    
+    // SECURITY FIX (AUDIT-045): Verify metadata cannot be overwritten
+    // Check if metadata account already exists and has data
+    // If account exists and is initialized, reject (prevent overwrite)
+    let metadata_account = &ctx.accounts.metadata;
+    if metadata_account.data_len() > 0 {
+        // Account exists - check if it's already initialized
+        // Metaplex metadata accounts have a discriminator at the start
+        // If account has data, it's likely already initialized
+        return Err(CrucibleError::InvalidMetadataAccount.into());
+    }
+    
+    // Validate name and symbol lengths
+    const MAX_NAME_LENGTH: usize = 32;
+    const MAX_SYMBOL_LENGTH: usize = 10;
+    require!(
+        name.len() > 0 && name.len() <= MAX_NAME_LENGTH,
+        CrucibleError::InvalidConfig
+    );
+    require!(
+        symbol.len() > 0 && symbol.len() <= MAX_SYMBOL_LENGTH,
+        CrucibleError::InvalidConfig
     );
     
     // Build DataV2 struct for metadata

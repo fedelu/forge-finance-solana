@@ -3,7 +3,8 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useBalance } from '../contexts/BalanceContext';
 import { useWallet } from '../contexts/WalletContext';
 import { usePrice } from '../contexts/PriceContext';
-import { useCrucible } from '../hooks/useCrucible';
+import { useCrucible } from '../hooks/useCrucible'
+import { getLeveragedPositions } from '../utils/localStorage';
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
 // import { DynamicTokenBalances } from './DynamicTokenBalances'; // Temporarily disabled
@@ -50,10 +51,10 @@ export const AnalyticsDashboard: React.FC = () => {
       }
     });
     
-    // Also include APY earnings from leveraged positions (3x the base APY)
+    // SECURITY FIX: Also include APY earnings from leveraged positions using secure utility
     try {
       if (walletPublicKey) {
-        const leveragedPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]');
+        const leveragedPositions = getLeveragedPositions();
         let currentWalletAddress: string | null = null;
         if (walletPublicKey) {
           if (typeof walletPublicKey === 'string') {
@@ -97,7 +98,8 @@ export const AnalyticsDashboard: React.FC = () => {
         return 0;
       }
       
-      const leveragedPositions = JSON.parse(localStorage.getItem('leveraged_positions') || '[]');
+      // SECURITY FIX: Use secure localStorage utility
+      const leveragedPositions = getLeveragedPositions();
       
       // Get current wallet address in base58 format
       let currentWalletAddress: string | null = null;

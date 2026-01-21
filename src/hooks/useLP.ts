@@ -11,6 +11,7 @@ import { deriveCruciblePDA, deriveVaultPDA, deriveLPPositionPDA, deriveUSDCVault
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet'
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
+import { getLPPositions, setLPPositions, type StoredLPPosition } from '../utils/localStorage'
 
 export interface LPPosition {
   id: string
@@ -129,16 +130,16 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
               fetchedFromChain = true
               console.log('✅ Fetched LP position from on-chain:', onChainPosition.id)
               
-              // Update localStorage cache with on-chain data
+              // SECURITY FIX: Update localStorage cache with on-chain data using secure utility
               try {
-                const allStoredPositions = JSON.parse(localStorage.getItem('lp_positions') || '[]')
-                const existingIndex = allStoredPositions.findIndex((p: LPPosition) => p.id === onChainPosition.id)
+                const allStoredPositions = getLPPositions()
+                const existingIndex = allStoredPositions.findIndex((p: StoredLPPosition) => p.id === onChainPosition.id)
                 if (existingIndex >= 0) {
-                  allStoredPositions[existingIndex] = onChainPosition
+                  allStoredPositions[existingIndex] = onChainPosition as StoredLPPosition
                 } else {
-                  allStoredPositions.push(onChainPosition)
+                  allStoredPositions.push(onChainPosition as StoredLPPosition)
                 }
-                localStorage.setItem('lp_positions', JSON.stringify(allStoredPositions))
+                setLPPositions(allStoredPositions)
               } catch (cacheError) {
                 console.warn('Failed to update localStorage cache:', cacheError)
               }
@@ -162,17 +163,18 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
       if (!fetchedFromChain && !walletContext?.connection) {
         console.log('📦 No connection available, falling back to localStorage cache for LP positions')
         try {
-          const cachedPositions = JSON.parse(localStorage.getItem('lp_positions') || '[]')
+          // SECURITY FIX: Use secure localStorage utility
+          const cachedPositions = getLPPositions()
           const walletAddress = publicKey.toBase58()
           
-          const filteredPositions = cachedPositions.filter((p: LPPosition) => {
+          const filteredPositions = cachedPositions.filter((p: StoredLPPosition) => {
             const ownerMatch = p.owner === walletAddress || p.owner === publicKey.toString()
             const tokenMatch = p.baseToken === baseTokenSymbol
             const isOpen = p.isOpen === true
             return ownerMatch && tokenMatch && isOpen
           })
           
-          userPositions.push(...filteredPositions)
+          userPositions.push(...filteredPositions as LPPosition[])
           console.log('📦 Loaded', filteredPositions.length, 'LP positions from localStorage cache')
         } catch (e) {
           console.warn('Failed to load LP positions from localStorage cache:', e)
@@ -370,16 +372,16 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           const updated = [...prev, newPosition]
           console.log('✅ Added LP position to state immediately:', newPosition.id, 'Total positions:', updated.length)
           
-          // Store in localStorage
+          // SECURITY FIX: Store in localStorage using secure utility
           try {
-            const allStoredPositions = JSON.parse(localStorage.getItem('lp_positions') || '[]')
-            const existingIndex = allStoredPositions.findIndex((p: LPPosition) => p.id === newPosition.id)
+            const allStoredPositions = getLPPositions()
+            const existingIndex = allStoredPositions.findIndex((p: StoredLPPosition) => p.id === newPosition.id)
             if (existingIndex >= 0) {
-              allStoredPositions[existingIndex] = newPosition
+              allStoredPositions[existingIndex] = newPosition as StoredLPPosition
             } else {
-              allStoredPositions.push(newPosition)
+              allStoredPositions.push(newPosition as StoredLPPosition)
             }
-            localStorage.setItem('lp_positions', JSON.stringify(allStoredPositions))
+            setLPPositions(allStoredPositions)
             console.log('✅ Stored LP position:', newPosition.id)
             console.log('📊 Position details:', {
               id: newPosition.id,
@@ -470,18 +472,18 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Try to find position in state first
         let position = positions.find((p) => p.id === positionId && p.isOpen)
         
-        // If not found in state, try loading from localStorage
+        // SECURITY FIX: If not found in state, try loading from localStorage using secure utility
         if (!position) {
           console.log('⚠️ LP position not found in state, loading from localStorage...')
           try {
-            const allStoredPositions = JSON.parse(localStorage.getItem('lp_positions') || '[]')
-            const storedPosition = allStoredPositions.find((p: LPPosition) => 
+            const allStoredPositions = getLPPositions()
+            const storedPosition = allStoredPositions.find((p: StoredLPPosition) => 
               p.id === positionId && 
               p.isOpen && 
               (p.owner === currentPublicKey.toBase58() || p.owner === currentPublicKey.toString())
             )
             if (storedPosition) {
-              position = storedPosition
+              position = storedPosition as LPPosition
               console.log('✅ Found LP position in localStorage:', position.id)
             }
           } catch (e) {
@@ -595,11 +597,11 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Remove position
         setPositions((prev) => {
           const updated = prev.filter((p) => p.id !== positionId)
-          // Update localStorage
+          // SECURITY FIX: Update localStorage using secure utility
           try {
-            const allStoredPositions = JSON.parse(localStorage.getItem('lp_positions') || '[]')
-            const filteredAll = allStoredPositions.filter((p: LPPosition) => p.id !== positionId)
-            localStorage.setItem('lp_positions', JSON.stringify(filteredAll))
+            const allStoredPositions = getLPPositions()
+            const filteredAll = allStoredPositions.filter((p: StoredLPPosition) => p.id !== positionId)
+            setLPPositions(filteredAll)
             // Dispatch event to refresh portfolio
             window.dispatchEvent(new CustomEvent('lpPositionClosed'))
           } catch (e) {

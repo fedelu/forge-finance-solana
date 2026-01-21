@@ -17,9 +17,38 @@ pub mod lvf {
     use super::*;
 
     pub fn initialize_config(ctx: Context<InitializeConfig>, params: InitializeLvfParams) -> Result<()> {
+        // SECURITY FIX (AUDIT-075): Validate parameter bounds
+        // Max leverage: 100 bps (1x) to 50000 bps (500x) - reasonable upper bound
+        const MIN_LEVERAGE_BPS: u64 = 100; // 1x minimum
+        const MAX_LEVERAGE_BPS: u64 = 50_000; // 500x maximum (very high but allowed)
+        require!(
+            params.max_leverage_bps >= MIN_LEVERAGE_BPS && params.max_leverage_bps <= MAX_LEVERAGE_BPS,
+            LvfError::InvalidParams
+        );
+        
+        // Liquidation threshold: 0 to 10000 bps (0% to 100%)
+        require!(
+            params.liquidation_threshold_bps <= 10_000,
+            LvfError::InvalidParams
+        );
+        
+        // SECURITY FIX (AUDIT-076): Verify liquidation_bounty is reasonable
+        // Bounty: 0 to 5000 bps (0% to 50% of liquidated amount)
+        const MAX_LIQUIDATION_BOUNTY_BPS: u64 = 5_000; // 50% maximum
+        require!(
+            params.liquidation_bounty_bps <= MAX_LIQUIDATION_BOUNTY_BPS,
+            LvfError::InvalidParams
+        );
+        
+        // Ensure liquidation threshold is less than max leverage (sanity check)
+        require!(
+            params.liquidation_threshold_bps < params.max_leverage_bps,
+            LvfError::InvalidParams
+        );
+        
         let cfg = &mut ctx.accounts.config;
         cfg.authority = ctx.accounts.authority.key();
-        cfg.max_leverage_bps = params.max_leverage_bps; // e.g., 30000 = 3x
+        cfg.max_leverage_bps = params.max_leverage_bps;
         cfg.liquidation_threshold_bps = params.liquidation_threshold_bps;
         cfg.liquidation_bounty_bps = params.liquidation_bounty_bps;
         cfg.paused = false;
@@ -99,6 +128,7 @@ pub struct HealthCheck<'info> {
 pub enum LvfError {
     #[msg("Unauthorized")] Unauthorized,
     #[msg("Unimplemented")] Unimplemented,
+    #[msg("Invalid parameters")] InvalidParams,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]

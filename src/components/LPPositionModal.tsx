@@ -7,6 +7,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext'
 import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
+import { validateLPPosition } from '../utils/validation'
 
 interface LPPositionModalProps {
   isOpen: boolean
@@ -79,25 +80,35 @@ export default function LPPositionModal({
       return
     }
 
-    // Check balances
+    // SECURITY FIX: Comprehensive input validation
     const baseAmt = parseFloat(baseAmount)
     const usdcAmt = parseFloat(usdcAmount)
-    
-    if (baseAmt > baseTokenBalance) {
-      alert(`Insufficient ${baseTokenSymbol} balance. You need ${formatSOL(baseAmt)} ${baseTokenSymbol} but only have ${formatSOL(baseTokenBalance)} ${baseTokenSymbol}.`)
-      return
-    }
-    
     const usdcBal = getBalance('USDC')
-    if (usdcAmt > usdcBal) {
-      alert(`Insufficient USDC balance. You need ${formatUSDC(usdcAmt)} USDC but only have ${formatUSDC(usdcBal)} USDC.`)
+    
+    const validation = validateLPPosition(
+      baseAmt,
+      usdcAmt,
+      baseTokenBalance,
+      usdcBal,
+      baseTokenSymbol,
+      baseTokenPrice
+    )
+    
+    if (!validation.valid) {
+      alert(validation.error || 'Invalid position parameters')
       return
     }
 
     try {
-      await openPosition(baseAmt, usdcAmt)
+      // SECURITY FIX: Open position first and validate result before updating local state
+      const positionResult = await openPosition(baseAmt, usdcAmt)
+      
+      // SECURITY FIX: Validate transaction result before updating local state
+      if (!positionResult || (typeof positionResult === 'object' && !positionResult.position_id)) {
+        throw new Error('Failed to open position: Invalid transaction result')
+      }
 
-      // Subtract tokens from wallet balance
+      // Only update local state after successful on-chain transaction
       subtractFromBalance(baseTokenSymbol, baseAmt)
       subtractFromBalance('USDC', usdcAmt)
 
@@ -129,8 +140,23 @@ export default function LPPositionModal({
       setBaseAmount('')
       setUsdcAmount('')
     } catch (error: any) {
-      console.error('Error opening LP position:', error)
-      alert(error.message || 'Failed to open LP position')
+      // SECURITY FIX: Improved error handling with detailed logging
+      console.error('Error opening LP position:', {
+        error,
+        message: error?.message,
+        stack: error?.stack,
+        baseAmount: baseAmt,
+        usdcAmount: usdcAmt,
+        crucibleAddress,
+        baseTokenSymbol
+      })
+      
+      // SECURITY FIX: Provide user-friendly error messages
+      const errorMessage = error?.message || error?.toString() || 'Failed to open LP position'
+      alert(`Error: ${errorMessage}\n\nPlease check your wallet connection and try again.`)
+      
+      // SECURITY FIX: Don't update local state on error - transaction may have partially completed
+      // State will be refreshed from on-chain data on next fetch
     }
   }
 

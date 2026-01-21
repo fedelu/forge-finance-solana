@@ -3,10 +3,41 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo, Burn};
 use anchor_spl::associated_token::AssociatedToken;
 use crate::state::{Crucible, CrucibleError};
 
+// SECURITY FIX: Extract magic numbers to named constants
+const PRICE_SCALE_FACTOR: u64 = 1_000_000; // Scale for price/exchange rate precision (1.0 = 1_000_000)
+const WRAP_FEE_BPS: u64 = 50; // 0.5% wrap fee (50 basis points)
+const UNWRAP_FEE_BPS: u64 = 50; // 0.5% unwrap fee (50 basis points)
+const VAULT_FEE_SHARE_BPS: u64 = 8_000; // 80% vault share (8000 basis points)
+const PROTOCOL_FEE_SHARE_BPS: u64 = 2_000; // 20% protocol share (2000 basis points)
+const ARBITRAGE_VAULT_SHARE_BPS: u64 = 8_000; // 80% vault share for arbitrage (8000 basis points)
+const ARBITRAGE_TREASURY_SHARE_BPS: u64 = 2_000; // 20% treasury share for arbitrage (2000 basis points)
+const ARBITRAGE_REWARD_BPS: u64 = 100; // 1% arbitrageur reward (100 basis points)
+
+// SECURITY FIX: Minimum amounts to prevent dust attacks
+const MIN_DEPOSIT_AMOUNT: u64 = 1_000; // Minimum 1000 lamports (0.000001 SOL or equivalent)
+const MIN_CTOKEN_AMOUNT: u64 = 1_000; // Minimum cToken amount to mint/burn
+
+// SECURITY FIX: Maximum amounts to prevent overflow attacks
+// Maximum deposit: 1 billion tokens (1_000_000_000 * 10^9 lamports for 9 decimals)
+const MAX_DEPOSIT_AMOUNT: u64 = 1_000_000_000_000_000_000; // 1 billion tokens with 9 decimals
+const MAX_CTOKEN_AMOUNT: u64 = 1_000_000_000_000_000_000; // Maximum cToken amount to mint/burn
+
 /// Mint cToken when user deposits base token
 pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
     // Check if crucible is paused
     require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
+    
+    // SECURITY FIX: Require minimum deposit amount to prevent dust attacks
+    require!(
+        amount >= MIN_DEPOSIT_AMOUNT,
+        CrucibleError::InvalidAmount
+    );
+    
+    // SECURITY FIX: Require maximum deposit amount to prevent overflow attacks
+    require!(
+        amount <= MAX_DEPOSIT_AMOUNT,
+        CrucibleError::InvalidAmount
+    );
     
     let crucible = &mut ctx.accounts.crucible;
     let clock = Clock::get()?;
@@ -20,16 +51,16 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
         ctx.accounts.ctoken_mint.supply,
     )?;
     
-    // Calculate wrap fee: 0.5% of deposit amount
+    // SECURITY FIX: Calculate wrap fee using named constant
     let wrap_fee = amount
-        .checked_mul(5u64)
-        .and_then(|v| v.checked_div(1000u64))
+        .checked_mul(WRAP_FEE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // Split fee: 80% to vault, 20% to treasury
+    // SECURITY FIX: Split fee using named constants
     let vault_fee_share = wrap_fee
-        .checked_mul(80u64)
-        .and_then(|v| v.checked_div(100u64))
+        .checked_mul(VAULT_FEE_SHARE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let protocol_fee_share = wrap_fee
         .checked_sub(vault_fee_share)
@@ -45,6 +76,12 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
         .checked_mul(1_000_000u64) // Scale for precision
         .and_then(|scaled| scaled.checked_div(exchange_rate))
         .ok_or(ProgramError::InvalidArgument)?;
+    
+    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+    require!(
+        ctx.accounts.token_program.key() == anchor_spl::token::ID,
+        CrucibleError::InvalidProgram
+    );
     
     // Transfer net deposit from user to vault
     let cpi_accounts = token::Transfer {
@@ -85,6 +122,12 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, protocol_fee_share)?;
     }
+    
+    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+    require!(
+        ctx.accounts.token_program.key() == anchor_spl::token::ID,
+        CrucibleError::InvalidProgram
+    );
     
     // Mint cTokens to user
     let seeds = &[
@@ -154,7 +197,7 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
     // Calculate base tokens to return (includes accrued yield)
     let base_to_return_before_fee = ctokens_amount
         .checked_mul(exchange_rate)
-        .and_then(|scaled| scaled.checked_div(1_000_000u64))
+        .and_then(|scaled| scaled.checked_div(PRICE_SCALE_FACTOR))
         .ok_or(ProgramError::InvalidArgument)?;
     
     require!(
@@ -162,16 +205,17 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
         CrucibleError::InsufficientLiquidity
     );
     
-    // Calculate unwrap fee: 0.75% (TODO: reduce to 0.3% after 5-day cooldown)
+    // SECURITY FIX: Calculate unwrap fee using named constant (0.75% = 75 bps)
+    const UNWRAP_FEE_BPS_SPECIAL: u64 = 75; // 0.75% unwrap fee (TODO: reduce to 0.3% after 5-day cooldown)
     let unwrap_fee = base_to_return_before_fee
-        .checked_mul(75u64)
-        .and_then(|v| v.checked_div(10000u64))
+        .checked_mul(UNWRAP_FEE_BPS_SPECIAL)
+        .and_then(|v| v.checked_div(10_000u64))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // Split fee: 80% to vault, 20% to treasury
+    // SECURITY FIX: Split fee using named constants
     let vault_fee_share = unwrap_fee
-        .checked_mul(80u64)
-        .and_then(|v| v.checked_div(100u64))
+        .checked_mul(VAULT_FEE_SHARE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let protocol_fee_share = unwrap_fee
         .checked_sub(vault_fee_share)
@@ -181,6 +225,12 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
     let base_to_return = base_to_return_before_fee
         .checked_sub(unwrap_fee)
         .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+    require!(
+        ctx.accounts.token_program.key() == anchor_spl::token::ID,
+        CrucibleError::InvalidProgram
+    );
     
     // Burn user's cTokens
     let seeds = &[
@@ -198,6 +248,12 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
     let cpi_program = ctx.accounts.token_program.to_account_info();
     let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
     token::burn(cpi_ctx, ctokens_amount)?;
+    
+    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+    require!(
+        ctx.accounts.token_program.key() == anchor_spl::token::ID,
+        CrucibleError::InvalidProgram
+    );
     
     // Transfer net base tokens from vault to user
     let cpi_accounts = token::Transfer {
@@ -217,6 +273,12 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
             CrucibleError::InvalidTreasury
         );
         
+        // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+        require!(
+            ctx.accounts.token_program.key() == anchor_spl::token::ID,
+            CrucibleError::InvalidProgram
+        );
+        
         let cpi_accounts = token::Transfer {
             from: ctx.accounts.vault.to_account_info(),
             to: ctx.accounts.treasury.to_account_info(),
@@ -233,15 +295,49 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
         .checked_add(protocol_fee_share)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
+    // SECURITY FIX: Calculate principal portion being withdrawn (excluding yield)
+    // Exchange rate = (total_base_deposited + total_fees_accrued) / ctoken_supply
+    // Principal portion = (ctokens_burned * total_base_deposited) / (total_base_deposited + total_fees_accrued)
+    // This ensures we only subtract the principal, not the yield portion
+    let tracked_balance = (crucible.total_base_deposited as u128)
+        .checked_add(crucible.total_fees_accrued as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // SECURITY FIX: Validate tracked_balance > 0 before division
+    require!(tracked_balance > 0, CrucibleError::InvalidAmount);
+    
+    let principal_portion = (base_to_return_before_fee as u128)
+        .checked_mul(crucible.total_base_deposited as u128)
+        .and_then(|v| v.checked_div(tracked_balance))
+        .ok_or(CrucibleError::InvalidAmount)?;
+    
+    let principal_portion_u64 = if principal_portion > u64::MAX as u128 {
+        crucible.total_base_deposited // Cap at total deposits if calculation overflows
+    } else {
+        principal_portion as u64
+    };
+    
+    // SECURITY FIX: Validate amounts are sufficient before subtraction to detect accounting errors
+    require!(
+        crucible.total_base_deposited >= principal_portion_u64,
+        CrucibleError::InvalidAmount
+    );
+    require!(
+        crucible.expected_vault_balance >= total_deducted,
+        CrucibleError::InvalidAmount
+    );
+    
     crucible.total_base_deposited = crucible
         .total_base_deposited
-        .checked_sub(base_to_return_before_fee.min(crucible.total_base_deposited))
-        .unwrap_or(0);
+        .checked_sub(principal_portion_u64)
+        .ok_or(CrucibleError::InvalidAmount)?;
+    
     // Deduct total returned + protocol fee, but vault fee share stays (already accounted for in vault balance)
-    // SECURITY FIX: Use saturating_sub to prevent underflow when fees have accrued significantly
+    // SECURITY FIX: Use checked_sub to detect underflow errors instead of silently preventing them
     crucible.expected_vault_balance = crucible
         .expected_vault_balance
-        .saturating_sub(total_deducted);
+        .checked_sub(total_deducted)
+        .ok_or(CrucibleError::InvalidAmount)?;
     // Track vault fee share in total fees accrued
     crucible.total_fees_accrued = crucible
         .total_fees_accrued
@@ -277,7 +373,14 @@ pub fn deposit_arbitrage_profit(
     let crucible = &mut ctx.accounts.crucible;
     let clock = Clock::get()?;
     
+    // SECURITY FIX: Explicit zero amount validation
     require!(amount > 0, CrucibleError::InvalidAmount);
+    
+    // SECURITY FIX: Require maximum amount to prevent overflow attacks
+    require!(
+        amount <= MAX_DEPOSIT_AMOUNT,
+        CrucibleError::InvalidAmount
+    );
     
     // Calculate current exchange rate
     let exchange_rate = calculate_exchange_rate(
@@ -286,10 +389,10 @@ pub fn deposit_arbitrage_profit(
         ctx.accounts.ctoken_mint.supply,
     )?;
     
-    // Split deposit: 80% to vault, 20% to treasury
+    // SECURITY FIX: Split deposit using named constants
     let vault_share = amount
-        .checked_mul(80u64)
-        .and_then(|v| v.checked_div(100u64))
+        .checked_mul(ARBITRAGE_VAULT_SHARE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let treasury_share = amount
         .checked_sub(vault_share)
@@ -297,6 +400,12 @@ pub fn deposit_arbitrage_profit(
     
     // Transfer vault share to vault (increases yield for cToken holders)
     if vault_share > 0 {
+        // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+        require!(
+            ctx.accounts.token_program.key() == anchor_spl::token::ID,
+            CrucibleError::InvalidProgram
+        );
+        
         let cpi_accounts = token::Transfer {
             from: ctx.accounts.arbitrageur_token_account.to_account_info(),
             to: ctx.accounts.vault.to_account_info(),
@@ -315,6 +424,12 @@ pub fn deposit_arbitrage_profit(
             CrucibleError::InvalidTreasury
         );
         
+        // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
+        require!(
+            ctx.accounts.token_program.key() == anchor_spl::token::ID,
+            CrucibleError::InvalidProgram
+        );
+        
         let cpi_accounts = token::Transfer {
             from: ctx.accounts.arbitrageur_token_account.to_account_info(),
             to: ctx.accounts.treasury.to_account_info(),
@@ -325,19 +440,22 @@ pub fn deposit_arbitrage_profit(
         token::transfer(cpi_ctx, treasury_share)?;
     }
     
-    // Calculate reward for arbitrageur: 1% of deposit as cTokens
+    // SECURITY FIX: Calculate reward for arbitrageur using named constant
     // This incentivizes arbitrageurs to route profits back to the protocol
     let reward_amount = amount
-        .checked_mul(1u64)
-        .and_then(|v| v.checked_div(100u64))
+        .checked_mul(ARBITRAGE_REWARD_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
     // Mint reward cTokens to arbitrageur (1% incentive)
+    // SECURITY FIX: Return error if calculation fails instead of silently defaulting to 0
     let reward_ctokens = if reward_amount > 0 && ctx.accounts.ctoken_mint.supply > 0 {
+        // SECURITY FIX: Validate exchange_rate > 0 before division
+        require!(exchange_rate > 0, CrucibleError::InvalidAmount);
         reward_amount
-            .checked_mul(1_000_000u64)
+            .checked_mul(PRICE_SCALE_FACTOR)
             .and_then(|scaled| scaled.checked_div(exchange_rate))
-            .unwrap_or(0)
+            .ok_or(CrucibleError::InvalidAmount)?
     } else {
         0
     };
@@ -406,9 +524,28 @@ fn calculate_exchange_rate(
         CrucibleError::VaultBalanceMismatch
     );
     
+    // SECURITY FIX (CRITICAL-003): Add maximum deviation check to prevent extreme manipulation
+    // Allow some deviation for fee accrual, but prevent extreme manipulation via direct transfers
+    const MAX_VAULT_DEVIATION_BPS: u64 = 10_000; // 100% max deviation (allows doubling via fees)
+    if vault_amount > crucible.expected_vault_balance {
+        let deviation = vault_amount
+            .checked_sub(crucible.expected_vault_balance)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        if crucible.expected_vault_balance > 0 {
+            let deviation_bps = (deviation as u128)
+                .checked_mul(10_000)
+                .and_then(|v| v.checked_div(crucible.expected_vault_balance as u128))
+                .ok_or(ProgramError::ArithmeticOverflow)?;
+            require!(
+                deviation_bps <= MAX_VAULT_DEVIATION_BPS as u128,
+                CrucibleError::VaultBalanceMismatch
+            );
+        }
+    }
+    
     if ctoken_supply == 0 {
-        // Initial exchange rate is 1:1
-        return Ok(1_000_000u64);
+        // SECURITY FIX: Initial exchange rate is 1:1 using named constant
+        return Ok(PRICE_SCALE_FACTOR);
     }
     
     // SECURITY FIX: Use tracked deposits + fees instead of vault_amount

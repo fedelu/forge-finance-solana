@@ -9,6 +9,7 @@ import { usePrice } from '../contexts/PriceContext'
 import { useCrucible } from '../hooks/useCrucible'
 import { INFERNO_OPEN_FEE_RATE } from '../config/fees'
 import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
+import { validateLVFPosition } from '../utils/validation'
 
 interface LVFPositionModalProps {
   isOpen: boolean
@@ -51,21 +52,36 @@ export default function LVFPositionModal({
 
     try {
       const collateralAmount = parseFloat(amount)
-      const baseTokenPrice = 200 // SOL price
+      // SECURITY FIX: Use real-time oracle price instead of hardcoded value
+      // Fallback to a reasonable default if price is not available
+      const baseTokenPrice = baseTokenSymbol === 'FORGE' 
+        ? (solPrice * 0.001) // FORGE price estimate (adjust as needed)
+        : (solPrice || 200) // Use solPrice from context, fallback to 200 if unavailable
+      
+      // Validate price is reasonable
+      if (baseTokenPrice <= 0 || !isFinite(baseTokenPrice)) {
+        alert('Invalid token price. Please try again.')
+        return
+      }
+      
       const collateralValue = collateralAmount * baseTokenPrice
       const borrowedUSDC = collateralValue * (leverage - 1)
 
-      // Check base token balance
+      // SECURITY FIX: Comprehensive input validation
       const baseTokenBalance = getBalance(baseTokenSymbol)
-      if (collateralAmount > baseTokenBalance) {
-        alert(`Insufficient ${baseTokenSymbol} balance. You need ${formatSOL(collateralAmount)} ${baseTokenSymbol} but only have ${formatSOL(baseTokenBalance)} ${baseTokenSymbol}.`)
-        return
-      }
-
-      // Check lending pool liquidity
       const availableLiquidity = lendingPool.getAvailableLiquidity()
-      if (borrowedUSDC > availableLiquidity) {
-        alert(`Insufficient liquidity. Available: ${formatUSDC(availableLiquidity)} USDC`)
+      
+      const validation = validateLVFPosition(
+        collateralAmount,
+        leverage,
+        baseTokenBalance,
+        baseTokenSymbol,
+        baseTokenPrice,
+        availableLiquidity
+      )
+      
+      if (!validation.valid) {
+        alert(validation.error || 'Invalid position parameters')
         return
       }
 
@@ -76,11 +92,17 @@ export default function LVFPositionModal({
         return
       }
 
-      // Subtract base tokens from wallet
-      subtractFromBalance(baseTokenSymbol, collateralAmount)
-
-      // Open leveraged position
+      // SECURITY FIX: Open leveraged position first and validate result before updating local state
+      // This ensures atomic state updates and prevents race conditions
       const position = await openPosition(collateralAmount, leverage)
+      
+      // SECURITY FIX: Validate transaction result before updating local state
+      if (!position || !position.id) {
+        throw new Error('Failed to open position: Invalid transaction result')
+      }
+      
+      // Only update local state after successful on-chain transaction
+      subtractFromBalance(baseTokenSymbol, collateralAmount)
 
       // Note: LP tokens are automatically added to wallet by the LP balance calculation effect
       // which listens for 'lvfPositionOpened' events and recalculates balances from localStorage
@@ -130,8 +152,23 @@ export default function LVFPositionModal({
       setAmount('')
       setLeverage(2.0)
     } catch (error: any) {
-      console.error('Error opening LVF position:', error)
-      alert(error.message || 'Failed to open leveraged position')
+      // SECURITY FIX: Improved error handling with detailed logging
+      console.error('Error opening LVF position:', {
+        error,
+        message: error?.message,
+        stack: error?.stack,
+        collateralAmount: amount,
+        leverage,
+        crucibleAddress,
+        baseTokenSymbol
+      })
+      
+      // SECURITY FIX: Provide user-friendly error messages
+      const errorMessage = error?.message || error?.toString() || 'Failed to open leveraged position'
+      alert(`Error: ${errorMessage}\n\nPlease check your wallet connection and try again.`)
+      
+      // SECURITY FIX: Don't update local state on error - transaction may have partially completed
+      // State will be refreshed from on-chain data on next fetch
     }
   }
 

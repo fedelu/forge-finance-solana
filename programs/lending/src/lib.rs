@@ -28,36 +28,72 @@ fn do_accrue_interest(market: &mut Market) -> Result<()> {
         .checked_div(supply as u128)
         .ok_or(LendingError::InvalidAmount)?;
 
-    // piecewise interest rate
-    let kink_scaled = (market.interest_model.kink_bps as u128) * RATE_SCALE / 10_000u128;
-    let base_scaled = (market.interest_model.base_rate_bps as u128) * RATE_SCALE / 10_000u128;
-    let slope1_scaled = (market.interest_model.slope1_bps as u128) * RATE_SCALE / 10_000u128;
-    let slope2_scaled = (market.interest_model.slope2_bps as u128) * RATE_SCALE / 10_000u128;
+    // SECURITY FIX (CRITICAL-001): Fix precision loss in interest rate calculation
+    // Multiply all numerators first, then divide once at the end to maximize precision
+    let kink_scaled = (market.interest_model.kink_bps as u128)
+        .checked_mul(RATE_SCALE)
+        .and_then(|v| v.checked_div(10_000u128))
+        .ok_or(LendingError::InvalidAmount)?;
+    let base_scaled = (market.interest_model.base_rate_bps as u128)
+        .checked_mul(RATE_SCALE)
+        .and_then(|v| v.checked_div(10_000u128))
+        .ok_or(LendingError::InvalidAmount)?;
+    let slope1_scaled = (market.interest_model.slope1_bps as u128)
+        .checked_mul(RATE_SCALE)
+        .and_then(|v| v.checked_div(10_000u128))
+        .ok_or(LendingError::InvalidAmount)?;
+    let slope2_scaled = (market.interest_model.slope2_bps as u128)
+        .checked_mul(RATE_SCALE)
+        .and_then(|v| v.checked_div(10_000u128))
+        .ok_or(LendingError::InvalidAmount)?;
 
+    // Calculate interest rate with proper precision: multiply first, then divide
     let ir_scaled = if util_scaled <= kink_scaled {
-        base_scaled + util_scaled
+        // Below kink: base + (util * slope1) / RATE_SCALE
+        // Multiply util * slope1 first, then divide by RATE_SCALE
+        let util_slope_product = util_scaled
             .checked_mul(slope1_scaled)
-            .ok_or(LendingError::InvalidAmount)? / RATE_SCALE
+            .ok_or(LendingError::InvalidAmount)?;
+        base_scaled
+            .checked_add(util_slope_product.checked_div(RATE_SCALE).ok_or(LendingError::InvalidAmount)?)
+            .ok_or(LendingError::InvalidAmount)?
     } else {
-        let pre = base_scaled + kink_scaled
+        // Above kink: base + (kink * slope1) / RATE_SCALE + ((util - kink) * slope2) / RATE_SCALE
+        // Calculate pre-kink component
+        let kink_slope_product = kink_scaled
             .checked_mul(slope1_scaled)
-            .ok_or(LendingError::InvalidAmount)? / RATE_SCALE;
-        let delta = util_scaled - kink_scaled;
-        pre + delta
+            .ok_or(LendingError::InvalidAmount)?;
+        let pre_kink = base_scaled
+            .checked_add(kink_slope_product.checked_div(RATE_SCALE).ok_or(LendingError::InvalidAmount)?)
+            .ok_or(LendingError::InvalidAmount)?;
+        // Calculate post-kink component
+        let delta = util_scaled
+            .checked_sub(kink_scaled)
+            .ok_or(LendingError::InvalidAmount)?;
+        let delta_slope_product = delta
             .checked_mul(slope2_scaled)
-            .ok_or(LendingError::InvalidAmount)? / RATE_SCALE
+            .ok_or(LendingError::InvalidAmount)?;
+        pre_kink
+            .checked_add(delta_slope_product.checked_div(RATE_SCALE).ok_or(LendingError::InvalidAmount)?)
+            .ok_or(LendingError::InvalidAmount)?
     };
 
+    // SECURITY FIX (CRITICAL-001): Use exact seconds per year constant and multiply before dividing
     // simple linear accrual per second on index: index *= (1 + ir_per_sec)
-    // ir_scaled is annualized in fixed-point; convert roughly to per-second
+    // ir_scaled is annualized in fixed-point; convert to per-second with maximum precision
+    const SECONDS_PER_YEAR: u128 = 31_536_000; // Exact: 365 * 24 * 60 * 60
     let seconds = now - market.last_accrued_ts;
-    let per_sec_scaled = ir_scaled / (365u128 * 24 * 60 * 60);
+    
+    // Calculate increment: (accumulated_index * ir_scaled * seconds) / (RATE_SCALE * SECONDS_PER_YEAR)
+    // Multiply all numerators first, then divide by denominator to maximize precision
     let increment = market.accumulated_index
-        .checked_mul(per_sec_scaled)
+        .checked_mul(ir_scaled)
         .ok_or(LendingError::InvalidAmount)?
         .checked_mul(seconds as u128)
         .ok_or(LendingError::InvalidAmount)?
         .checked_div(RATE_SCALE)
+        .ok_or(LendingError::InvalidAmount)?
+        .checked_div(SECONDS_PER_YEAR)
         .ok_or(LendingError::InvalidAmount)?;
 
     market.accumulated_index = market.accumulated_index
@@ -72,9 +108,31 @@ pub mod lending {
     use super::*;
 
     pub fn initialize_market(ctx: Context<InitializeMarket>, params: InitializeMarketParams) -> Result<()> {
-        let market = &mut ctx.accounts.market;
+        // SECURITY FIX (AUDIT-047): Verify interest rate model parameters are reasonable
+        // Base rate: 0 to 100,000 bps (0% to 1000% APY)
         require!(params.base_rate_bps <= 1_000_000, LendingError::InvalidParams);
+        
+        // Slope1: 0 to 1,000,000 bps (0% to 10000% APY per utilization point)
+        require!(params.slope1_bps <= 1_000_000, LendingError::InvalidParams);
+        
+        // Slope2: 0 to 1,000,000 bps (0% to 10000% APY per utilization point)
+        require!(params.slope2_bps <= 1_000_000, LendingError::InvalidParams);
+        
+        // Kink: 0 to 10,000 bps (0% to 100% utilization)
+        require!(params.kink_bps <= 10_000, LendingError::InvalidParams);
+        
+        // SECURITY FIX (AUDIT-048): Verify liquidation threshold is reasonable
+        // Liquidation threshold: 0 to 10,000 bps (0% to 100% LTV)
+        require!(params.liquidation_threshold_bps <= 10_000, LendingError::InvalidParams);
+        
+        // Sanity check: liquidation threshold should be less than 100% (10,000 bps)
+        // and typically between 70-90% for safety
+        require!(
+            params.liquidation_threshold_bps > 0 && params.liquidation_threshold_bps < 10_000,
+            LendingError::InvalidParams
+        );
 
+        let market = &mut ctx.accounts.market;
         market.authority = ctx.accounts.authority.key();
         market.base_mint = ctx.accounts.base_mint.key();
         market.vault = ctx.accounts.vault.key();
@@ -136,7 +194,8 @@ pub mod lending {
             LendingError::NoPauseProposal
         );
         
-        let proposed_at = market.pause_proposed_at.unwrap();
+        // SECURITY FIX: Safe unwrap after checking is_some()
+        let proposed_at = market.pause_proposed_at.ok_or(LendingError::NoPauseProposal)?;
         let clock = Clock::get()?;
         let elapsed = (clock.unix_timestamp as u64).saturating_sub(proposed_at);
         
@@ -194,7 +253,11 @@ pub mod lending {
 
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         let market = &mut ctx.accounts.market;
+        require!(!market.paused, LendingError::Paused);
         require!(amount > 0, LendingError::InvalidAmount);
+
+        // SECURITY FIX: Accrue interest before state changes to ensure accurate exchange rates
+        do_accrue_interest(market)?;
 
         // Burn receipt
         let burn_cpi = Burn {
@@ -222,7 +285,7 @@ pub mod lending {
         Ok(())
     }
 
-    pub fn borrow(ctx: Context<Borrow>, amount: u64) -> Result<()> {
+    pub fn borrow(ctx: Context<BorrowAccounts>, amount: u64) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require!(!market.paused, LendingError::Paused);
         require!(amount > 0, LendingError::InvalidAmount);
@@ -236,9 +299,59 @@ pub mod lending {
             .ok_or(LendingError::InvalidAmount)?;
         require!(amount as i128 <= available, LendingError::InvalidAmount);
 
+        // SECURITY FIX (CRITICAL-002): Track borrower account with weighted average borrow_index
+        // When borrowing multiple times, use weighted average to correctly calculate interest
+        let borrower_account = &mut ctx.accounts.borrower_account;
+        let amount_u128 = amount as u128;
+        
+        // Check if account was just initialized
+        if borrower_account.borrower == Pubkey::default() {
+            borrower_account.borrower = ctx.accounts.user.key();
+            borrower_account.principal = 0;
+            borrower_account.borrow_index = market.accumulated_index; // Track current index
+        } else {
+            // Validate borrower matches signer
+            require!(
+                borrower_account.borrower == ctx.accounts.user.key(),
+                LendingError::Unauthorized
+            );
+            // SECURITY FIX (CRITICAL-002): Calculate weighted average borrow index
+            // When adding to existing debt, calculate: (old_principal * old_index + new_amount * current_index) / (old_principal + new_amount)
+            // This ensures each borrow's interest is calculated from its own borrow time
+            let old_principal = borrower_account.principal;
+            let old_index = borrower_account.borrow_index;
+            let new_principal = old_principal
+                .checked_add(amount_u128)
+                .ok_or(LendingError::InvalidAmount)?;
+            
+            if old_principal > 0 {
+                // Calculate weighted average: (old_principal * old_index + new_amount * current_index) / new_principal
+                let old_weighted = old_principal
+                    .checked_mul(old_index)
+                    .ok_or(LendingError::InvalidAmount)?;
+                let new_weighted = amount_u128
+                    .checked_mul(market.accumulated_index)
+                    .ok_or(LendingError::InvalidAmount)?;
+                let total_weighted = old_weighted
+                    .checked_add(new_weighted)
+                    .ok_or(LendingError::InvalidAmount)?;
+                borrower_account.borrow_index = total_weighted
+                    .checked_div(new_principal)
+                    .ok_or(LendingError::InvalidAmount)?;
+            } else {
+                // No existing principal, use current index
+                borrower_account.borrow_index = market.accumulated_index;
+            }
+        }
+        
+        // Update borrower principal
+        borrower_account.principal = borrower_account.principal
+            .checked_add(amount_u128)
+            .ok_or(LendingError::InvalidAmount)?;
+
         // Update borrowed amount
         market.total_borrowed = market.total_borrowed
-            .checked_add(amount as u128)
+            .checked_add(amount_u128)
             .ok_or(LendingError::InvalidAmount)?;
 
         // Transfer borrowed tokens to user
@@ -263,13 +376,38 @@ pub mod lending {
         require!(!market.paused, LendingError::Paused);
         require!(amount > 0, LendingError::InvalidAmount);
 
-        // Accrue interest before state changes
+        // SECURITY FIX: Accrue interest before state changes
         do_accrue_interest(market)?;
 
-        // Calculate total owed including accrued interest
-        // For simplicity, use accumulated_index to calculate interest
-        // In production, track per-user borrow index
-        let total_owed = amount; // Simplified: assume amount includes interest
+        // SECURITY FIX: Calculate total owed including accrued interest using accumulated_index
+        // total_owed = principal × (current_accumulated_index / user_borrow_index)
+        let borrower_account = &mut ctx.accounts.borrower_account;
+        
+        // Validate borrower matches signer
+        require!(
+            borrower_account.borrower == ctx.accounts.user.key(),
+            LendingError::Unauthorized
+        );
+        
+        // Calculate total owed: principal × (current_index / borrow_index)
+        // Multiply first, then divide to maximize precision
+        let total_owed_u128 = (borrower_account.principal as u128)
+            .checked_mul(market.accumulated_index)
+            .and_then(|v| v.checked_div(borrower_account.borrow_index.max(1))) // Prevent division by zero
+            .ok_or(LendingError::InvalidAmount)?;
+        
+        // Ensure total_owed fits in u64
+        let total_owed_u64 = if total_owed_u128 > u64::MAX as u128 {
+            return Err(LendingError::InvalidAmount.into());
+        } else {
+            total_owed_u128 as u64
+        };
+        
+        // Validate repayment amount doesn't exceed total owed
+        require!(
+            amount <= total_owed_u64,
+            LendingError::InvalidAmount
+        );
 
         // Transfer repayment from user to vault
         let cpi_accounts = Transfer {
@@ -279,15 +417,46 @@ pub mod lending {
         };
         token::transfer(
             CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts),
-            total_owed,
+            amount,
         )?;
 
-        // Update borrowed amount (assuming full repayment for now)
-        // SECURITY FIX: Use saturating_sub to prevent underflow, but log if it happens
+        // SECURITY FIX: Calculate principal repaid based on repayment amount
+        // For partial repayments, calculate the principal portion
+        // principal_repaid = amount × (borrow_index / current_index)
+        let principal_repaid_u128 = if amount >= total_owed_u64 {
+            // Full repayment - repay all principal
+            borrower_account.principal
+        } else {
+            // Partial repayment - calculate principal portion
+            // principal_repaid = amount × (borrow_index / accumulated_index)
+            // SECURITY FIX: Return error on calculation failure instead of silently defaulting to 0
+            (amount as u128)
+                .checked_mul(borrower_account.borrow_index)
+                .and_then(|v| v.checked_div(market.accumulated_index.max(1)))
+                .ok_or(LendingError::InvalidAmount)?
+        };
+        
+        // SECURITY FIX: Validate amounts are sufficient before subtraction to detect accounting errors
+        require!(
+            borrower_account.principal >= principal_repaid_u128,
+            LendingError::InvalidAmount
+        );
+        require!(
+            market.total_borrowed >= principal_repaid_u128,
+            LendingError::InvalidAmount
+        );
+        
+        // Update borrower account
+        borrower_account.principal = borrower_account.principal
+            .checked_sub(principal_repaid_u128)
+            .ok_or(LendingError::InvalidAmount)?;
+        
+        // Update market borrowed amount
         market.total_borrowed = market.total_borrowed
-            .saturating_sub(amount as u128);
+            .checked_sub(principal_repaid_u128)
+            .ok_or(LendingError::InvalidAmount)?;
 
-        emit!(RepayEvent { user: ctx.accounts.user.key(), amount: total_owed });
+        emit!(RepayEvent { user: ctx.accounts.user.key(), amount });
         Ok(())
     }
 }
@@ -373,16 +542,26 @@ pub struct Withdraw<'info> {
 }
 
 #[derive(Accounts)]
-pub struct Borrow<'info> {
+pub struct BorrowAccounts<'info> {
     #[account(mut)]
     pub market: Account<'info, Market>,
     #[account(mut)]
     pub user: Signer<'info>,
+    /// SECURITY FIX: Borrower account - auto-initializes if doesn't exist
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + BorrowerAccount::LEN,
+        seeds = [b"borrower", market.key().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub borrower_account: Account<'info, BorrowerAccount>,
     #[account(mut)]
     pub vault: Account<'info, TokenAccount>,
     #[account(mut)]
     pub user_account: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -391,6 +570,13 @@ pub struct Repay<'info> {
     pub market: Account<'info, Market>,
     #[account(mut)]
     pub user: Signer<'info>,
+    /// SECURITY FIX: Borrower account - tracks principal and borrow_index
+    #[account(
+        mut,
+        seeds = [b"borrower", market.key().as_ref(), user.key().as_ref()],
+        bump
+    )]
+    pub borrower_account: Account<'info, BorrowerAccount>,
     #[account(mut)]
     pub vault: Account<'info, TokenAccount>,
     #[account(mut)]

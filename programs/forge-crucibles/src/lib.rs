@@ -32,6 +32,12 @@ pub mod forge_crucibles {
         ctx: Context<InitializeCrucible>,
         fee_rate: u64, // Fee rate in basis points (e.g., 200 = 0.2% = 2 bps)
     ) -> Result<()> {
+        // SECURITY FIX (AUDIT-011): Validate fee_rate bounds (0-10,000 bps)
+        require!(
+            fee_rate <= 10_000,
+            CrucibleError::InvalidConfig
+        );
+        
         let clock = Clock::get()?;
         let base_mint_key = ctx.accounts.base_mint.key();
         let crucible_key = ctx.accounts.crucible.key();
@@ -44,6 +50,9 @@ pub mod forge_crucibles {
         let base_mint_data = ctx.accounts.base_mint.try_borrow_data()?;
         let base_mint = Mint::try_deserialize(&mut &base_mint_data[..])?;
         drop(base_mint_data);
+        
+        // SECURITY FIX (AUDIT-007): Verify mint decimals match base_mint decimals
+        // This is handled by using base_mint.decimals in initialize_mint call below
         
         // Create crucible authority seeds for signing
         let seeds = &[
@@ -116,6 +125,24 @@ pub mod forge_crucibles {
                 ctx.accounts.rent.to_account_info(),
             ],
         )?;
+        
+        // SECURITY FIX (AUDIT-010): Verify vault mint matches base_mint after initialization
+        // This is ensured by passing base_mint_key to initialize_account above
+        // Additional validation: verify vault account data matches expected mint
+        // Token account structure: [discriminator(8), mint(32), owner(32), amount(8), ...]
+        let vault_data = ctx.accounts.vault.try_borrow_data()?;
+        if vault_data.len() >= 40 {
+            // Extract mint from vault account (offset 8 after discriminator)
+            let vault_mint_bytes: [u8; 32] = vault_data[8..40].try_into()
+                .map_err(|_| CrucibleError::InvalidConfig)?;
+            let vault_mint = Pubkey::try_from(vault_mint_bytes)
+                .map_err(|_| CrucibleError::InvalidConfig)?;
+            require!(
+                vault_mint == base_mint_key,
+                CrucibleError::InvalidConfig
+            );
+        }
+        drop(vault_data);
 
         // Initialize crucible state
         let crucible = &mut ctx.accounts.crucible;
@@ -222,8 +249,9 @@ pub mod forge_crucibles {
     /// Close a standard LP position
     pub fn close_lp_position(
         ctx: Context<CloseLPPosition>,
+        max_slippage_bps: u64,
     ) -> Result<()> {
-        lp::close_lp_position(ctx)
+        lp::close_lp_position(ctx, max_slippage_bps)
     }
 
     /// Create Metaplex Token Metadata for a cToken mint

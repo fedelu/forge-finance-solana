@@ -131,5 +131,7 @@ pub enum CrucibleError {
     InvalidHealthCheck,
     #[msg("Invalid amount - must be greater than zero")]
     InvalidAmount,
+    #[msg("Invalid configuration")]
+    InvalidConfig,
 }
 
