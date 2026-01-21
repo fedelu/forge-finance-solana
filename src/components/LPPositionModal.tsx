@@ -104,7 +104,8 @@ export default function LPPositionModal({
       const positionResult = await openPosition(baseAmt, usdcAmt)
       
       // SECURITY FIX: Validate transaction result before updating local state
-      if (!positionResult || (typeof positionResult === 'object' && !positionResult.position_id)) {
+      // positionResult should be an LPPosition with an id; validate before proceeding
+      if (!positionResult || (typeof positionResult === 'object' && !('id' in positionResult))) {
         throw new Error('Failed to open position: Invalid transaction result')
       }
 
