@@ -129,8 +129,7 @@ export default function LVFPositionModal({
         usdValue: (collateralAfterFee * baseTokenPrice) + borrowedUSDC + depositedUSDC,
         usdcDeposited: depositedUSDC, // USDC deposited (for 1.5x leverage)
         fee: protocolFee, // Protocol fee (1%)
-        borrowedUSDC,
-        transactionData
+        borrowedUSDC
       }
       
       addTransaction(transactionData)
