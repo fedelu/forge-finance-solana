@@ -1,5 +1,0 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="16" cy="16" r="16" fill="#26A4F6"/>
-  <path d="M12.6667 12.6667H19.3333V19.3333H12.6667V12.6667Z" fill="white"/>
-  <text x="16" y="22" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="6" font-weight="bold">USDC</text>
-</svg>

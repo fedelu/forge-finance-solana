@@ -115,6 +115,7 @@ Thumbs.db
 *.so
 *.dll
 *.exe
+*.tsbuildinfo
 
 # Test files
 test-ledger/
