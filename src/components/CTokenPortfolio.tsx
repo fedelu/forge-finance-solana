@@ -220,11 +220,18 @@ export default function CTokenPortfolio() {
   // Calculate total portfolio value
   const totalPortfolioValue = React.useMemo(() => {
     // Calculate wrap positions value from userBalances
+    // Use current cToken value (with exchange rate growth), not original deposit
     const wrapPositions = positions.reduce((sum, pos) => {
       const userBalance = userBalances[pos.crucibleAddress]
-      if (userBalance && userBalance.baseDeposited > 0) {
-        const basePrice = 200 // SOL price
-        return sum + (userBalance.baseDeposited * basePrice)
+      const crucible = getCrucible(pos.crucibleAddress)
+      if (userBalance && userBalance.ptokenBalance > BigInt(0)) {
+        const basePrice = solPrice // Use real-time SOL price
+        const ctokenBalance = Number(userBalance.ptokenBalance) / 1e9
+        // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
+        const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+        // Current value = cToken balance * exchange rate * base price
+        const currentValue = ctokenBalance * exchangeRate * basePrice
+        return sum + currentValue
       }
       return sum
     }, 0)
@@ -232,7 +239,7 @@ export default function CTokenPortfolio() {
     // Calculate LP positions value (allCTokenUSDCPositions includes both LP and leveraged)
     // For "Total Deposited Value", we only count what was actually deposited (excluding borrowed USDC)
     const lpValue = allCTokenUSDCPositions.reduce((sum, pos) => {
-      const basePrice = 200 // SOL price
+      const basePrice = solPrice // Use real-time SOL price
       const tokenCollateralValue = pos.baseAmount * basePrice
       
       // Check if this is a leveraged position (has borrowedUSDC > 0 or leverage > 1)
@@ -259,7 +266,7 @@ export default function CTokenPortfolio() {
     }, 0)
 
     return wrapPositions + lpValue + lendingValue
-  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions])
+  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions, solPrice, getCrucible, crucibles])
 
   // Calculate weighted APY
   const weightedAPY = React.useMemo(() => {
@@ -269,9 +276,12 @@ export default function CTokenPortfolio() {
     // cToken positions
     positions.forEach(pos => {
       const userBalance = userBalances[pos.crucibleAddress]
-      if (userBalance && userBalance.baseDeposited > 0) {
-        const basePrice = 200 // SOL price
-        const value = userBalance.baseDeposited * basePrice
+      const crucible = getCrucible(pos.crucibleAddress)
+      if (userBalance && userBalance.ptokenBalance > BigInt(0)) {
+        const basePrice = solPrice // Use real-time SOL price
+        const ctokenBalance = Number(userBalance.ptokenBalance) / 1e9
+        const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+        const value = ctokenBalance * exchangeRate * basePrice
         totalValue += value
         weightedSum += value * pos.baseAPY
       }
@@ -279,7 +289,7 @@ export default function CTokenPortfolio() {
 
     // LP positions
     allCTokenUSDCPositions.forEach(pos => {
-      const basePrice = 200 // SOL price
+      const basePrice = solPrice // Use real-time SOL price
       const tokenCollateralValue = pos.baseAmount * basePrice
       const isLeveraged = ('borrowedUSDC' in pos && pos.borrowedUSDC > 0) || 
                          ('leverage' in pos && pos.leverage > 1.0) ||
@@ -313,7 +323,7 @@ export default function CTokenPortfolio() {
 
     if (totalValue === 0) return 0
     return weightedSum / totalValue
-  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions, crucibles])
+  }, [positions, userBalances, allCTokenUSDCPositions, lendingPositions, crucibles, solPrice, getCrucible])
 
   // Filter positions: cTOKENS (simple wrap positions)
   const cTokenPositions = React.useMemo(() => {
@@ -410,7 +420,7 @@ export default function CTokenPortfolio() {
                   const userBalance = userBalances[position.crucibleAddress]
                   const crucible = getCrucible(position.crucibleAddress)
                   const ctokenBalance = userBalance?.ptokenBalance ? Number(userBalance.ptokenBalance) / 1e9 : 0
-                  const basePrice = 200 // SOL price
+                  const basePrice = solPrice // Use real-time SOL price
                   // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
                   const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
                   const valueUSD = ctokenBalance * exchangeRate * basePrice
@@ -511,7 +521,7 @@ export default function CTokenPortfolio() {
                 return openPositions.length > 0 ? (
                   openPositions.map((position) => {
                   const crucible = positions.find(p => p.baseTokenSymbol === position.baseToken)
-                  const basePrice = 200 // SOL price
+                  const basePrice = solPrice // Use real-time SOL price
                   
                   // Total collateral includes both token collateral value AND deposited USDC
                   // collateralUSDC already includes both if it was calculated correctly above
@@ -860,7 +870,7 @@ function ClosePositionButton({ position, crucible, onClose }: {
           }
           // Remove LP tokens
           const lpTokenSymbol = `${crucible.ctokenSymbol}/USDC LP`
-          const basePrice = 200 // SOL price
+          const basePrice = solPrice // Use real-time SOL price
           // Use actual exchange rate from getCrucible (scaled by 1e6), default to 1.0
           const crucibleData = getCrucible(crucible.crucibleAddress)
           const currentExchangeRate = crucibleData?.exchangeRate ? Number(crucibleData.exchangeRate) / 1e6 : 1.0
@@ -991,10 +1001,11 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
   const baseBalance = userBalance?.estimatedBaseValue || BigInt(0)
   
   // Collateral = base token value (what you deposited)
-  // For cToken positions: collateral is the value of your cTokens in base tokens
+  // For cToken positions: collateral is the value of your cTokens in base tokens (with exchange rate)
   // For leveraged positions: collateral is the base token amount you deposited
-  const collateralInBaseTokens = userBalance?.baseDeposited || 0
   const ctokenBalanceDisplay = Number(ctokenBalance) / 1e9 // userBalances uses 1e9 scale
+  // Calculate actual collateral value from cToken balance and exchange rate
+  const collateralInBaseTokens = ctokenBalanceDisplay * exchangeRate
   
   // Borrowed amount (only for leveraged positions)
   const borrowedUSDC = leverage?.borrowedAmount && leverage.borrowedAmount > BigInt(0)
