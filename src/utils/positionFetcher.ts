@@ -336,12 +336,6 @@ export async function fetchAllUserPositions(
   }
   
   return results
-    lpPositions: results.lpPositions.length,
-    leveragedPositions: results.leveragedPositions.length,
-    borrowerPositions: results.borrowerPositions.length,
-  })
-  
-  return results
 }
 
 /**
