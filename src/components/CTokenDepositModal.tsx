@@ -298,9 +298,6 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
               )
               
               transaction.add(mintCtokenIx)
-              console.log(`✅ Added mint_ctoken instruction`)
-              console.log(`📝 Program ID: ${programId.toString()}`)
-              console.log(`📝 Treasury: ${treasury.toString()}`)
             } catch (error: any) {
               console.warn('⚠️ Could not add mint_ctoken instruction:', error.message)
               console.warn('Continuing with wrap-only transaction (for testing)')
@@ -312,19 +309,11 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
             transaction.recentBlockhash = blockhash
             transaction.feePayer = publicKey
             
-            console.log(`💸 Wrapping ${depositAmount} SOL to WSOL and minting cSOL...`)
-            console.log(`📝 WSOL Account: ${userWsolAccount.toString()}`)
-            console.log(`📝 Crucible PDA: ${cruciblePDA.toString()}`)
-            console.log(`📝 Vault PDA: ${vaultPDA.toString()}`)
-            console.log(`📝 Amount: ${lamports} lamports`)
-            
             // Send transaction
             const signature = await adapterSendTransaction(transaction, connection, {
               skipPreflight: false,
               maxRetries: 3,
             })
-            
-            console.log(`✅ Transaction sent: ${signature}`)
             
             // Wait for confirmation
             try {
@@ -333,19 +322,16 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                 blockhash,
                 lastValidBlockHeight,
               }, 'confirmed')
-              console.log(`✅ Transaction confirmed: ${signature}`)
             } catch (confirmError) {
               console.warn('Confirmation check failed, verifying transaction status...')
               const status = await connection.getSignatureStatus(signature)
               if (status.value?.err) {
                 throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`)
               }
-              console.log(`✅ Transaction status: ${status.value?.confirmationStatus || 'unknown'}`)
             }
             
             // mint_ctoken instruction was already added to the transaction above
             // No need to call deposit() separately - it's all in one atomic transaction
-            console.log('✅ cSOL minting included in transaction')
             
             // Update local state for UI
             const feeAmount = depositAmount * WRAP_FEE_RATE
@@ -549,9 +535,7 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           
           // For leveraged LP, we still create an LP position but with borrowed USDC
           // The leverage factor is passed to track it
-          console.log('📞 Calling openLeveragedPosition with:', { collateralAmount: baseAmt, leverage, crucibleAddress, baseTokenSymbol, openFeeAmount })
           await openLeveragedPosition(baseAmt, leverage)
-          console.log('✅ openLeveragedPosition completed')
           
           // Track this position in userBalances for exchange rate growth (same as normal wrap)
           // This allows cToken price to increase over time
@@ -560,7 +544,6 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
           
           // LP tokens are calculated by useLPBalance hook
           // This ensures consistency and prevents double counting
-          console.log('✅ Position opened - LP tokens will be calculated by useLPBalance hook')
 
           // Add transaction to analytics
           addTransaction({

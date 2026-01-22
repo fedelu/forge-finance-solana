@@ -234,18 +234,13 @@ export default function CTokenWithdrawModal({
                   unwrapTx.recentBlockhash = blockhash
                   unwrapTx.feePayer = publicKey
                   
-                  console.log(`🔄 Unwrapping WSOL to SOL: ${wsolAccountInfo.amount.toString()} lamports`)
-                  
                   if (adapterSendTransaction) {
                     const unwrapSignature = await adapterSendTransaction(unwrapTx, connection)
                     await connection.confirmTransaction(unwrapSignature, 'confirmed')
-                    console.log('✅ WSOL unwrapped to SOL:', unwrapSignature)
                   }
                 }
               } catch (unwrapError: any) {
-                if (unwrapError.name === 'TokenAccountNotFoundError' || unwrapError.message?.includes('Account not found') || unwrapError.message?.includes('0')) {
-                  console.log('ℹ️ No WSOL account found or 0 balance - nothing to unwrap')
-                } else {
+                if (!(unwrapError.name === 'TokenAccountNotFoundError' || unwrapError.message?.includes('Account not found') || unwrapError.message?.includes('0'))) {
                   console.warn('Warning: Could not unwrap WSOL to SOL:', unwrapError)
                 }
               }

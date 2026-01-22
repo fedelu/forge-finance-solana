@@ -91,7 +91,6 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
   }, [getTokenPrice]);
 
   const addToBalance = useCallback((symbol: string, amount: number) => {
-    console.log(`BalanceContext: Adding ${amount} ${symbol}`);
     setBalances(prev => {
       const existingIndex = prev.findIndex(b => b.symbol === symbol);
       if (existingIndex >= 0) {
@@ -102,17 +101,14 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
           amount: newAmount,
           usdValue: newAmount * getTokenPrice(symbol)
         };
-        console.log(`BalanceContext: Updated ${symbol} to ${newAmount}`);
         return newBalances;
       } else {
-        console.log(`BalanceContext: Added new token ${symbol} with amount ${amount}`);
         return [...prev, { symbol, amount, usdValue: amount * getTokenPrice(symbol) }];
       }
     });
   }, [getTokenPrice]);
 
   const subtractFromBalance = useCallback((symbol: string, amount: number) => {
-    console.log(`BalanceContext: Subtracting ${amount} ${symbol}`);
     setBalances(prev => {
       const existingIndex = prev.findIndex(b => b.symbol === symbol);
       if (existingIndex >= 0) {
@@ -123,10 +119,8 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
           amount: newAmount,
           usdValue: newAmount * getTokenPrice(symbol)
         };
-        console.log(`BalanceContext: Updated ${symbol} to ${newAmount}`);
         return newBalances;
       }
-      console.log(`BalanceContext: Token ${symbol} not found for subtraction`);
       return prev;
     });
   }, [getTokenPrice]);

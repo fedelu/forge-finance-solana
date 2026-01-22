@@ -123,8 +123,7 @@ export default function LendingPage() {
           {userPosition && userPosition.suppliedAmount > 0 && (
             <button
               onClick={() => {
-                // TODO: Open withdraw modal
-                console.log('Withdraw from', market.marketPubkey)
+                // Withdraw functionality requires receipt token tracking - planned feature
               }}
               className="flex-1 px-4 py-3 bg-forge-gray-700 hover:bg-forge-gray-600 text-white rounded-xl font-satoshi font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               disabled={!connected}
@@ -192,8 +191,6 @@ export default function LendingPage() {
           ))}
         </div>
       )}
-
-      {/* TODO: Add Supply/Withdraw Modals */}
     </div>
   )
 }

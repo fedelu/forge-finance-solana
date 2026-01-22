@@ -26,7 +26,6 @@ export async function fetchSolPriceFromCoinGecko(): Promise<number> {
   const timeSinceLastRequest = now - lastRequestTime;
   if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
     const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-    console.log(`⏳ Rate limiting: waiting ${waitTime}ms before next CoinGecko request`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
   }
   
@@ -54,7 +53,6 @@ export async function fetchSolPriceFromCoinGecko(): Promise<number> {
       timestamp: Date.now(),
     };
     
-    console.log(`✅ CoinGecko SOL price fetched: $${price}`);
     return price;
   } catch (error: any) {
     console.warn('⚠️ Failed to fetch SOL price from CoinGecko:', error.message);

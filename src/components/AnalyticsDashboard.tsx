@@ -7,7 +7,6 @@ import { useCrucible } from '../hooks/useCrucible'
 import { getLeveragedPositions } from '../utils/localStorage';
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
-// import { DynamicTokenBalances } from './DynamicTokenBalances'; // Temporarily disabled
 import { 
   ChartBarIcon, 
   CurrencyDollarIcon, 

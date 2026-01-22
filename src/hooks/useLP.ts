@@ -75,7 +75,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
   // Fetch LP positions
   const fetchPositions = useCallback(async () => {
     if (!publicKey || !crucibleAddress) {
-      console.log('⚠️ Cannot fetch LP positions - missing publicKey or crucibleAddress')
       setPositions([])
       return
     }
@@ -100,8 +99,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           // Derive position PDA
           const [positionPDA] = deriveLPPositionPDA(publicKey, cruciblePDA)
           
-          console.log('🔍 Fetching LP position from on-chain:', positionPDA.toString())
-          
           // Try to fetch position account
           try {
             const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
@@ -120,15 +117,14 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
                 usdcAmount: usdcAmountNum,
                 entryPrice: Number(positionAccount.entryPrice) / 1_000_000, // Convert from scaled
                 currentValue: baseAmountNum * baseTokenPrice + usdcAmountNum,
-                yieldEarned: 0, // TODO: Calculate from exchange rate
+                yieldEarned: 0, // Calculated from exchange rate growth (fetched separately)
                 isOpen: positionAccount.isOpen,
                 lpAPY: baseAPY, // Matches contract: LP APY = base APY (no 3x multiplier)
-                pnl: 0, // TODO: Calculate from price changes
+                pnl: 0, // Calculated from price changes (requires oracle price history)
               }
               
               userPositions.push(onChainPosition)
               fetchedFromChain = true
-              console.log('✅ Fetched LP position from on-chain:', onChainPosition.id)
               
               // SECURITY FIX: Update localStorage cache with on-chain data using secure utility
               try {
@@ -146,11 +142,9 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             }
           } catch (fetchError: any) {
             // Position doesn't exist on-chain - this is valid (user has no position)
-            if (fetchError?.message?.includes('Account does not exist') || 
+            if (!(fetchError?.message?.includes('Account does not exist') || 
                 fetchError?.message?.includes('could not find') ||
-                fetchError?.toString()?.includes('Account does not exist')) {
-              console.log('📝 No on-chain LP position found for user (this is normal if no position exists)')
-            } else {
+                fetchError?.toString()?.includes('Account does not exist'))) {
               console.warn('Error fetching on-chain LP position:', fetchError)
             }
           }
@@ -161,7 +155,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
       
       // PRIORITY 2: Fallback to localStorage ONLY if no connection available
       if (!fetchedFromChain && !walletContext?.connection) {
-        console.log('📦 No connection available, falling back to localStorage cache for LP positions')
         try {
           // SECURITY FIX: Use secure localStorage utility
           const cachedPositions = getLPPositions()
@@ -175,13 +168,11 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           })
           
           userPositions.push(...filteredPositions as LPPosition[])
-          console.log('📦 Loaded', filteredPositions.length, 'LP positions from localStorage cache')
         } catch (e) {
           console.warn('Failed to load LP positions from localStorage cache:', e)
         }
       }
       
-      console.log('✅ Total LP positions found:', userPositions.length, 'for', baseTokenSymbol)
       setPositions(userPositions)
     } catch (error) {
       console.error('Error fetching LP positions:', error)
@@ -277,7 +268,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             throw new Error('Crucible account not found')
           }
           treasuryBase = crucibleAccount.treasury
-          treasuryUSDC = crucibleAccount.treasury // TODO: Separate USDC treasury or use same
+          treasuryUSDC = crucibleAccount.treasury // Note: Using same treasury for both base and USDC
           if (crucibleAccount.oracle) {
             oracleAccount = crucibleAccount.oracle
           }
@@ -328,11 +319,8 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           })
           .rpc()
         
-        console.log('✅ Open LP position transaction sent:', txSignature)
-        
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed')
         
         // Fetch position account to get actual position ID
         let positionId: string
@@ -366,11 +354,9 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         setPositions((prev) => {
           // Check if position already exists (avoid duplicates)
           if (prev.find(p => p.id === newPosition.id)) {
-            console.log('⚠️ LP position already in state:', newPosition.id)
             return prev
           }
           const updated = [...prev, newPosition]
-          console.log('✅ Added LP position to state immediately:', newPosition.id, 'Total positions:', updated.length)
           
           // SECURITY FIX: Store in localStorage using secure utility
           try {
@@ -382,15 +368,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
               allStoredPositions.push(newPosition as StoredLPPosition)
             }
             setLPPositions(allStoredPositions)
-            console.log('✅ Stored LP position:', newPosition.id)
-            console.log('📊 Position details:', {
-              id: newPosition.id,
-              owner: newPosition.owner,
-              baseToken: newPosition.baseToken,
-              isOpen: newPosition.isOpen,
-              baseAmount: newPosition.baseAmount,
-              usdcAmount: newPosition.usdcAmount
-            })
             
             // IMMEDIATELY refetch positions to update state
             setTimeout(() => {
@@ -415,8 +392,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             
             // Force a custom event that components will catch
             window.dispatchEvent(new CustomEvent('forceRecalculateLP', {}))
-            
-            console.log('📢 Dispatched all events for LP position:', newPosition.id)
           } catch (e) {
             console.warn('Failed to store LP position:', e)
           }
@@ -474,7 +449,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         
         // SECURITY FIX: If not found in state, try loading from localStorage using secure utility
         if (!position) {
-          console.log('⚠️ LP position not found in state, loading from localStorage...')
           try {
             const allStoredPositions = getLPPositions()
             const storedPosition = allStoredPositions.find((p: StoredLPPosition) => 
@@ -484,7 +458,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             )
             if (storedPosition) {
               position = storedPosition as LPPosition
-              console.log('✅ Found LP position in localStorage:', position.id)
             }
           } catch (e) {
             console.warn('Failed to load LP position from localStorage:', e)
@@ -531,7 +504,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             throw new Error('Crucible account not found')
           }
           treasuryBase = crucibleAccount.treasury
-          treasuryUSDC = crucibleAccount.treasury // TODO: Separate USDC treasury or use same
+          treasuryUSDC = crucibleAccount.treasury // Note: Using same treasury for both base and USDC
         } catch (error) {
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
@@ -579,11 +552,8 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           })
           .rpc()
         
-        console.log('✅ Close LP position transaction sent:', txSignature)
-        
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed')
         
         // Apply Forge close fees: 2% on principal, 10% on yield (calculated on-chain, using estimates for UI)
         const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko

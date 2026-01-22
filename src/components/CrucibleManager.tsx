@@ -483,7 +483,6 @@ function CrucibleCloseButton({
     const handlePositionOpened = (event: CustomEvent) => {
       const detail = event.detail
       if (detail?.crucibleAddress === crucible.id && detail?.baseTokenSymbol === crucible.baseToken) {
-        console.log('🔄 Position opened event detected in CrucibleCloseButton, refetching positions...', detail)
         // Force immediate refetch using refs
         setTimeout(() => {
           refetchLVFRef.current()
@@ -508,13 +507,8 @@ function CrucibleCloseButton({
   const hasLPPosition = lpPositions.some(p => p.isOpen === true || p.isOpen === undefined)
   const hasAnyPosition = hasCTokenPosition || hasLeveragedPosition || hasLPPosition
 
-  // Debug logging
   React.useEffect(() => {
-    console.log('🔍 CrucibleCloseButton state:', {
-      crucible: crucible.id,
-      hasCTokenPosition,
-      hasLeveragedPosition,
-      hasLPPosition,
+    // Component state tracking
       hasAnyPosition,
       leveragedPositionsCount: leveragedPositions.length,
       lpPositionsCount: lpPositions.length,

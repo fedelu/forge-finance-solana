@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
 use crate::state::{Crucible, LPPositionAccount, CrucibleError};
 use crate::lvf::get_oracle_price;
 
-// SECURITY FIX: Extract magic numbers to named constants
+// Fee and scaling constants
 const PRICE_SCALE: u64 = 1_000_000; // Scale for price precision
 const SLIPPAGE_TOLERANCE_BPS: u64 = 100; // 1% slippage tolerance (100 basis points)
 const OPEN_FEE_BPS: u64 = 100; // 1% open fee (100 basis points)
@@ -13,14 +13,10 @@ const CLOSE_FEE_YIELD_BPS: u64 = 1_000; // 10% yield fee (1000 basis points)
 const VAULT_FEE_SHARE_BPS: u64 = 8_000; // 80% vault share (8000 basis points)
 const PROTOCOL_FEE_SHARE_BPS: u64 = 2_000; // 20% protocol share (2000 basis points)
 
-// SECURITY FIX: Minimum amounts to prevent dust attacks
+// Amount bounds to prevent dust and overflow attacks
 const MIN_LP_BASE_AMOUNT: u64 = 1_000; // Minimum base token amount for LP position
 const MIN_LP_USDC_AMOUNT: u64 = 1_000; // Minimum USDC amount for LP position (1 USDC = 1_000_000 lamports)
-
-// SECURITY FIX: Maximum amounts to prevent overflow attacks
-// Maximum base: 1 billion tokens (1_000_000_000 * 10^9 lamports for 9 decimals)
 const MAX_LP_BASE_AMOUNT: u64 = 1_000_000_000_000_000_000; // 1 billion tokens with 9 decimals
-// Maximum USDC: 1 billion USDC (1_000_000_000 * 10^6 lamports for 6 decimals)
 const MAX_LP_USDC_AMOUNT: u64 = 1_000_000_000_000_000; // 1 billion USDC with 6 decimals
 
 pub fn open_lp_position(
@@ -32,21 +28,10 @@ pub fn open_lp_position(
     // Check if crucible is paused
     require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
     
-    // SECURITY FIX: Validate max_slippage_bps is within reasonable bounds (<= 10_000 = 100%)
     require!(
-        max_slippage_bps <= 10_000,
-        CrucibleError::InvalidAmount
-    );
-    
-    // SECURITY FIX: Require minimum amounts to prevent dust attacks
-    require!(
-        base_amount >= MIN_LP_BASE_AMOUNT && usdc_amount >= MIN_LP_USDC_AMOUNT,
-        CrucibleError::InvalidAmount
-    );
-    
-    // SECURITY FIX: Require maximum amounts to prevent overflow attacks
-    require!(
-        base_amount <= MAX_LP_BASE_AMOUNT && usdc_amount <= MAX_LP_USDC_AMOUNT,
+        max_slippage_bps <= 10_000 &&
+        base_amount >= MIN_LP_BASE_AMOUNT && base_amount <= MAX_LP_BASE_AMOUNT &&
+        usdc_amount >= MIN_LP_USDC_AMOUNT && usdc_amount <= MAX_LP_USDC_AMOUNT,
         CrucibleError::InvalidAmount
     );
     
@@ -54,8 +39,7 @@ pub fn open_lp_position(
     let clock = Clock::get()?;
 
     // Get base token price from oracle
-    // Require oracle to be configured for SOL crucible
-    // SECURITY FIX: Validate oracle account matches crucible configuration
+    // Validate oracle account matches crucible configuration
     if let Some(crucible_oracle) = crucible.oracle {
         require!(
             ctx.accounts.oracle.as_ref().map(|o| o.key()) == Some(crucible_oracle),
@@ -79,7 +63,6 @@ pub fn open_lp_position(
     // USDC value is 1:1 (1 USDC = 1 USDC)
     let usdc_value = usdc_amount as u128;
 
-    // SECURITY FIX: Use named constant for slippage tolerance
     let tolerance = base_value
         .checked_mul(SLIPPAGE_TOLERANCE_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
@@ -92,7 +75,6 @@ pub fn open_lp_position(
     }.ok_or(ProgramError::ArithmeticOverflow)?;
 
     // Calculate slippage in basis points
-    // SECURITY FIX: Validate denominator is non-zero before division
     let denominator = base_value.max(usdc_value);
     require!(denominator > 0, CrucibleError::InvalidAmount);
     
@@ -112,13 +94,11 @@ pub fn open_lp_position(
         .checked_add(usdc_value)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX: Calculate open fee using named constants
     let open_fee_usdc = total_position_value
         .checked_mul(OPEN_FEE_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX: Split fee using named constants
     let vault_fee_share = open_fee_usdc
         .checked_mul(VAULT_FEE_SHARE_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
@@ -140,7 +120,7 @@ pub fn open_lp_position(
         .and_then(|v| v.checked_div(total_position_value))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX (MEDIUM-002): Split fees 80/20 with validation to ensure they sum correctly
+    // Split fees 80/20 with validation to ensure they sum correctly
     let vault_fee_base = fee_base_amount
         .checked_mul(80u128)
         .and_then(|v| v.checked_div(100u128))
@@ -154,8 +134,7 @@ pub fn open_lp_position(
     let protocol_fee_usdc = fee_usdc_amount.checked_sub(vault_fee_usdc)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX (MEDIUM-002): Validate fee amounts sum correctly (within rounding tolerance)
-    // Calculate total fee value and compare with expected
+    // Validate fee amounts sum correctly (within rounding tolerance)
     let fee_base_value_check = vault_fee_base
         .checked_add(protocol_fee_base)
         .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -176,8 +155,6 @@ pub fn open_lp_position(
     };
     
     // Validate rounding errors are within tolerance (1 basis point = 0.01%)
-    // SECURITY FIX (MEDIUM-004): Use explicit error handling instead of unwrap_or(0)
-    // Since 10_000 is a constant, division should never fail, but for safety we handle it explicitly
     let tolerance_base = fee_base_amount
         .checked_div(10_000)
         .ok_or(CrucibleError::InvalidAmount)?;
@@ -219,7 +196,6 @@ pub fn open_lp_position(
         .checked_sub(vault_fee_usdc + protocol_fee_usdc)
         .ok_or(ProgramError::ArithmeticOverflow)?;
 
-    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
         CrucibleError::InvalidProgram
@@ -363,7 +339,6 @@ pub fn close_lp_position(
     // Check if crucible is paused
     require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
     
-    // SECURITY FIX: Validate max_slippage_bps is within reasonable bounds (<= 10_000 = 100%)
     require!(
         max_slippage_bps <= 10_000,
         CrucibleError::InvalidAmount
@@ -416,7 +391,6 @@ pub fn close_lp_position(
         entry_total_value.checked_sub(current_total_value)
     }.ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX: Validate denominator is non-zero before division
     require!(entry_total_value > 0, CrucibleError::InvalidAmount);
     
     let slippage_bps = value_diff
@@ -424,7 +398,6 @@ pub fn close_lp_position(
         .and_then(|v| v.checked_div(entry_total_value))
         .ok_or(CrucibleError::InvalidAmount)?;
     
-    // SECURITY FIX: Validate slippage is within user's tolerance
     require!(
         slippage_bps <= max_slippage_bps as u128,
         CrucibleError::SlippageExceeded
@@ -458,7 +431,6 @@ pub fn close_lp_position(
         Some(0u128) // No yield if loss
     }.ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX: Calculate fees using named constants
     let principal_fee_value = initial_total_value
         .checked_mul(CLOSE_FEE_PRINCIPAL_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
@@ -474,7 +446,6 @@ pub fn close_lp_position(
         .checked_add(yield_fee_value)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // SECURITY FIX: Split fees using named constants
     let vault_fee_share_value = total_fee_value
         .checked_mul(VAULT_FEE_SHARE_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
@@ -555,7 +526,6 @@ pub fn close_lp_position(
     ];
     let signer = &[&seeds[..]];
 
-    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
         CrucibleError::InvalidProgram
@@ -602,7 +572,6 @@ pub fn close_lp_position(
         token::transfer(cpi_ctx, protocol_fee_base)?;
     }
     
-    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
         CrucibleError::InvalidProgram
@@ -706,13 +675,13 @@ pub struct OpenLPPosition<'info> {
     /// CHECK: Optional oracle account for price feeds
     /// If provided, must match crucible.oracle
     pub oracle: Option<UncheckedAccount<'info>>,
-    /// SECURITY FIX: Validate treasury_base is a TokenAccount for base_mint
+    /// Treasury account for base mint
     #[account(
         mut,
         constraint = treasury_base.mint == base_mint.key() @ CrucibleError::InvalidTreasury
     )]
     pub treasury_base: Account<'info, TokenAccount>,
-    /// SECURITY FIX: Validate treasury_usdc is a TokenAccount for USDC
+    /// Treasury account for USDC
     #[account(
         mut,
         constraint = treasury_usdc.mint == user_usdc_account.mint @ CrucibleError::InvalidTreasury

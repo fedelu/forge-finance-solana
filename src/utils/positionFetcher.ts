@@ -108,7 +108,6 @@ export async function fetchCTokenBalance(
     const crucibleAccount = await fetchCrucibleDirect(connection, crucibleAddress.toString())
     
     if (!crucibleAccount) {
-      console.log('Crucible account not found:', crucibleAddress.toString())
       return null
     }
     
@@ -134,20 +133,11 @@ export async function fetchCTokenBalance(
       const ctokenSupply = await fetchCTokenSupply(connection, ctokenMint.toString())
       const realExchangeRate = calculateRealExchangeRate(vaultBalance, ctokenSupply)
       exchangeRate = BigInt(Math.floor(realExchangeRate * 1_000_000))
-      
-      console.log('✅ Fetched cToken balance:', {
-        user: userPublicKey.toString(),
-        balance: Number(balance) / 1e9,
-        exchangeRate: Number(exchangeRate) / 1e6,
-        vaultBalance: Number(vaultBalance) / 1e9,
-        ctokenSupply: Number(ctokenSupply) / 1e9,
-      })
     } catch (tokenError: any) {
       // Token account doesn't exist - user has no balance
       if (tokenError?.message?.includes('could not find') || 
           tokenError?.message?.includes('Account does not exist') ||
           tokenError?.message?.includes('invalid account')) {
-        console.log('User has no cToken account (no position)')
         return null
       }
       console.warn('Error fetching token balance:', tokenError)
@@ -345,8 +335,7 @@ export async function fetchAllUserPositions(
     results.borrowerPositions.push(borrowerPosition)
   }
   
-  console.log('📊 Fetched all user positions:', {
-    cTokenBalances: results.cTokenBalances.length,
+  return results
     lpPositions: results.lpPositions.length,
     leveragedPositions: results.leveragedPositions.length,
     borrowerPositions: results.borrowerPositions.length,

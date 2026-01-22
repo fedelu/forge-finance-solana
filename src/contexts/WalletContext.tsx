@@ -145,7 +145,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     // This function is kept for backward compatibility but the actual connection
     // should be done through the WalletMultiButton component
     if (adapterConnected && adapterPublicKey) {
-      console.log('✅ Wallet already connected:', adapterPublicKey.toString());
       return;
     }
 
@@ -168,7 +167,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     // Wait for adapter to initialize if it's not ready yet (with timeout)
     // Note: adapterWallet might be null initially until a wallet is selected
     if (!adapterWallet?.adapter) {
-      console.log('⏳ Wallet adapter not ready yet. Please use the wallet connection button in the header to select a wallet.');
       const errorMessage = 'Please use the wallet connection button in the header to connect your wallet. The adapter will be ready once you select a wallet.';
       setWalletStatus(prev => ({
         ...prev,
@@ -200,7 +198,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         isUnlocked: false,
         error: undefined
       }));
-      console.log('🔌 Wallet disconnected');
     } catch (error) {
       console.error('❌ Wallet disconnect failed:', error);
     }
@@ -233,7 +230,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
     try {
       // This is a simplified version - in a real app you'd use SPL Token functions
-      console.log('Token balance check for mint:', mintAddress);
       return 0; // Placeholder
     } catch (error) {
       console.error('❌ Failed to get token balance:', error);
@@ -301,7 +297,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Wait for confirmation
       await connection.confirmTransaction(signature, 'confirmed');
       
-      console.log('✅ Transaction sent successfully:', signature);
       return signature;
     } catch (error: any) {
       console.error('❌ Transaction failed:', error);

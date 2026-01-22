@@ -54,11 +54,8 @@ export const usePhantomWallet = () => {
     const detectProvider = () => {
       // Only run in browser
       if (typeof window === 'undefined') {
-        console.log('🔍 usePhantomWallet: Server-side rendering detected, skipping provider detection');
         return;
       }
-
-      console.log('🔍 usePhantomWallet: Detecting Phantom provider...');
 
       try {
         // Check if window.solana exists
@@ -85,8 +82,6 @@ export const usePhantomWallet = () => {
           return;
         }
 
-        console.log('✅ usePhantomWallet: Phantom provider detected');
-        
         const provider = window.solana as any;
         
         // Check if already connected
@@ -102,10 +97,6 @@ export const usePhantomWallet = () => {
           publicKey,
           error: null
         }));
-
-        if (isConnected && publicKey) {
-          console.log('✅ usePhantomWallet: Already connected to:', publicKey.toString());
-        }
 
       } catch (error: any) {
         console.error('❌ usePhantomWallet: Error detecting provider:', error);
@@ -134,7 +125,6 @@ export const usePhantomWallet = () => {
     // Check periodically for provider injection (with timeout)
     const checkInterval = setInterval(() => {
       if (mountedRef.current && !state.isInstalled && typeof window !== 'undefined' && window.solana?.isPhantom) {
-        console.log('🔄 usePhantomWallet: Provider detected after initial check');
         detectProvider();
         clearInterval(checkInterval);
       }
@@ -155,7 +145,6 @@ export const usePhantomWallet = () => {
   // Connect to Phantom wallet
   const connect = useCallback(async (): Promise<void> => {
     if (connectingRef.current) {
-      console.log('⚠️ usePhantomWallet: Connection already in progress, ignoring duplicate request');
       return;
     }
 
@@ -167,7 +156,6 @@ export const usePhantomWallet = () => {
     }
 
     if (state.connected) {
-      console.log('✅ usePhantomWallet: Already connected');
       return;
     }
 
@@ -175,16 +163,12 @@ export const usePhantomWallet = () => {
     setState(prev => ({ ...prev, connecting: true, error: null }));
 
     try {
-      console.log('🔌 usePhantomWallet: Attempting to connect to Phantom...');
-      
       // Attempt connection
       const response = await state.provider.connect();
       
       if (!response?.publicKey) {
         throw new Error('Failed to get public key from wallet connection');
       }
-
-      console.log('✅ usePhantomWallet: Successfully connected to:', response.publicKey.toString());
 
       if (mountedRef.current) {
         setState(prev => ({
@@ -214,15 +198,11 @@ export const usePhantomWallet = () => {
   // Disconnect from Phantom wallet
   const disconnect = useCallback(async (): Promise<void> => {
     if (!state.provider || !state.connected) {
-      console.log('⚠️ usePhantomWallet: Not connected, nothing to disconnect');
       return;
     }
 
     try {
-      console.log('🔌 usePhantomWallet: Disconnecting from Phantom...');
       await state.provider.disconnect();
-      
-      console.log('✅ usePhantomWallet: Successfully disconnected');
       
       if (mountedRef.current) {
         setState(prev => ({
@@ -253,12 +233,9 @@ export const usePhantomWallet = () => {
     }
 
     try {
-      console.log('✍️ usePhantomWallet: Signing message...');
-      
       const msg = new TextEncoder().encode(message);
       const { signature } = await state.provider.signMessage(msg, 'utf8');
       
-      console.log('✅ usePhantomWallet: Message signed successfully');
       return signature;
 
     } catch (error: any) {

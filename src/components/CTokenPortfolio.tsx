@@ -68,38 +68,20 @@ export default function CTokenPortfolio() {
   // Listen for position opened/closed events to refresh - IMMEDIATE
   React.useEffect(() => {
     const handlePositionChange = (event?: CustomEvent) => {
-      console.log('🔄 Portfolio: Position changed event received', event?.type, event?.detail)
-      console.log('   Current positions - SOL LVF:', solLVFPosition.positions.length)
-      console.log('   Current positions - SOL LP:', solLP.positions.length)
-      
-      // Trigger refresh IMMEDIATELY - localStorage is already updated
+      // Trigger refresh - localStorage is already updated
       // Use refs to avoid dependency issues
       solLVFRefetchRef.current()
       solLPRefetchRef.current()
-      
       setRefreshKey(prev => prev + 1)
       
-      // Also refresh after delays to catch edge cases
-      setTimeout(() => {
-        console.log('🔄 Portfolio: Refreshing after 100ms...')
+      // Single delayed refresh to catch any async updates
+      const timeoutId = setTimeout(() => {
         solLVFRefetchRef.current()
         solLPRefetchRef.current()
         setRefreshKey(prev => prev + 1)
-      }, 100)
+      }, 200)
       
-      setTimeout(() => {
-        console.log('🔄 Portfolio: Refreshing after 500ms...')
-        solLVFRefetchRef.current()
-        solLPRefetchRef.current()
-        setRefreshKey(prev => prev + 1)
-      }, 500)
-      
-      setTimeout(() => {
-        console.log('🔄 Portfolio: Refreshing after 1000ms...')
-        solLVFRefetchRef.current()
-        solLPRefetchRef.current()
-        setRefreshKey(prev => prev + 1)
-      }, 1000)
+      return () => clearTimeout(timeoutId)
     }
     
     window.addEventListener('lvfPositionOpened', handlePositionChange as EventListener)
@@ -135,7 +117,6 @@ export default function CTokenPortfolio() {
         ...p, 
         crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
       }))
-    console.log('📊 Portfolio - SOL LVF positions:', sol.length, sol.map(p => ({ id: p.id, token: p.token, isOpen: p.isOpen })))
     return sol
   }, [solLVFPosition.positions, positions])
 
@@ -147,7 +128,6 @@ export default function CTokenPortfolio() {
         ...p, 
         crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
       }))
-    console.log('📊 Portfolio - SOL LP positions:', sol.length, sol.map(p => ({ id: p.id, baseToken: p.baseToken, isOpen: p.isOpen })))
     return sol
   }, [solLP.positions, positions])
 
@@ -168,16 +148,11 @@ export default function CTokenPortfolio() {
 
   // Combine all LP and leveraged positions for cTOKENS/USDC section
   const allCTokenUSDCPositions = React.useMemo(() => {
-    console.log('🔄 Calculating allCTokenUSDCPositions...')
-    console.log('   allLPPositions:', allLPPositions.length, allLPPositions.map(p => ({ id: p.id, isOpen: p.isOpen })))
-    console.log('   allLVFPositions:', allLVFPositions.length, allLVFPositions.map(p => ({ id: p.id, isOpen: p.isOpen })))
-    
     // Map LP positions to show with leverage info
     const lpWithDetails = allLPPositions
       .filter(lp => {
         const isOpen = lp.isOpen === true || lp.isOpen === undefined // Treat undefined as open for backwards compatibility
         const hasValidData = lp.baseAmount > 0 && lp.usdcAmount > 0
-        console.log('   LP position:', lp.id, 'isOpen:', lp.isOpen, 'hasValidData:', hasValidData, 'filtered:', isOpen && hasValidData)
         return isOpen && hasValidData
       })
       .map(lp => ({
@@ -187,14 +162,11 @@ export default function CTokenPortfolio() {
         collateralUSDC: lp.usdcAmount,
       }))
     
-    console.log('   lpWithDetails after filter:', lpWithDetails.length, lpWithDetails.map(p => ({ id: p.id, baseAmount: p.baseAmount, usdcAmount: p.usdcAmount })))
-    
     // Map leveraged positions
     const lvfWithDetails = allLVFPositions
       .filter(lvf => {
         const isOpen = lvf.isOpen === true || lvf.isOpen === undefined // Treat undefined as open
         const hasValidData = lvf.collateral > 0
-        console.log('   LVF position:', lvf.id, 'isOpen:', lvf.isOpen, 'hasValidData:', hasValidData, 'filtered:', isOpen && hasValidData)
         return isOpen && hasValidData
       })
       .map(lvf => {
@@ -242,7 +214,6 @@ export default function CTokenPortfolio() {
       })
     
     const combined = [...lpWithDetails, ...lvfWithDetails]
-    console.log('   Final allCTokenUSDCPositions:', combined.length, combined)
     return combined
   }, [allLPPositions, allLVFPositions])
 
@@ -537,7 +508,6 @@ export default function CTokenPortfolio() {
             <tbody>
               {(() => {
                 const openPositions = allCTokenUSDCPositions.filter(p => p.isOpen)
-                console.log('📋 Portfolio table - open positions:', openPositions.length, openPositions)
                 return openPositions.length > 0 ? (
                   openPositions.map((position) => {
                   const crucible = positions.find(p => p.baseTokenSymbol === position.baseToken)

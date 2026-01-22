@@ -148,7 +148,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
     }
     
     if (!currentPublicKey || !crucibleAddress) {
-      console.log('⚠️ Cannot fetch positions - missing publicKey or crucibleAddress')
       setPositions([])
       return
     }
@@ -172,8 +171,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           
           // Derive position PDA using the new function
           const [positionPDA] = deriveLeveragedPositionPDA(currentPublicKey, cruciblePDA)
-          
-          console.log('🔍 Fetching LVF position from on-chain:', positionPDA.toString())
           
           // Try to fetch position account from on-chain
           try {
@@ -205,7 +202,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
               
               userPositions.push(onChainPosition)
               fetchedFromChain = true
-              console.log('✅ Fetched LVF position from on-chain:', onChainPosition.id)
               
               // SECURITY FIX: Update localStorage cache with on-chain data using secure utility
               try {
@@ -224,11 +220,9 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           } catch (fetchError: any) {
             // Position doesn't exist on-chain - this is valid (user has no position)
             // Check if it's an "Account does not exist" error which is expected
-            if (fetchError?.message?.includes('Account does not exist') || 
+            if (!(fetchError?.message?.includes('Account does not exist') || 
                 fetchError?.message?.includes('could not find') ||
-                fetchError?.toString()?.includes('Account does not exist')) {
-              console.log('📝 No on-chain LVF position found for user (this is normal if no position exists)')
-            } else {
+                fetchError?.toString()?.includes('Account does not exist'))) {
               console.warn('Error fetching on-chain position:', fetchError)
             }
           }
@@ -240,7 +234,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       // PRIORITY 2: Fallback to localStorage ONLY if on-chain fetch failed due to connection issues
       // (not if position simply doesn't exist on-chain)
       if (!fetchedFromChain && !walletContext?.connection) {
-        console.log('📦 No connection available, falling back to localStorage cache')
         try {
           // SECURITY FIX: Use secure localStorage utility
           const storedPositions = getLeveragedPositions()
@@ -262,13 +255,11 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           })
           
           userPositions.push(...cachedPositions as LeveragedPosition[])
-          console.log('📦 Loaded', cachedPositions.length, 'positions from localStorage cache')
         } catch (e) {
           console.warn('Failed to load positions from localStorage cache:', e)
         }
       }
       
-      console.log('✅ Total LVF positions found:', userPositions.length, 'for', baseTokenSymbol)
       setPositions(userPositions)
     } catch (error) {
       console.error('Error fetching LVF positions:', error)
@@ -281,8 +272,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
   // Open a leveraged position
   const openPosition = useCallback(
     async (collateralAmount: number, leverageFactor: number) => {
-      console.log('🚀 openPosition called with:', { collateralAmount, leverageFactor, crucibleAddress, baseTokenSymbol })
-      
       // Use the publicKey from the hook level (already extracted from contexts)
       // Prioritize sessionContext FIRST (most reliable)
       let currentPublicKey: PublicKey | null = null
@@ -292,10 +281,8 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         try {
           if (sessionContext.walletPublicKey instanceof PublicKey) {
             currentPublicKey = sessionContext.walletPublicKey
-            console.log('✅ Using walletPublicKey from sessionContext (LVF):', currentPublicKey.toString())
           } else if (typeof sessionContext.walletPublicKey === 'string') {
             currentPublicKey = new PublicKey(sessionContext.walletPublicKey)
-            console.log('✅ Converted walletPublicKey string from sessionContext (LVF):', currentPublicKey.toString())
           } else if (typeof sessionContext.walletPublicKey === 'object' && sessionContext.walletPublicKey !== null) {
             // Handle serialized PublicKey object (e.g., {_bn: ...})
             if ('_bn' in sessionContext.walletPublicKey || 'toBase58' in sessionContext.walletPublicKey || 'toString' in sessionContext.walletPublicKey) {
@@ -303,7 +290,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
                               sessionContext.walletPublicKey.toBase58 ? sessionContext.walletPublicKey.toBase58() : 
                               String(sessionContext.walletPublicKey)
               currentPublicKey = new PublicKey(pkString)
-              console.log('✅ Converted walletPublicKey object from sessionContext (LVF):', currentPublicKey.toString())
             }
           }
         } catch (e) {
@@ -314,33 +300,18 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       // SECOND PRIORITY: Fallback to hook-level publicKey
       if (!currentPublicKey && publicKey) {
         currentPublicKey = publicKey
-        console.log('✅ Using hook-level publicKey (LVF):', currentPublicKey.toString())
       }
       
       // THIRD PRIORITY: Fallback to wallet context
       if (!currentPublicKey && walletContext?.publicKey) {
         currentPublicKey = walletContext.publicKey
-        console.log('✅ Using walletContext publicKey (LVF):', currentPublicKey.toString())
       }
       
       if (!currentPublicKey) {
-        const debugInfo = {
-          hookPublicKey: publicKey?.toString?.() || publicKey || 'null',
-          sessionContextExists: !!sessionContext,
-          sessionWalletPublicKey: sessionContext?.walletPublicKey?.toString?.() || sessionContext?.walletPublicKey || 'undefined',
-          sessionWalletPublicKeyType: typeof sessionContext?.walletPublicKey,
-          walletContextExists: !!walletContext,
-          walletContextPublicKey: walletContext?.publicKey?.toString?.() || walletContext?.publicKey || 'undefined'
-        }
-        console.error('❌ Wallet connection check failed (LVF):', debugInfo)
         throw new Error('Wallet not connected. Please connect your wallet first.')
       }
       
-      console.log('✅ Wallet connection verified (LVF):', currentPublicKey.toString())
-      console.log('📋 Crucible info check:', { crucibleAddress, baseTokenSymbol, hasCrucible: !!crucibleAddress })
-      
       if (!crucibleAddress) {
-        console.error('❌ Crucible information missing!')
         throw new Error('Crucible information missing')
       }
 
@@ -459,11 +430,8 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           })
           .rpc()
         
-        console.log('✅ Open leveraged position transaction sent:', txSignature)
-        
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed')
         
         // Fetch position account to get actual position data
         let actualPosition: any
@@ -472,8 +440,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         } catch (error) {
           console.warn('Could not fetch position account:', error)
         }
-        
-        console.log('✅ Position created on-chain')
 
         // Use position PDA as ID
         const positionTimestamp = Date.now()
@@ -502,8 +468,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           isOpen: true,
           health: 200, // 2.0 = safe
         }
-
-        console.log('📦 Creating position object:', newPosition)
         
         // SECURITY FIX: Store to localStorage FIRST using secure utility
         // This ensures components can read it when events fire
@@ -516,7 +480,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             allStoredPositions.push(newPosition as StoredLeveragedPosition)
           }
           setLeveragedPositions(allStoredPositions)
-          console.log('✅ Stored leveraged position to localStorage:', newPosition.id, 'Total stored:', allStoredPositions.length)
         } catch (e) {
           console.error('❌ Failed to store position to localStorage:', e)
           throw e // Don't continue if we can't save
@@ -528,19 +491,9 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const collateralValueUSDNet = collateralAfterFee * baseTokenPrice
         const totalTVLIncreaseUSD = collateralValueUSDNet + borrowedUSDC
         
-        console.log('📊 Updating crucible TVL:', {
-          crucibleAddress,
-          collateralValueUSD,
-          borrowedUSDC,
-          totalTVLIncreaseUSD,
-          hasCrucibleContext: !!crucibleContext,
-          hasCrucibleHook: !!crucibleHook
-        })
-        
         // Update via useCrucible hook (main system used by CrucibleManager)
         if (crucibleHook?.updateCrucibleTVL) {
           crucibleHook.updateCrucibleTVL(crucibleAddress, totalTVLIncreaseUSD)
-          console.log('📊 Updated crucible TVL via hook:', crucibleAddress, 'added:', totalTVLIncreaseUSD)
         }
         
         // Also try CrucibleContext (legacy)
@@ -551,15 +504,11 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Update React state SECOND (like wrapTokens does with userBalances)
         // This makes the position immediately visible in the portfolio
         setPositions((prev) => {
-          console.log('🔄 setPositions callback called, prev positions:', prev.length, prev.map(p => p.id))
           // Check if position already exists (avoid duplicates)
           if (prev.find(p => p.id === newPosition.id)) {
-            console.log('⚠️ Position already in state:', newPosition.id)
             return prev
           }
-          const updated = [...prev, newPosition]
-          console.log('✅ Added position to state immediately:', newPosition.id, 'Total positions:', updated.length)
-          return updated
+          return [...prev, newPosition]
         })
         
         // IMMEDIATELY dispatch events to trigger wallet and portfolio updates
@@ -576,19 +525,11 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Force a custom event that components will catch
         window.dispatchEvent(new CustomEvent('forceRecalculateLP', {}))
         
-        // Refetch positions immediately to ensure portfolio sees it
-        // Force immediate refetch after state update (multiple attempts to ensure it works)
+        // Refetch positions to ensure portfolio sees it
+        // Use a single delayed refetch to allow state to propagate
         setTimeout(() => {
-          console.log('🔄 Refetching positions after opening (50ms)...')
           fetchPositionsRef.current?.()
-        }, 50)
-        
-        setTimeout(() => {
-          console.log('🔄 Refetching positions after opening (200ms)...')
-          fetchPositionsRef.current?.()
-        }, 200)
-        
-        console.log('📢 Dispatched events for position:', newPosition.id)
+        }, 100)
         
         return newPosition
       } catch (error: any) {
@@ -612,10 +553,8 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         try {
           if (sessionContext.walletPublicKey instanceof PublicKey) {
             currentPublicKey = sessionContext.walletPublicKey
-            console.log('✅ Using walletPublicKey from sessionContext (close LVF):', currentPublicKey.toString())
           } else if (typeof sessionContext.walletPublicKey === 'string') {
             currentPublicKey = new PublicKey(sessionContext.walletPublicKey)
-            console.log('✅ Converted walletPublicKey string from sessionContext (close LVF):', currentPublicKey.toString())
           } else if (typeof sessionContext.walletPublicKey === 'object' && sessionContext.walletPublicKey !== null) {
             // Handle serialized PublicKey object (e.g., {_bn: ...})
             if ('_bn' in sessionContext.walletPublicKey || 'toBase58' in sessionContext.walletPublicKey || 'toString' in sessionContext.walletPublicKey) {
@@ -623,7 +562,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
                               sessionContext.walletPublicKey.toBase58 ? sessionContext.walletPublicKey.toBase58() : 
                               String(sessionContext.walletPublicKey)
               currentPublicKey = new PublicKey(pkString)
-              console.log('✅ Converted walletPublicKey object from sessionContext (close LVF):', currentPublicKey.toString())
             }
           }
         } catch (e) {
@@ -634,29 +572,16 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       // Fallback to hook-level publicKey
       if (!currentPublicKey && publicKey) {
         currentPublicKey = publicKey
-        console.log('✅ Using publicKey from hook level (close LVF):', currentPublicKey.toString())
       }
       
       // Fallback to wallet context
       if (!currentPublicKey && walletContext?.publicKey) {
         currentPublicKey = walletContext.publicKey
-        console.log('✅ Using publicKey from walletContext (close LVF):', currentPublicKey.toString())
       }
       
       if (!currentPublicKey) {
-        // Log debug info before throwing
-        console.error('❌ Wallet not connected (close LVF). Debug info:', {
-          sessionContextExists: !!sessionContext,
-          sessionWalletPublicKey: sessionContext?.walletPublicKey,
-          sessionWalletPublicKeyType: typeof sessionContext?.walletPublicKey,
-          hookPublicKey: publicKey?.toString?.() || publicKey || 'null',
-          walletContextExists: !!walletContext,
-          walletContextPublicKey: walletContext?.publicKey?.toString?.() || walletContext?.publicKey || 'undefined'
-        })
         throw new Error('Wallet not connected. Please connect your wallet first.')
       }
-      
-      console.log('✅ Wallet connection verified (close LVF):', currentPublicKey.toBase58())
 
       setLoading(true)
       try {
@@ -665,7 +590,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         
         // SECURITY FIX: If not found in state, try loading from localStorage using secure utility
         if (!position) {
-          console.log('⚠️ Position not found in state, loading from localStorage...')
           try {
             const allStoredPositions = getLeveragedPositions()
             const storedPosition = allStoredPositions.find((p: StoredLeveragedPosition) => 
@@ -675,7 +599,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             )
             if (storedPosition) {
               position = storedPosition as LeveragedPosition
-              console.log('✅ Found position in localStorage:', position.id)
             }
           } catch (e) {
             console.warn('Failed to load position from localStorage:', e)
@@ -705,29 +628,16 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const isPartialClose = partialAmount !== undefined && partialAmount > 0 && partialAmount < (position.collateral - tolerance)
         const amountToClose = isPartialClose ? partialAmount : position.collateral
         const proportion = isPartialClose ? amountToClose / position.collateral : 1.0
-        
-        console.log('🔍 Position close calculation:', {
-          positionId,
-          partialAmount,
-          positionCollateral: position.collateral,
-          difference: position.collateral - (partialAmount || 0),
-          isPartialClose,
-          amountToClose,
-          proportion,
-          willClosePartial: isPartialClose,
-          willCloseFull: !isPartialClose
-        })
 
         // Calculate base tokens to return (collateral value + APY earnings)
         const baseTokenPriceForClose = solPrice // Use real-time SOL price from CoinGecko
         
         // Use actual on-chain exchange rate (no frontend simulation)
-        // TODO: Fetch current exchange rate from on-chain crucible account
         // Exchange rate grows as fees accrue on-chain
         const initialExchangeRate = 1.0 // Initial rate when position was opened (1:1)
         
         // Fetch actual current exchange rate from on-chain
-        // For now, use crucible's exchange rate or calculate from vault/cToken supply
+        // Calculated from vault balance / cToken supply
         const crucibleData = crucibleHook?.getCrucible(crucibleAddress)
         const currentExchangeRateOnChain = crucibleData?.exchangeRate 
           ? Number(crucibleData.exchangeRate) / 1_000_000 // Convert from scaled format
@@ -920,20 +830,15 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           })
           .rpc()
         
-        console.log('✅ Close leveraged position transaction sent:', txSignature)
-        
         // Wait for confirmation
-        const confirmation = await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed:', confirmation)
+        await connection.confirmTransaction(txSignature, 'confirmed')
         
         // Verify position is actually closed on-chain
         try {
           const positionAccountAfter = await (program.account as any).leveragedPosition.fetch(positionPDA)
           if (positionAccountAfter.isOpen) {
-            console.error('⚠️ Position still marked as open after close transaction!')
             throw new Error('Position was not closed on-chain. Transaction may have failed.')
           }
-          console.log('✅ Position confirmed closed on-chain (isOpen = false)')
         } catch (verifyError: any) {
           // If position account doesn't exist or fetch fails, check transaction logs
           console.error('Error verifying position closure:', verifyError)
@@ -944,15 +849,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             throw new Error(`Transaction failed: ${JSON.stringify(txStatus.value.err)}`)
           }
         }
-        
-        console.log('💰 Repaid borrowed USDC via CPI:', totalOwedUSDC)
-        console.log('💰 Fees charged (matching contract):', {
-          principalFee: principalFeeTokens,
-          yieldFee: yieldFeeTokens,
-          totalFee: totalFeeTokens,
-          vaultFeeShare: vaultFeeShare, // 80% stays in vault for yield
-          protocolFeeShare: protocolFeeShare // 20% transferred to treasury
-        })
 
         // Unwrap WSOL to SOL if baseToken is SOL (contract returns WSOL)
         if (baseTokenSymbol === 'SOL' && currentPublicKey && connection) {
@@ -976,19 +872,14 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
                 unwrapTx.recentBlockhash = blockhash
                 unwrapTx.feePayer = currentPublicKey
                 
-                console.log(`🔄 Unwrapping WSOL to SOL: ${wsolAccountInfo.amount.toString()} lamports`)
-                
                 if (walletContext?.sendTransaction) {
                   const unwrapSignature = await walletContext.sendTransaction(unwrapTx, connection)
                   await connection.confirmTransaction(unwrapSignature, 'confirmed')
-                  console.log('✅ WSOL unwrapped to SOL:', unwrapSignature)
                 }
               }
             } catch (unwrapError: any) {
               // If account doesn't exist or is empty, that's fine - no WSOL to unwrap
-              if (unwrapError.name === 'TokenAccountNotFoundError' || unwrapError.message?.includes('Account not found') || unwrapError.message?.includes('0')) {
-                console.log('ℹ️ No WSOL account found or 0 balance - nothing to unwrap')
-              } else {
+              if (!(unwrapError.name === 'TokenAccountNotFoundError' || unwrapError.message?.includes('Account not found') || unwrapError.message?.includes('0'))) {
                 console.warn('Warning: Could not unwrap WSOL to SOL:', unwrapError)
                 // Don't throw - contract already transferred tokens, unwrap is optional
               }
@@ -1007,7 +898,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Update via useCrucible hook (main system)
         if (crucibleHook?.updateCrucibleTVL) {
           crucibleHook.updateCrucibleTVL(crucibleAddress, -totalTVLDecreaseUSD)
-          console.log('📊 Updated crucible TVL (decreased) via hook:', crucibleAddress, 'decreased:', totalTVLDecreaseUSD)
         }
         
         // Also try CrucibleContext (legacy)
@@ -1041,7 +931,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
                 p.id === positionId ? updatedPosition as StoredLeveragedPosition : p
               )
               setLeveragedPositions(updatedAll)
-              console.log('✅ Updated leveraged position (partial close):', positionId, 'Remaining collateral:', remainingCollateral)
             } catch (e) {
               console.warn('Failed to update positions:', e)
             }
@@ -1055,7 +944,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
               const allStoredPositions = getLeveragedPositions()
               const filteredAll = allStoredPositions.filter((p: StoredLeveragedPosition) => p.id !== positionId)
               setLeveragedPositions(filteredAll)
-              console.log('✅ Removed leveraged position (full close):', positionId)
             } catch (e) {
               console.warn('Failed to update positions:', e)
             }
@@ -1065,7 +953,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         
         // Refetch positions immediately to update portfolio
         setTimeout(() => {
-          console.log('🔄 Refetching positions after closing...')
           fetchPositionsRef.current?.()
         }, 100)
         
@@ -1155,7 +1042,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       const detail = event.detail
       // Only refetch if the event is for this crucible/token
       if (detail?.crucibleAddress === crucibleAddress && detail?.baseTokenSymbol === baseTokenSymbol) {
-        console.log('🔄 Position opened event received, refetching positions...', detail)
         setTimeout(() => {
           fetchPositionsRef.current?.()
         }, 100)
@@ -1166,7 +1052,6 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
       const detail = event.detail
       // Only refetch if the event is for this crucible/token
       if (detail?.crucibleAddress === crucibleAddress && detail?.baseTokenSymbol === baseTokenSymbol) {
-        console.log('🔄 Position closed event received, refetching positions...', detail)
         setTimeout(() => {
           fetchPositionsRef.current?.()
         }, 100)

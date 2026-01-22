@@ -39,10 +39,6 @@ export default function SimpleStats({ className = '' }: SimpleStatsProps) {
   const { crucibles, loading: cruciblesLoading } = isClient ? useCrucible() : { crucibles: [], loading: true }
   const analytics = isClient ? useAnalytics().analytics : { totalVolume: 0, transactionCount: 0 }
   
-  console.log('SimpleStats: isClient:', isClient, 'loading:', cruciblesLoading);
-  console.log('SimpleStats: crucibles:', crucibles);
-  console.log('SimpleStats: analytics:', analytics);
-  
   useEffect(() => {
     setIsClient(true)
   }, [])

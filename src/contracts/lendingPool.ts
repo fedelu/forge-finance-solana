@@ -56,12 +56,6 @@ class LendingPool {
             interestRate: interestRate,
             lastFetchTime: now,
           }
-          
-          console.log('✅ LendingPool: Fetched real data from on-chain:', {
-            totalLiquidity: this.state.totalLiquidity,
-            borrowed: this.state.borrowed,
-            interestRate: this.state.interestRate,
-          })
         }
       } catch (error) {
         console.warn('⚠️ LendingPool: Could not fetch on-chain data:', error)

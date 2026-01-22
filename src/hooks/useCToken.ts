@@ -137,7 +137,6 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         ctokenBalance = BigInt(balance.value.amount)
       } catch (error) {
         // Account might not exist yet, balance is 0
-        console.log('cToken account does not exist yet, balance is 0')
       }
       
       // Calculate base balance from cToken balance and exchange rate
@@ -183,10 +182,8 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       try {
         if (sessionContext.walletPublicKey instanceof PublicKey) {
           currentPublicKey = sessionContext.walletPublicKey
-          console.log('✅ Using walletPublicKey from sessionContext:', currentPublicKey.toString())
         } else if (typeof sessionContext.walletPublicKey === 'string') {
           currentPublicKey = new PublicKey(sessionContext.walletPublicKey)
-          console.log('✅ Converted walletPublicKey string from sessionContext:', currentPublicKey.toString())
         } else if (typeof sessionContext.walletPublicKey === 'object' && sessionContext.walletPublicKey !== null) {
           // Handle serialized PublicKey object (e.g., {_bn: ...})
           if ('_bn' in sessionContext.walletPublicKey || 'toBase58' in sessionContext.walletPublicKey || 'toString' in sessionContext.walletPublicKey) {
@@ -194,7 +191,6 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
                             sessionContext.walletPublicKey.toBase58 ? sessionContext.walletPublicKey.toBase58() : 
                             String(sessionContext.walletPublicKey)
             currentPublicKey = new PublicKey(pkString)
-            console.log('✅ Converted walletPublicKey object from sessionContext:', currentPublicKey.toString())
           }
         }
       } catch (e) {
@@ -207,10 +203,8 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       try {
         if (providedPublicKey instanceof PublicKey) {
           currentPublicKey = providedPublicKey
-          console.log('✅ Using providedPublicKey:', currentPublicKey.toString())
         } else if (typeof providedPublicKey === 'string') {
           currentPublicKey = new PublicKey(providedPublicKey)
-          console.log('✅ Converted providedPublicKey string:', currentPublicKey.toString())
         }
       } catch (e) {
         console.warn('Invalid provided public key:', e, providedPublicKey)
@@ -220,32 +214,17 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
     // THIRD PRIORITY: Fallback to hook-level publicKey (from hook initialization)
     if (!currentPublicKey && publicKey) {
       currentPublicKey = publicKey
-      console.log('✅ Using hook-level publicKey:', currentPublicKey.toString())
     }
     
     // FOURTH PRIORITY: Fallback to wallet context
     if (!currentPublicKey && walletContext?.publicKey) {
       currentPublicKey = walletContext.publicKey
-      console.log('✅ Using walletContext publicKey:', currentPublicKey.toString())
     }
     
     // Final check - if still null, throw error with helpful debug info
     if (!currentPublicKey) {
-      const debugInfo = {
-        providedPublicKey: providedPublicKey?.toString?.() || providedPublicKey || 'undefined',
-        hookPublicKey: publicKey?.toString?.() || publicKey || 'null',
-        sessionContextExists: !!sessionContext,
-        sessionContextType: typeof sessionContext,
-        sessionWalletPublicKey: sessionContext?.walletPublicKey?.toString?.() || sessionContext?.walletPublicKey || 'undefined',
-        sessionWalletPublicKeyType: typeof sessionContext?.walletPublicKey,
-        walletContextExists: !!walletContext,
-        walletContextPublicKey: walletContext?.publicKey?.toString?.() || walletContext?.publicKey || 'undefined'
-      }
-      console.error('❌ Wallet connection check failed:', debugInfo)
       throw new Error('Wallet not connected. Please connect your wallet first.')
     }
-    
-    console.log('✅ Wallet connection verified:', currentPublicKey.toString())
     
     if (!crucibleAddress || !ctokenMint) {
       throw new Error('Crucible information missing')
@@ -323,11 +302,8 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           })
           .rpc()
         
-        console.log('✅ Mint cToken transaction sent:', txSignature)
-        
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed')
         
         // Update leverage position if applicable
         if (leverageMultiplier > 1.0) {
@@ -465,11 +441,8 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           throw new Error('No sendTransaction method available')
         }
         
-        console.log('✅ Burn cToken transaction sent:', txSignature)
-        
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
-        console.log('✅ Transaction confirmed')
 
         // Get actual WSOL amount received from the contract (after fee)
         // Check BEFORE unwrapping to get the exact amount the contract returned
@@ -481,7 +454,6 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           const userWSOLAccount = await getAssociatedTokenAddress(baseMint, publicKey)
           const wsolAccountInfo = await getAccount(connection, userWSOLAccount)
           actualBaseAmountReceived = Number(wsolAccountInfo.amount) / 1e9 // Convert lamports to SOL
-          console.log(`💰 Actual WSOL received from contract: ${actualBaseAmountReceived} SOL`)
           
           // Calculate actual fee charged by contract
           // Contract charges 0.75% unwrap fee on base_to_return_before_fee
@@ -490,14 +462,6 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
           // And: unwrap_fee = base_to_return_before_fee - base_to_return
           actualBaseBeforeFee = actualBaseAmountReceived / (1 - UNWRAP_FEE_RATE)
           actualFeeCharged = actualBaseBeforeFee - actualBaseAmountReceived
-
-          console.log('💰 Contract fee calculation:', {
-            actualBaseAmountReceived,
-            actualBaseBeforeFee,
-            actualFeeCharged,
-            feePercent: (actualFeeCharged / actualBaseBeforeFee) * 100,
-            contractFeeRate: UNWRAP_FEE_RATE * 100 + '%'
-          })
         } catch (error: any) {
           // If account doesn't exist or fetch fails, use calculated value
           console.warn('Could not fetch WSOL account, using calculated value:', error)

@@ -157,13 +157,10 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     const conn = connection || createDevnetConnection()
     
     try {
-      console.log('🔄 Fetching crucible data from on-chain...')
-      
       // Use direct fetcher - bypasses Anchor IDL issues entirely
       const crucibleAccount = await fetchCrucibleDirect(conn)
       
       if (!crucibleAccount) {
-        console.log('⚠️ Crucible account not found on-chain (may not be initialized yet)')
         return
       }
       
@@ -230,18 +227,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         vaultBalance: vaultBalance, // Current vault balance
       }
       
-      console.log('✅ On-chain crucible data:', {
-        tvl: crucibleData.tvl,
-        vaultBalance: Number(vaultBalance) / 1e9,
-        ctokenSupply: Number(ctokenSupply) / 1e9,
-        realExchangeRate: realExchangeRate,
-        yieldPercentage: yieldPercentage.toFixed(2) + '%',
-        storedExchangeRate: Number(crucibleAccount.exchangeRate) / 1e6,
-        totalBaseDeposited: Number(crucibleAccount.totalBaseDeposited) / 1e9,
-        totalFeesAccrued: Number(crucibleAccount.totalFeesAccrued) / 1e9,
-        paused: crucibleAccount.paused,
-      })
-      
       setOnChainCrucibleData(crucibleData)
       setLoading(false) // First fetch complete
       
@@ -252,11 +237,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
           const cTokenBalance = await fetchCTokenBalance(conn, publicKey, cruciblePDA)
           
           if (cTokenBalance && cTokenBalance.balance > BigInt(0)) {
-            console.log('✅ Fetched user cToken balance from on-chain:', {
-              balance: cTokenBalance.balance.toString(),
-              estimatedBaseValue: cTokenBalance.estimatedBaseValue.toString(),
-            })
-            
             // Update userBalances with on-chain data
             setUserBalances(prev => {
               const current = prev['sol-crucible'] || {
@@ -290,7 +270,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
               errorMessage.includes('Account not found') ||
               errorMessage.includes('crucible')) {
             // Silently handle - this is normal if crucible or account doesn't exist
-            console.log('No cToken balance found for user (this is normal if no position exists)')
           } else {
             // Log other errors for debugging
             console.warn('Error fetching cToken balance for user:', {
@@ -318,7 +297,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     
     // Listen for deposit events to refresh immediately
     const handleDeposit = () => {
-      console.log('🔄 Deposit event received, refreshing crucible data...')
       // Wait a bit for the transaction to confirm
       setTimeout(() => {
         fetchCrucibleData()
@@ -327,7 +305,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     
     // Listen for arbitrage profit deposits
     const handleArbitrageDeposit = () => {
-      console.log('🔄 Arbitrage deposit event received, refreshing crucible data...')
       // Wait a bit for the transaction to confirm
       setTimeout(() => {
         fetchCrucibleData()
@@ -486,8 +463,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       
       // Trigger re-render
       setCrucibleUpdateTrigger(prev => prev + 1);
-      
-      console.log(`Withdrew ${formatUSDC(usdcAmount)} USDC from ${crucibleId} (${(UNWRAP_FEE_RATE * 100).toFixed(2)}% fee: ${formatUSDC(feeAmount)})`);
     }
   }, []);
 
@@ -635,7 +610,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       };
       // Trigger re-render
       setCrucibleUpdateTrigger(prev => prev + 1);
-      console.log(`✅ Updated crucible TVL for ${crucibleId}: ${initialCrucibles[crucibleIndex].tvl}`);
     }
   }, []);
 

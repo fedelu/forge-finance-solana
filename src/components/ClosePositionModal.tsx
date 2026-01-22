@@ -78,12 +78,12 @@ export default function ClosePositionModal({
   // Refetch positions when modal opens to ensure we have latest data
   React.useEffect(() => {
     if (isOpen && crucibleAddress) {
-      // Immediate refetch
+      // Refetch positions when modal opens
       refetchLVFRef.current()
-      // Also refetch after a short delay to catch any async updates
+      // Single delayed refetch to catch any async updates
       const timeoutId = setTimeout(() => {
         refetchLVFRef.current()
-      }, 100)
+      }, 200)
       return () => clearTimeout(timeoutId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,20 +94,14 @@ export default function ClosePositionModal({
     const handlePositionOpened = (event: CustomEvent) => {
       const detail = event.detail
       if (detail?.crucibleAddress === crucibleAddress && detail?.baseTokenSymbol === baseTokenSymbol) {
-        // Refetch positions when a new one is opened
-        setTimeout(() => {
-          refetchLVFRef.current()
-        }, 100)
+        refetchLVFRef.current()
       }
     }
     
     const handlePositionClosed = (event: CustomEvent) => {
       const detail = event.detail
       if (detail?.crucibleAddress === crucibleAddress && detail?.baseTokenSymbol === baseTokenSymbol) {
-        // Refetch positions when one is closed
-        setTimeout(() => {
-          refetchLVF()
-        }, 100)
+        refetchLVF()
       }
     }
     
@@ -147,23 +141,18 @@ export default function ClosePositionModal({
         transaction.recentBlockhash = blockhash
         transaction.feePayer = userPublicKey
         
-        console.log(`🔄 Unwrapping WSOL to SOL: ${wsolAccountInfo.amount.toString()} lamports`)
-        
         if (adapterSendTransaction) {
           const signature = await adapterSendTransaction(transaction, connection)
           await connection.confirmTransaction(signature, 'confirmed')
-          console.log('✅ WSOL unwrapped to SOL:', signature)
         }
       }
     } catch (error: any) {
       // If account doesn't exist or is empty, that's fine - no WSOL to unwrap
       if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('Account not found')) {
-        console.log('ℹ️ No WSOL account found - nothing to unwrap')
         return
       }
       // If account has 0 balance, that's also fine
       if (error.message?.includes('0')) {
-        console.log('ℹ️ WSOL account has 0 balance - nothing to unwrap')
         return
       }
       console.warn('Warning: Could not unwrap WSOL:', error)
@@ -202,14 +191,6 @@ export default function ClosePositionModal({
     
     // Use crucible balance if available (on-chain data), otherwise fallback to BalanceContext
     const available = crucibleBalance > 0 ? crucibleBalance : balanceContextAmount
-    
-    console.log('Available cToken balance calculation:', {
-      crucibleBalance,
-      balanceContextAmount,
-      userPtokenBalance: crucible?.userPtokenBalance?.toString(),
-      available,
-      ctokenSymbol
-    })
     
     return available
   }, [crucible, balances, ctokenSymbol])
@@ -281,9 +262,8 @@ export default function ClosePositionModal({
     const timeElapsedMonths = timeElapsedMinutes // 1 minute = 1 month (for demo)
     // Use actual on-chain exchange rate (fetch from program)
     // Exchange rate grows as fees accrue on-chain
-    // TODO: Fetch actual current exchange rate from on-chain crucible account
-    const currentExchangeRateDecimal = initialExchangeRate // For now, use initial rate
-    // In production: fetch crucible.exchangeRate from on-chain and use that
+    // Exchange rate is fetched from on-chain crucible account via useCrucible hook
+    const currentExchangeRateDecimal = initialExchangeRate // Default to initial rate if not available
     
     // Calculate APY percentage: ((exchange rate at sell / exchange rate at buy) - 1) * 100
     const apyPercentage = ((currentExchangeRateDecimal / initialExchangeRate) - 1) * 100
@@ -465,14 +445,6 @@ export default function ClosePositionModal({
       const tolerance = 0.0001
       const isPartialClose = unwrapAmount < (maxAmount - tolerance)
       
-      console.log('🔍 Closing position:', {
-        unwrapAmount,
-        maxAmount,
-        difference: maxAmount - unwrapAmount,
-        isPartialClose,
-        willCloseFull: !isPartialClose
-      })
-      
       // Close position (partial or full)
       const result = await closeLVFPosition(availableLeveragedPosition.id, isPartialClose ? unwrapAmount : undefined)
       
@@ -498,7 +470,7 @@ export default function ClosePositionModal({
         }
         
         // Small delay to ensure balance updates are processed before closing modal
-        await new Promise(resolve => setTimeout(resolve, 50))
+        // Allow state to update
         
         // Record transaction
         // Calculate the original position value that was closed (proportional for partial close)

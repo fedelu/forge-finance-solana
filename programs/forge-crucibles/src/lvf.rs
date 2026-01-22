@@ -106,7 +106,6 @@ pub fn open_leveraged_position(
         authority: ctx.accounts.user.to_account_info(),
     };
     
-    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
         CrucibleError::InvalidProgram
@@ -503,7 +502,6 @@ pub fn close_leveraged_position(
         token::transfer(cpi_ctx, protocol_fee_share)?;
     }
 
-    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
         CrucibleError::InvalidProgram
@@ -1095,7 +1093,6 @@ pub fn liquidate_position(
         CrucibleError::InvalidAmount
     );
     
-    // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
         CrucibleError::InvalidProgram

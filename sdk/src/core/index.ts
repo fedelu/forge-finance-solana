@@ -1,4 +1,8 @@
 // Forge Core module - Global registry and protocol initialization
+// NOTE: This is a placeholder implementation. To use in production:
+// 1. Generate IDL from deployed program: `anchor idl parse target/idl/forge_core.json`
+// 2. Import the IDL and use it to create the Program instance
+// 3. Implement methods using the actual program instructions
 
 import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
 import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor';
@@ -17,7 +21,7 @@ export class CoreClient implements ProgramModule<ForgeCoreIdl> {
   constructor(connection: Connection, wallet: WalletAdapter, programId: PublicKey) {
     this.connection = connection;
     this.wallet = wallet;
-    // Mock program for now - in production this would use the actual IDL
+    // PLACEHOLDER: Replace with actual IDL-based program initialization
     this.program = {} as Program<ForgeCoreIdl>;
   }
 
@@ -26,16 +30,16 @@ export class CoreClient implements ProgramModule<ForgeCoreIdl> {
     protocolFeeRate: number,
     maxCrucibles: number
   ): Promise<TransactionInstruction> {
-    // Mock instruction - in production this would use the actual program
-    return {} as TransactionInstruction;
+    // PLACEHOLDER: Implement using actual program IDL
+    throw new Error('Not implemented - requires forge_core IDL');
   }
 
   async registerCrucible(
     crucibleProgramId: PublicKey,
     baseMint: PublicKey
   ): Promise<TransactionInstruction> {
-    // Mock instruction
-    return {} as TransactionInstruction;
+    // PLACEHOLDER: Implement using actual program IDL
+    throw new Error('Not implemented - requires forge_core IDL');
   }
 
   async updateProtocolConfig(
@@ -43,18 +47,21 @@ export class CoreClient implements ProgramModule<ForgeCoreIdl> {
     protocolFeeRate: number,
     maxCrucibles: number
   ): Promise<TransactionInstruction> {
-    return {} as TransactionInstruction;
+    // PLACEHOLDER: Implement using actual program IDL
+    throw new Error('Not implemented - requires forge_core IDL');
   }
 
   async collectFees(
     amount: number
   ): Promise<TransactionInstruction> {
-    return {} as TransactionInstruction;
+    // PLACEHOLDER: Implement using actual program IDL
+    throw new Error('Not implemented - requires forge_core IDL');
   }
 
   async setProtocolStatus(
     isActive: boolean
   ): Promise<TransactionInstruction> {
-    return {} as TransactionInstruction;
+    // PLACEHOLDER: Implement using actual program IDL
+    throw new Error('Not implemented - requires forge_core IDL');
   }
 }

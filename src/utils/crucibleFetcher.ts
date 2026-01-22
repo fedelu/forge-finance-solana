@@ -202,29 +202,17 @@ export async function fetchCrucibleDirect(
     const address = crucibleAddress || DEPLOYED_ACCOUNTS.SOL_CRUCIBLE
     const pubkey = new PublicKey(address)
     
-    console.log('🔍 Fetching crucible directly from:', address)
-    
     const accountInfo = await connection.getAccountInfo(pubkey)
     
     if (!accountInfo) {
-      console.log('❌ Crucible account not found')
       return null
     }
     
     if (!accountInfo.data || accountInfo.data.length === 0) {
-      console.log('❌ Crucible account has no data')
       return null
     }
     
     const crucibleData = deserializeCrucible(accountInfo.data as Buffer)
-    
-    console.log('✅ Crucible data fetched successfully:', {
-      baseMint: crucibleData.baseMint.toString(),
-      ctokenMint: crucibleData.ctokenMint.toString(),
-      totalBaseDeposited: crucibleData.totalBaseDeposited.toString(),
-      exchangeRate: crucibleData.exchangeRate.toString(),
-      paused: crucibleData.paused,
-    })
     
     return crucibleData
   } catch (error: any) {
@@ -254,27 +242,17 @@ export async function fetchLendingPoolDirect(
     const address = poolAddress || DEPLOYED_ACCOUNTS.LENDING_POOL_PDA
     const pubkey = new PublicKey(address)
     
-    console.log('🔍 Fetching lending pool directly from:', address)
-    
     const accountInfo = await connection.getAccountInfo(pubkey)
     
     if (!accountInfo) {
-      console.log('❌ Lending pool account not found')
       return null
     }
     
     if (!accountInfo.data || accountInfo.data.length === 0) {
-      console.log('❌ Lending pool account has no data')
       return null
     }
     
     const poolData = deserializeLendingPool(accountInfo.data as Buffer)
-    
-    console.log('✅ Lending pool data fetched successfully:', {
-      usdcMint: poolData.usdcMint.toString(),
-      totalLiquidity: poolData.totalLiquidity.toString(),
-      totalBorrowed: poolData.totalBorrowed.toString(),
-    })
     
     return poolData
   } catch (error) {
@@ -356,7 +334,6 @@ export async function fetchVaultBalance(
     const accountInfo = await connection.getAccountInfo(vaultPubkey)
     
     if (!accountInfo || !accountInfo.data) {
-      console.log('❌ Vault account not found')
       return BigInt(0)
     }
     
@@ -365,7 +342,6 @@ export async function fetchVaultBalance(
     const data = accountInfo.data as Buffer
     const amount = data.readBigUInt64LE(64)
     
-    console.log('✅ Vault balance fetched:', Number(amount) / 1e9, 'SOL')
     return amount
   } catch (error) {
     console.error('❌ Error fetching vault balance:', error)
@@ -388,7 +364,6 @@ export async function fetchCTokenSupply(
     const supplyInfo = await connection.getTokenSupply(mintPubkey)
     const supply = BigInt(supplyInfo.value.amount)
     
-    console.log('✅ cToken supply fetched:', Number(supply) / 1e9, 'cSOL')
     return supply
   } catch (error) {
     console.error('❌ Error fetching cToken supply:', error)

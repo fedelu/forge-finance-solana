@@ -59,14 +59,12 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
   const price = useCallback((symbol: string) => ({ SOL: solPrice, USDC: 1, ETH: 4000, BTC: 110000 } as any)[symbol] || 1, [solPrice]);
 
   const updateCrucibleDeposit = useCallback((crucibleId: string, amount: number) => {
-    console.log(`CrucibleContext: Adding deposit of ${amount} to ${crucibleId}`);
     setCrucibles(prev => {
       return prev.map(crucible => {
         if (crucible.id === crucibleId) {
           const newDeposit = crucible.userDeposit + amount;
           const newShares = crucible.userShares + amount; // 1:1 ratio for simplicity
           const newTVL = crucible.tvl + amount * price(crucible.symbol); // TVL in USD
-          console.log(`CrucibleContext: Updated ${crucibleId} - deposit: ${newDeposit}, shares: ${newShares}, TVL: ${newTVL}`);
           return {
             ...crucible,
             userDeposit: newDeposit,
@@ -80,14 +78,12 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
   }, [price]);
 
   const updateCrucibleWithdraw = useCallback((crucibleId: string, amount: number) => {
-    console.log(`CrucibleContext: Withdrawing ${amount} from ${crucibleId}`);
     setCrucibles(prev => {
       return prev.map(crucible => {
         if (crucible.id === crucibleId) {
           const newDeposit = Math.max(0, crucible.userDeposit - amount);
           const newShares = Math.max(0, crucible.userShares - amount);
           const newTVL = Math.max(0, crucible.tvl - amount * price(crucible.symbol)); // TVL in USD
-          console.log(`CrucibleContext: Updated ${crucibleId} - deposit: ${newDeposit}, shares: ${newShares}, TVL: ${newTVL}`);
           return {
             ...crucible,
             userDeposit: newDeposit,
@@ -101,12 +97,10 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
   }, [price]);
 
   const updateCrucibleTVL = useCallback((crucibleId: string, amountUSD: number) => {
-    console.log(`CrucibleContext: Updating TVL for ${crucibleId} by ${amountUSD} USD`);
     setCrucibles(prev => {
       return prev.map(crucible => {
         if (crucible.id === crucibleId) {
           const newTVL = Math.max(0, crucible.tvl + amountUSD); // amountUSD is already in USD
-          console.log(`CrucibleContext: Updated ${crucibleId} TVL from ${crucible.tvl} to ${newTVL}`);
           return {
             ...crucible,
             tvl: newTVL
@@ -129,7 +123,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       }
       return [crucible, ...prev];
     });
-    console.log('Crucible added:', crucible);
   }, []);
 
   // Fetch real on-chain data
@@ -151,7 +144,6 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
           }
           return c;
         }));
-        console.log('CrucibleContext: Updated from on-chain, TVL:', tvl);
       }
     } catch (error) {
       console.error('CrucibleContext: Error fetching on-chain data:', error);

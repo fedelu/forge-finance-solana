@@ -222,10 +222,10 @@ export function useLending() {
     }
   }, [connection, publicKey, connected, fetchMarketData, fetchPositions])
 
-  // Withdraw from lending pool (placeholder - would need receipt token tracking)
+  // Withdraw from lending pool
+  // Note: Withdraw functionality requires receipt token balance tracking
+  // This is a planned feature - receipt tokens are minted on supply and burned on withdraw
   const withdraw = useCallback(async (_market: string, _amount: string) => {
-    // TODO: Implement withdraw using receipt tokens
-    // This requires tracking receipt token balances
     throw new Error('Withdraw not yet implemented - requires receipt token tracking')
   }, [])
 

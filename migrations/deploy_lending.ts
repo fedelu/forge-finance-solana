@@ -1,10 +1,17 @@
-// Summary: Anchor deploy script placeholder to initialize a lending market on testnet.
+// PLACEHOLDER: Lending market initialization script
+// This script should initialize a lending market after deployment
+// To implement:
+// 1. Load the lending program IDL
+// 2. Create program instance
+// 3. Call initialize_market with appropriate parameters (base_mint, interest rates, etc.)
+// 4. Verify market initialization
+
 import * as anchor from '@coral-xyz/anchor'
 
 export default async function (provider: anchor.AnchorProvider) {
   anchor.setProvider(provider)
-  // TODO: load IDL and program, call initialize_market with desired params
-  console.log('Deploy lending: initialization placeholder')
+  // PLACEHOLDER: Not implemented - requires lending program IDL and initialization logic
+  throw new Error('Lending market initialization not implemented - requires IDL and initialization parameters')
 }
 
 

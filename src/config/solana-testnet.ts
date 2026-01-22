@@ -41,7 +41,7 @@ export const SOLANA_TESTNET_CONFIG = {
   // Token configuration for Solana devnet
   TOKEN_ADDRESSES: {
     SOL: 'So11111111111111111111111111111111111111112', // Wrapped SOL
-    FORGE: 'ForgeToken11111111111111111111111111111111111', // TODO: replace with real devnet mint
+    FORGE: 'ForgeToken11111111111111111111111111111111111', // Placeholder - replace with actual FORGE token mint when deployed
     USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // Real devnet USDC mint
   },
   // Pyth Network price feed addresses on devnet

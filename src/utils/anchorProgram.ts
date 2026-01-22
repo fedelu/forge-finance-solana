@@ -220,11 +220,6 @@ export function getCruciblesProgram(
 
   const programId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
   
-  console.log('Creating Anchor program with:', {
-    programId: programId.toString(),
-    walletPublicKey: wallet.publicKey.toString(),
-  })
-  
   // For Anchor 0.32, use Program constructor with provider
   // Cast everything to bypass IDL type checking issues
   // @ts-ignore - Manual IDL doesn't satisfy Anchor's Idl type constraint, but works at runtime
