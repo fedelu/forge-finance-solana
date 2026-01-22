@@ -507,26 +507,6 @@ function CrucibleCloseButton({
   const hasLPPosition = lpPositions.some(p => p.isOpen === true || p.isOpen === undefined)
   const hasAnyPosition = hasCTokenPosition || hasLeveragedPosition || hasLPPosition
 
-  React.useEffect(() => {
-    // Component state tracking
-      hasAnyPosition,
-      leveragedPositionsCount: leveragedPositions.length,
-      lpPositionsCount: lpPositions.length,
-      leveragedPositions: leveragedPositions.map(p => ({ 
-        id: p.id, 
-        isOpen: p.isOpen, 
-        token: p.token,
-        owner: p.owner?.substring(0, 8) + '...' 
-      })),
-      lpPositions: lpPositions.map(p => ({ 
-        id: p.id, 
-        isOpen: p.isOpen, 
-        baseToken: p.baseToken,
-        owner: p.owner?.substring(0, 8) + '...' 
-      }))
-    })
-  }, [crucible.id, hasCTokenPosition, hasLeveragedPosition, hasLPPosition, hasAnyPosition, leveragedPositions, lpPositions])
-
   const handleClose = () => {
     // Simply open the unified close position modal
     onOpenCloseModal()
