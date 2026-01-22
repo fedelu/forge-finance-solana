@@ -821,6 +821,7 @@ function ClosePositionButton({ position, crucible, onClose }: {
   crucible: CTokenPosition, 
   onClose: () => void 
 }) {
+  const { solPrice } = usePrice()
   const { closePosition: closeLVFPosition, loading: lvfLoading } = useLVFPosition({
     crucibleAddress: crucible.crucibleAddress,
     baseTokenSymbol: crucible.baseTokenSymbol as 'SOL',
