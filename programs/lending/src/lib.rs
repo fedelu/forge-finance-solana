@@ -231,8 +231,13 @@ pub mod lending {
         };
         token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), amount)?;
 
-        // Compute receipt to mint using index (1:1 scaled by index)
-        let receipt_amount = amount; // For MVP, 1:1; redeem logic will apply index
+        // SECURITY FIX (CRITICAL-004): Apply exchange rate when minting receipt tokens
+        // receipt_amount = (amount * RATE_SCALE) / accumulated_index
+        // This ensures lenders receive fewer receipt tokens when interest has accrued
+        let receipt_amount = (amount as u128)
+            .checked_mul(RATE_SCALE)
+            .and_then(|v| v.checked_div(market.accumulated_index))
+            .ok_or(LendingError::InvalidAmount)? as u64;
 
         // Mint receipt token to user (mint authority = market PDA)
         let seeds = &[b"market", market.base_mint.as_ref(), &[market.bump]];
@@ -259,6 +264,14 @@ pub mod lending {
         // SECURITY FIX: Accrue interest before state changes to ensure accurate exchange rates
         do_accrue_interest(market)?;
 
+        // SECURITY FIX (CRITICAL-004): Apply exchange rate when withdrawing
+        // base_to_return = (amount * accumulated_index) / RATE_SCALE
+        // This ensures lenders receive their principal plus accrued interest
+        let base_to_return = (amount as u128)
+            .checked_mul(market.accumulated_index)
+            .and_then(|v| v.checked_div(RATE_SCALE))
+            .ok_or(LendingError::InvalidAmount)? as u64;
+
         // Burn receipt
         let burn_cpi = Burn {
             mint: ctx.accounts.receipt_mint.to_account_info(),
@@ -267,7 +280,7 @@ pub mod lending {
         };
         token::burn(CpiContext::new(ctx.accounts.token_program.to_account_info(), burn_cpi), amount)?;
 
-        // Transfer base back
+        // Transfer base back (with accrued interest)
         let cpi_accounts = Transfer {
             from: ctx.accounts.vault.to_account_info(),
             to: ctx.accounts.user_base_account.to_account_info(),
@@ -275,13 +288,13 @@ pub mod lending {
         };
         let seeds = &[b"market", market.base_mint.as_ref(), &[market.bump]];
         let signer = &[&seeds[..]];
-        token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer), amount)?;
+        token::transfer(CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer), base_to_return)?;
 
-        // Update accounting using index in later iteration; MVP track nominal
+        // Update accounting: subtract the base amount returned (includes interest)
         market.total_supply = market.total_supply
-            .checked_sub(amount as u128)
+            .checked_sub(base_to_return as u128)
             .ok_or(LendingError::InvalidAmount)?;
-        emit!(WithdrawEvent { user: ctx.accounts.user.key(), amount });
+        emit!(WithdrawEvent { user: ctx.accounts.user.key(), amount: base_to_return });
         Ok(())
     }
 

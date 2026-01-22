@@ -131,8 +131,10 @@ pub mod lending_pool_usdc {
         let available = pool.total_liquidity
             .checked_sub(pool.total_borrowed)
             .ok_or(LendingPoolError::InsufficientLiquidity)?;
-        let borrowable = available.checked_sub(MIN_LIQUIDITY_RESERVE)
-            .unwrap_or(0);
+        // SECURITY FIX (MEDIUM-003): Use explicit error handling instead of unwrap_or(0)
+        let borrowable = available
+            .checked_sub(MIN_LIQUIDITY_RESERVE)
+            .ok_or(LendingPoolError::InsufficientLiquidity)?;
         require!(
             amount > 0 && amount <= borrowable,
             LendingPoolError::InsufficientLiquidity
@@ -246,6 +248,19 @@ pub mod lending_pool_usdc {
         require!(amount > 0, LendingPoolError::InvalidAmount);
         
         let borrower_account = &mut ctx.accounts.borrower_account;
+        
+        // SECURITY FIX (LOW-002): Validate borrower account is initialized
+        require!(
+            borrower_account.borrower != Pubkey::default(),
+            LendingPoolError::InvalidBorrower
+        );
+        
+        // SECURITY FIX: Validate borrower matches signer
+        require!(
+            borrower_account.borrower == ctx.accounts.borrower.key(),
+            LendingPoolError::InvalidBorrower
+        );
+        
         let clock = Clock::get()?;
 
         // SECURITY FIX (HIGH-003): Calculate accrued interest using Unix timestamp for accurate time measurement
@@ -308,15 +323,43 @@ pub mod lending_pool_usdc {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, amount)?;
 
-        // Update pool state
+        // SECURITY FIX (CRITICAL-005): Properly calculate principal vs interest portions
         // Calculate how much principal was repaid (amount may include interest)
         let principal_repaid = if amount >= total_owed_u64 {
-            // Full repayment including interest
+            // Full repayment - repay all principal
             borrower_account.amount_borrowed
         } else {
             // Partial repayment - calculate principal portion
-            // For simplicity, repay principal first, then interest
-            amount.min(borrower_account.amount_borrowed)
+            // principal_repaid = amount × (principal / total_owed)
+            // This ensures interest is paid first, then principal
+            let principal_portion = (amount as u128)
+                .checked_mul(borrower_account.amount_borrowed as u128)
+                .and_then(|v| v.checked_div(total_owed_u64 as u128))
+                .ok_or(LendingPoolError::InvalidAmount)? as u64;
+            
+            // Update borrow_timestamp proportionally for remaining debt
+            // New timestamp = old_timestamp + (elapsed × principal_repaid / principal)
+            let remaining_principal = borrower_account.amount_borrowed
+                .checked_sub(principal_portion)
+                .ok_or(LendingPoolError::InvalidAmount)?;
+            
+            if remaining_principal > 0 {
+                // Update timestamp: move forward proportionally
+                let principal_repaid_u128 = principal_portion as u128;
+                let total_principal_u128 = borrower_account.amount_borrowed as u128;
+                let time_advance = (seconds_elapsed as u128)
+                    .checked_mul(principal_repaid_u128)
+                    .and_then(|v| v.checked_div(total_principal_u128))
+                    .ok_or(LendingPoolError::InvalidAmount)?;
+                borrower_account.borrow_timestamp = borrower_account.borrow_timestamp
+                    .checked_add(time_advance as u64)
+                    .ok_or(LendingPoolError::InvalidAmount)?;
+            } else {
+                // All principal repaid, reset timestamp
+                borrower_account.borrow_timestamp = current_timestamp;
+            }
+            
+            principal_portion
         };
         
         // SECURITY FIX: Validate amounts are sufficient before subtraction to detect accounting errors
@@ -335,6 +378,11 @@ pub mod lending_pool_usdc {
         borrower_account.amount_borrowed = borrower_account.amount_borrowed
             .checked_sub(principal_repaid)
             .ok_or(LendingPoolError::InvalidAmount)?;
+        
+        // SECURITY FIX (CRITICAL-005): Reset timestamp if all debt is repaid
+        if borrower_account.amount_borrowed == 0 {
+            borrower_account.borrow_timestamp = current_timestamp;
+        }
 
         emit!(USDCRepaid {
             borrower: ctx.accounts.borrower.key(),
@@ -415,6 +463,7 @@ pub struct DepositUSDC<'info> {
         mut,
         seeds = [b"vault", pool.key().as_ref()],
         bump,
+        constraint = pool_vault.mint == pool.usdc_mint @ LendingPoolError::InvalidConfig
     )]
     pub pool_vault: Account<'info, TokenAccount>,
 
@@ -471,6 +520,7 @@ pub struct RepayUSDC<'info> {
         mut,
         seeds = [b"vault", pool.key().as_ref()],
         bump,
+        constraint = pool_vault.mint == pool.usdc_mint @ LendingPoolError::InvalidConfig
     )]
     pub pool_vault: Account<'info, TokenAccount>,
 

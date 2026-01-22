@@ -23,7 +23,7 @@ lvf = "LvF1111111111111111111111111111111111111111"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "testnet"
+cluster = "devnet"
 wallet = "~/.config/solana/solana-testnet-keypair.json"
 
 [scripts]

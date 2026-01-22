@@ -1080,6 +1080,21 @@ pub fn liquidate_position(
         total_collateral_seized as u64
     };
     
+    // SECURITY FIX (MEDIUM-006): Validate seized collateral value doesn't exceed debt + max bonus
+    let seized_value_usdc = (total_collateral_seized_u64 as u128)
+        .checked_mul(current_base_token_price as u128)
+        .and_then(|v| v.checked_div(1_000_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let max_seized_value = total_debt
+        .checked_add(liquidation_bonus)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    require!(
+        seized_value_usdc <= max_seized_value,
+        CrucibleError::InvalidAmount
+    );
+    
     // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
     require!(
         ctx.accounts.token_program.key() == anchor_spl::token::ID,
@@ -1385,6 +1400,10 @@ pub struct LiquidatePosition<'info> {
     pub position: Box<Account<'info, LeveragedPosition>>,
     
     /// CHECK: Position owner (for debt repayment)
+    /// SECURITY FIX (HIGH-005): Validate position_owner matches position.owner
+    #[account(
+        constraint = position_owner.key() == position.owner @ CrucibleError::Unauthorized
+    )]
     pub position_owner: UncheckedAccount<'info>,
     
     #[account(

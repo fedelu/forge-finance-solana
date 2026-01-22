@@ -45,10 +45,15 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
     // Calculate exchange rate (1 cToken = base_amount / total_ctoken_supply)
     // Exchange rate grows as fees accrue
     // SECURITY FIX: Use tracked deposits instead of vault balance to prevent manipulation
+    let ctoken_supply = ctx.accounts.ctoken_mint.supply;
+    
+    // SECURITY FIX (MEDIUM-005): ctoken_supply is validated by Anchor's Account type
+    // The mint account ensures supply is accurate, so we can safely use it
+    
     let exchange_rate = calculate_exchange_rate(
         &crucible,
         ctx.accounts.vault.amount, // Still pass for validation
-        ctx.accounts.ctoken_mint.supply,
+        ctoken_supply,
     )?;
     
     // SECURITY FIX: Calculate wrap fee using named constant
@@ -70,6 +75,13 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
     let net_deposit = amount
         .checked_sub(wrap_fee)
         .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // SECURITY FIX (HIGH-006): Validate exchange_rate is non-zero and reasonable
+    // Minimum exchange rate: PRICE_SCALE_FACTOR / 1_000_000 = 1 (0.000001 scaled)
+    require!(
+        exchange_rate > 0 && exchange_rate >= PRICE_SCALE_FACTOR / 1_000_000,
+        CrucibleError::InvalidAmount
+    );
     
     // Calculate how many cTokens to mint based on current exchange rate (using net deposit)
     let ctokens_to_mint = net_deposit

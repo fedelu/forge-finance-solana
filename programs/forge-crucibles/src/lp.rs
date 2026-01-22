@@ -176,8 +176,14 @@ pub fn open_lp_position(
     };
     
     // Validate rounding errors are within tolerance (1 basis point = 0.01%)
-    let tolerance_base = fee_base_amount.checked_div(10_000).unwrap_or(0);
-    let tolerance_usdc = fee_usdc_amount.checked_div(10_000).unwrap_or(0);
+    // SECURITY FIX (MEDIUM-004): Use explicit error handling instead of unwrap_or(0)
+    // Since 10_000 is a constant, division should never fail, but for safety we handle it explicitly
+    let tolerance_base = fee_base_amount
+        .checked_div(10_000)
+        .ok_or(CrucibleError::InvalidAmount)?;
+    let tolerance_usdc = fee_usdc_amount
+        .checked_div(10_000)
+        .ok_or(CrucibleError::InvalidAmount)?;
     require!(
         fee_base_diff <= tolerance_base && fee_usdc_diff <= tolerance_usdc,
         CrucibleError::InvalidAmount
@@ -529,12 +535,17 @@ pub fn close_lp_position(
     };
     
     // Calculate net amounts to return
+    // SECURITY FIX: Use explicit error handling instead of unwrap_or(0)
+    // Ensure fees don't exceed position amounts
+    let fee_base_amount_u64 = fee_base_amount.min(position.base_amount as u128) as u64;
+    let fee_usdc_amount_u64 = fee_usdc_amount.min(position.usdc_amount as u128) as u64;
+    
     let base_to_return = position.base_amount
-        .checked_sub(fee_base_amount.min(position.base_amount as u128) as u64)
-        .unwrap_or(0);
+        .checked_sub(fee_base_amount_u64)
+        .ok_or(CrucibleError::InvalidAmount)?;
     let usdc_to_return = position.usdc_amount
-        .checked_sub(fee_usdc_amount.min(position.usdc_amount as u128) as u64)
-        .unwrap_or(0);
+        .checked_sub(fee_usdc_amount_u64)
+        .ok_or(CrucibleError::InvalidAmount)?;
 
     // Transfer base tokens back to user (net amount)
     let seeds = &[
