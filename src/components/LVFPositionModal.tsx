@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { XMarkIcon, BoltIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useWallet } from '../contexts/WalletContext'
 import { lendingPool } from '../contracts/lendingPool'
@@ -190,10 +190,7 @@ export default function LVFPositionModal({
 
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500/30 to-orange-500/10 flex items-center justify-center border border-orange-500/20">
-              <BoltIcon className="w-6 h-6 text-orange-400" />
-            </div>
+          <div className="flex items-center mb-3">
             <div>
               <h2 className="text-2xl font-heading text-white">Leveraged LP</h2>
               <p className="text-forge-gray-400 text-sm">Amplified Yield</p>
@@ -268,10 +265,7 @@ export default function LVFPositionModal({
 
             {/* Position Preview - Enhanced */}
             <div className="bg-gradient-to-br from-orange-500/10 via-orange-500/5 to-transparent backdrop-blur-sm rounded-2xl p-6 mb-6 border border-orange-500/20">
-              <h3 className="text-sm font-semibold text-forge-gray-300 mb-4 flex items-center gap-2">
-                <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
+              <h3 className="text-sm font-semibold text-forge-gray-300 mb-4">
                 Position Preview
               </h3>
               <div className="space-y-3">
@@ -284,11 +278,8 @@ export default function LVFPositionModal({
                 {amount && (
                   <>
                     <div className="flex justify-between items-center py-2 px-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                      <span className="text-red-400 text-xs font-medium flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      Opening Fee (1%)
+                      <span className="text-red-400 text-xs font-medium">
+                        Opening Fee (1%)
                       </span>
                       <span className="text-red-400 font-semibold">
                         -{formatSOL(parseFloat(amount) * INFERNO_OPEN_FEE_RATE)} {baseTokenSymbol}

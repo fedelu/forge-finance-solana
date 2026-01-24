@@ -222,7 +222,8 @@ export function validateLPPosition(
   usdcBalance: number,
   baseTokenSymbol: 'SOL' | 'FORGE',
   baseTokenPrice: number,
-  maxSlippageBps?: number
+  maxSlippageBps?: number,
+  allowZeroUsdc: boolean = false
 ): ValidationResult {
   // Validate base amount
   const baseValidation = validateAmount(baseAmount, baseTokenSymbol)
@@ -230,10 +231,12 @@ export function validateLPPosition(
     return baseValidation
   }
 
-  // Validate USDC amount
-  const usdcValidation = validateAmount(usdcAmount, 'USDC')
-  if (!usdcValidation.valid) {
-    return usdcValidation
+  // Validate USDC amount (allow zero for max leverage cases)
+  if (!(allowZeroUsdc && usdcAmount === 0)) {
+    const usdcValidation = validateAmount(usdcAmount, 'USDC')
+    if (!usdcValidation.valid) {
+      return usdcValidation
+    }
   }
 
   // Validate balances
@@ -242,9 +245,11 @@ export function validateLPPosition(
     return baseBalanceValidation
   }
 
-  const usdcBalanceValidation = validateBalance(usdcAmount, usdcBalance, 'USDC')
-  if (!usdcBalanceValidation.valid) {
-    return usdcBalanceValidation
+  if (!(allowZeroUsdc && usdcAmount === 0)) {
+    const usdcBalanceValidation = validateBalance(usdcAmount, usdcBalance, 'USDC')
+    if (!usdcBalanceValidation.valid) {
+      return usdcBalanceValidation
+    }
   }
 
   // Validate position size

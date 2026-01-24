@@ -15,6 +15,7 @@ pub struct InfernoCrucible {
     pub fee_rate: u64, // Fee rate (e.g., 200 = 0.2% = 2 bps)
     pub paused: bool,
     pub expected_vault_balance: u64,
+    pub expected_usdc_vault_balance: u64,
     pub oracle: Option<Pubkey>,
     pub treasury_base: Pubkey,
     pub treasury_usdc: Pubkey,
@@ -68,6 +69,7 @@ impl InfernoCrucible {
         8 +  // fee_rate
         1 +  // paused
         8 +  // expected_vault_balance
+        8 +  // expected_usdc_vault_balance
         1 +  // oracle option discriminator
         32 + // oracle pubkey (if Some)
         32 + // treasury_base

@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import { BanknotesIcon } from '@heroicons/react/24/outline'
 import { useCToken } from '../hooks/useCToken'
 import { useCrucible } from '../hooks/useCrucible'
 import { useLVFPosition } from '../hooks/useLVFPosition'
@@ -8,6 +7,7 @@ import { useInfernoLP } from '../hooks/useInfernoLP'
 import { useLending } from '../hooks/useLending'
 import { useBalance } from '../contexts/BalanceContext'
 import { usePrice } from '../contexts/PriceContext'
+import { useWallet } from '../contexts/WalletContext'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
 import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { calculateBorrowInterest } from '../utils/lendingProgram'
@@ -269,11 +269,6 @@ export default function CTokenPortfolio() {
       {/* cTOKENS Section - Simple wrap positions */}
       <div className="panel rounded-3xl p-6 xl:p-10 flex-1 flex flex-col">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/30 to-blue-500/10 flex items-center justify-center ring-2 ring-blue-500/20">
-            <svg className="w-4.5 h-4.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9a2.25 2.25 0 01-1.125 1.948L12 21.75m9-14.25l-9 5.25m0 0L3 7.5m9 5.25v9" />
-            </svg>
-          </div>
           <h3 className="text-base font-heading text-white">cTOKENS</h3>
           <span className="px-2.5 py-0.5 bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 text-[11px] font-heading rounded-full border border-blue-500/30">{cTokenPositions.length}</span>
         </div>
@@ -305,16 +300,9 @@ export default function CTokenPortfolio() {
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
                       <td className="py-2.5 px-3">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-500/10 rounded-xl flex items-center justify-center ring-2 ring-blue-500/20 group-hover:ring-blue-500/40 transition-all duration-300 group-hover:scale-110">
-                            <span className="text-blue-400 text-sm font-heading">
-                              {position.ctokenSymbol.substring(1, 2).toUpperCase()}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="text-white font-semibold text-sm">{position.ctokenSymbol}</div>
-                            <div className="text-forge-gray-500 text-[11px] font-medium mt-0.5">{position.baseTokenSymbol}</div>
-                          </div>
+                        <div>
+                          <div className="text-white font-semibold text-sm">{position.ctokenSymbol}</div>
+                          <div className="text-forge-gray-500 text-[11px] font-medium mt-0.5">{position.baseTokenSymbol}</div>
                         </div>
                       </td>
                       <td className="text-right py-2.5 px-3">
@@ -352,11 +340,6 @@ export default function CTokenPortfolio() {
       {/* ifTOKEN/USDC Section - LP positions with detailed info */}
       <div className="panel rounded-3xl p-6 xl:p-10 flex-1 flex flex-col">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
-            <svg className="w-4.5 h-4.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-          </div>
           <h3 className="text-base font-heading text-white">ifTOKEN/USDC</h3>
           <span className="px-2.5 py-0.5 bg-green-500/20 text-green-400 text-[11px] font-heading rounded-full">{allCTokenUSDCPositions.length}</span>
         </div>
@@ -364,28 +347,19 @@ export default function CTokenPortfolio() {
           <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b border-forge-gray-700">
-                <th className="text-left py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">Pair</th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span>Collateral</span>
-                    <span className="text-[9px] text-forge-gray-500 font-satoshi">cToken value</span>
-                  </div>
+                <th className="text-left py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">Pair</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">
+                  Collateral (cToken)
                 </th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span>Borrowed</span>
-                    <span className="text-[9px] text-forge-gray-500 font-satoshi">USDC</span>
-                  </div>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">
+                  Borrowed (USDC)
                 </th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">Leverage</th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span>Health</span>
-                    <span className="text-[9px] text-forge-gray-500 font-satoshi">Factor</span>
-                  </div>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">Leverage</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">
+                  Health Factor
                 </th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">APY</th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">Total Value</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">APY</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">Total Value</th>
               </tr>
             </thead>
             <tbody>
@@ -506,9 +480,6 @@ export default function CTokenPortfolio() {
       {/* Lending Pool Positions Section */}
       <div className="panel rounded-3xl p-6 xl:p-10 flex-1 flex flex-col">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500/30 to-purple-500/10 flex items-center justify-center ring-2 ring-purple-500/20">
-            <BanknotesIcon className="w-4 h-4 text-purple-400" />
-          </div>
           <h3 className="text-base font-heading text-white">Lending Pool</h3>
           <span className="px-2.5 py-0.5 bg-gradient-to-r from-purple-500/20 to-purple-500/10 text-purple-400 text-[11px] font-heading rounded-full border border-purple-500/30">
             {lendingPositions.filter(p => (p.suppliedAmount > 0) || (p.borrowedAmount && p.borrowedAmount > 0)).length}
@@ -597,14 +568,9 @@ export default function CTokenPortfolio() {
                         {isBorrowed && position.borrowedAmount && (
                           <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
                             <td className="py-2.5 px-3">
-                              <div className="flex items-center space-x-3">
-                                <div className="w-9 h-9 bg-gradient-to-br from-orange-500/30 to-orange-500/10 rounded-xl flex items-center justify-center ring-2 ring-orange-500/20">
-                                  <span className="text-orange-400 text-sm font-heading">B</span>
-                                </div>
-                                <div>
-                                  <div className="text-white text-sm font-heading">Borrowed</div>
-                                  <div className="text-forge-gray-500 text-[11px] font-satoshi">Debt</div>
-                                </div>
+                              <div>
+                                <div className="text-white text-sm font-heading">Borrowed</div>
+                                <div className="text-forge-gray-500 text-[11px] font-satoshi">Debt</div>
                               </div>
                             </td>
                             <td className="text-right py-2.5 px-3">
@@ -882,16 +848,9 @@ function CTokenPositionRow({ position, onSelect }: { position: CTokenPosition, o
   return (
     <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
       <td className="py-4 px-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-forge-primary/20 rounded-full flex items-center justify-center">
-            <span className="text-forge-primary text-lg font-heading">
-              {position.ctokenSymbol.substring(1, 2).toUpperCase()}
-            </span>
-          </div>
-          <div>
-            <div className="text-white text-base font-heading">{position.ctokenSymbol}</div>
-            <div className="text-forge-gray-500 text-xs font-satoshi">{position.baseTokenSymbol}</div>
-          </div>
+        <div>
+          <div className="text-white text-base font-heading">{position.ctokenSymbol}</div>
+          <div className="text-forge-gray-500 text-xs font-satoshi">{position.baseTokenSymbol}</div>
         </div>
       </td>
       <td className="text-right py-4 px-4">
@@ -974,6 +933,7 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
   const { solPrice } = usePrice()
   const { leverage } = useCToken(position.crucibleAddress, position.ctokenMint)
   const { userBalances, getCrucible } = useCrucible()
+  const { connected, publicKey } = useWallet()
   const [showWithdraw, setShowWithdraw] = useState(false)
   
   const crucible = getCrucible(position.crucibleAddress)
@@ -1070,7 +1030,12 @@ function CTokenPositionDetails({ position, onClose }: { position: CTokenPosition
       <div className="flex space-x-3">
         <button
           onClick={() => setShowWithdraw(true)}
-          className="flex-1 px-4 py-3 bg-forge-primary-light hover:bg-forge-primary text-white rounded-lg font-medium transition-colors shadow-[0_10px_30px_rgba(255,102,14,0.25)]"
+          disabled={!connected || !publicKey}
+          className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors shadow-[0_10px_30px_rgba(255,102,14,0.25)] ${
+            !connected || !publicKey
+              ? 'bg-forge-gray-700 text-forge-gray-500 cursor-not-allowed shadow-none'
+              : 'bg-forge-primary-light hover:bg-forge-primary text-white'
+          }`}
         >
           Close Position
         </button>

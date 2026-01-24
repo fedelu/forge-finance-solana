@@ -1,10 +1,4 @@
 import React, { useState } from 'react'
-import { 
-  ArrowUpIcon, 
-  ArrowDownIcon,
-  FireIcon,
-  BoltIcon
-} from '@heroicons/react/24/outline'
 import { useWallet } from '../contexts/WalletContext'
 import { usePrice } from '../contexts/PriceContext'
 import { useCrucible, CrucibleData } from '../hooks/useCrucible'
@@ -35,7 +29,7 @@ interface CrucibleManagerProps {
 }
 
 export default function CrucibleManager({ className = '', onDeposit, onWithdraw, isConnected = false }: CrucibleManagerProps) {
-  const { solPrice } = usePrice()
+  const { solPrice, infernoLpPrice } = usePrice()
   const { connected } = useWallet()
   const { crucibles, loading, error } = useCrucible()
   const [activeMode, setActiveMode] = useState<'wrap' | 'lp' | 'leveraged'>('wrap')
@@ -184,9 +178,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                 <div className="space-y-2 text-sm font-satoshi-light text-forge-gray-200 mb-4">
                   <div className="flex justify-between items-center py-2.5 px-3 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50 hover:border-forge-primary/30 transition-all duration-300">
                     <span className="text-forge-gray-400 font-medium text-xs flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
                       TVL
                     </span>
                     <span className="font-heading text-base text-white">${formatUSD(crucible.tvl)}</span>
@@ -226,7 +217,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                                 strokeWidth="1.5"
                                 stroke="currentColor"
                                 aria-hidden="true"
-                                data-slot="icon"
                                 className={`w-4 h-4 text-forge-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                               >
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -238,9 +228,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                             <div className="pt-1.5 border-t border-forge-gray-700/50">
                               <div className="flex justify-between items-center">
                                 <span className="text-forge-gray-400 text-[11px] flex items-center">
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon" className="h-3 w-3 mr-1 text-orange-400">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
-                                  </svg>
                                   Leveraged APY (1.5x):
                                 </span>
                                 <span className="text-orange-400 text-xs font-heading">
@@ -249,9 +236,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                               </div>
                               <div className="flex justify-between items-center mt-0.5">
                                 <span className="text-forge-gray-400 text-[11px] flex items-center">
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon" className="h-3 w-3 mr-1 text-orange-400">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
-                                  </svg>
                                   Leveraged APY (2x):
                                 </span>
                                 <span className="text-orange-400 text-xs font-heading">
@@ -266,32 +250,36 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-3 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50 hover:border-forge-primary/30 transition-all duration-300">
                     <span className="text-forge-gray-400 font-medium text-xs flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                      </svg>
                       Crucible Price
                     </span>
                     <span className="font-heading text-base text-forge-primary">
                       {(() => {
-                        // Calculate crucible price: SOL price * exchange rate
-                        // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
-                        // If there are deposits, use actual exchange rate; otherwise use initial rate
-                        const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0);
-                        const initialExchangeRate = RATE_SCALE; // 1.0 = 1_000_000
+                        const isInferno = crucible.id === 'inferno-lp-crucible'
+
+                        const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
+                        const initialExchangeRate = RATE_SCALE
                         const exchangeRate = hasDeposits 
                           ? (crucible.exchangeRate || initialExchangeRate)
-                          : initialExchangeRate;
-                        const exchangeRateDecimal = Number(exchangeRate) / Number(RATE_SCALE);
-                        const cruciblePrice = solPrice * exchangeRateDecimal;
-                        return `$${formatUSD(cruciblePrice)}`;
+                          : initialExchangeRate
+                        const exchangeRateDecimal = Number(exchangeRate) / Number(RATE_SCALE)
+
+                        if (isInferno) {
+                          const fallbackLpPrice = solPrice * (1 + exchangeRateDecimal)
+                          const oracleLpPrice = infernoLpPrice && infernoLpPrice > 0
+                            ? infernoLpPrice * exchangeRateDecimal
+                            : null
+                          const cruciblePrice = oracleLpPrice ?? fallbackLpPrice
+                          return `$${formatUSD(cruciblePrice)}`
+                        }
+
+                        // Default: SOL price * exchange rate
+                        const cruciblePrice = solPrice * exchangeRateDecimal
+                        return `$${formatUSD(cruciblePrice)}`
                       })()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-3 panel-muted backdrop-blur-sm rounded-xl border border-forge-gray-700/50 hover:border-forge-primary/30 transition-all duration-300">
                     <span className="text-forge-gray-400 font-medium text-xs flex items-center gap-2">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                      </svg>
                       Total Yield Earned (All Time)
                     </span>
                     <span className="font-heading text-base text-forge-primary">
@@ -319,14 +307,9 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     }`}
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-pulse-glow"></div>
-                    <div className="relative flex items-center justify-center space-x-2">
-                      {isInferno ? (
-                        <FireIcon className="h-4 w-4 group-hover:scale-110 transition-transform duration-300" />
-                      ) : (
-                        <ArrowUpIcon className="h-4 w-4 group-hover:scale-110 transition-transform duration-300" />
-                      )}
+                    <div className="relative flex items-center justify-center">
                       <span className="text-sm font-semibold">
-                        {isInferno ? 'Open Inferno LP' : 'Open Position'}
+                        Open Position
                       </span>
                     </div>
                   </button>
@@ -495,8 +478,7 @@ function CrucibleActionButtons({
         className="w-full bg-gradient-to-r from-forge-primary to-forge-accent hover:from-forge-primary/90 hover:to-forge-accent/90 text-white font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-forge-primary/25 group relative overflow-hidden"
       >
         <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-        <div className="relative flex items-center justify-center space-x-2">
-          <ArrowUpIcon className="h-5 w-5 group-hover:scale-110 transition-transform duration-300" />
+        <div className="relative flex items-center justify-center">
           <span className="text-base">Mint cToken</span>
         </div>
       </button>
@@ -507,8 +489,7 @@ function CrucibleActionButtons({
         className="w-full bg-gradient-to-r from-orange-500/20 to-yellow-500/20 hover:from-orange-500/30 hover:to-yellow-500/30 border border-orange-500/30 hover:border-orange-500/50 text-orange-400 font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-orange-500/25 group relative overflow-hidden"
       >
         <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-        <div className="relative flex items-center justify-center space-x-2">
-          <BoltIcon className="h-5 w-5 group-hover:scale-110 transition-transform duration-300" />
+        <div className="relative flex items-center justify-center">
           <span className="text-base">Open Leveraged Position</span>
         </div>
       </button>
@@ -519,9 +500,8 @@ function CrucibleActionButtons({
         className="w-full bg-gradient-to-r from-red-500/20 to-orange-500/20 hover:from-red-500/30 hover:to-orange-500/30 border border-red-500/30 hover:border-red-500/50 text-red-400 font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-red-500/25 group relative overflow-hidden"
       >
         <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-        <div className="relative flex items-center justify-center space-x-2">
-          <FireIcon className="h-5 w-5 group-hover:scale-110 transition-transform duration-300" />
-          <span className="text-base">Open Inferno LP</span>
+        <div className="relative flex items-center justify-center">
+          <span className="text-base">Open Position</span>
         </div>
       </button>
     </div>
@@ -536,6 +516,7 @@ function CrucibleCloseButton({
   crucible: CrucibleData
   onOpenCloseModal: () => void
 }) {
+  const { connected, publicKey } = useWallet()
   // Hooks must be called unconditionally (React rules)
   // They will return empty arrays if wallet not connected, which is fine
   const { positions: leveragedPositions, refetch: refetchLVF } = useLVFPosition({
@@ -609,8 +590,13 @@ function CrucibleCloseButton({
   const hasLPPosition = lpPositions.some(p => p.isOpen === true || p.isOpen === undefined)
   const hasInfernoPosition = infernoPositions.some(p => p.isOpen === true || p.isOpen === undefined)
   const hasAnyPosition = hasCTokenPosition || hasLeveragedPosition || hasLPPosition || hasInfernoPosition
+  const canClose = connected && !!publicKey && hasAnyPosition
 
   const handleClose = () => {
+    if (!connected || !publicKey) {
+      alert('⚠️ Wallet not connected!\n\nPlease connect your wallet first.')
+      return
+    }
     // Simply open the unified close position modal
     onOpenCloseModal()
   }
@@ -618,9 +604,9 @@ function CrucibleCloseButton({
   return (
     <button
       onClick={handleClose}
-      disabled={!hasAnyPosition}
+      disabled={!canClose}
       className={`w-full py-3 rounded-xl font-heading transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg flex items-center justify-center space-x-2 border relative overflow-hidden group ${
-        !hasAnyPosition
+        !canClose
           ? 'bg-forge-gray-900 text-forge-gray-500 border-forge-gray-800 cursor-not-allowed opacity-50'
           : hasInfernoPosition
           ? 'bg-gradient-to-r from-red-500/20 to-orange-500/20 hover:from-red-500/30 hover:to-orange-500/30 text-red-400 border-red-500/30 hover:border-red-500/50'
@@ -632,8 +618,7 @@ function CrucibleCloseButton({
       }`}
     >
       <div className="absolute inset-0 bg-gradient-to-r from-forge-gray-700/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-      <div className="relative flex items-center justify-center space-x-2">
-        <ArrowDownIcon className="h-4 w-4 group-hover:scale-110 transition-transform duration-300" />
+      <div className="relative flex items-center justify-center">
         <span className="text-sm font-semibold">
           Close Position
         </span>
@@ -658,9 +643,6 @@ function CrucibleLeveragedPositions({
   return (
     <div className="mt-4 pt-4 border-t border-orange-500/20">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-7 h-7 rounded-lg bg-orange-500/20 flex items-center justify-center">
-          <BoltIcon className="w-3.5 h-3.5 text-orange-400" />
-        </div>
         <h3 className="text-base font-heading text-white">My Leveraged Positions</h3>
         <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-[11px] font-bold rounded-full">
           {positions.length}
@@ -700,9 +682,6 @@ function CrucibleInfernoPositions({
   return (
     <div className="mt-4 pt-4 border-t border-red-500/20">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-7 h-7 rounded-lg bg-red-500/20 flex items-center justify-center">
-          <FireIcon className="w-3.5 h-3.5 text-red-400" />
-        </div>
         <h3 className="text-base font-heading text-white">My Inferno LP Positions</h3>
         <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[11px] font-bold rounded-full">
           {positions.length}

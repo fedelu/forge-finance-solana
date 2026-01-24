@@ -5,6 +5,7 @@ import { useWallet } from '../contexts/WalletContext'
 import { useBalance } from '../contexts/BalanceContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { usePrice } from '../contexts/PriceContext'
+import { useCrucible } from '../hooks/useCrucible'
 import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { validateLPPosition } from '../utils/validation'
 import { INFERNO_OPEN_FEE_RATE } from '../config/fees'
@@ -35,10 +36,30 @@ export default function InfernoLPPositionModal({
   const { connected, publicKey } = useWallet()
   const { subtractFromBalance, getBalance } = useBalance()
   const { addTransaction } = useAnalytics()
-  const { solPrice } = usePrice()
+  const { solPrice, infernoLpPrice } = usePrice()
+  const { getCrucible } = useCrucible()
 
   const baseTokenPrice = solPrice
   const baseTokenBalance = getBalance(baseTokenSymbol)
+
+  React.useEffect(() => {
+    if (!baseAmount) {
+      setUsdcAmount('')
+      return
+    }
+    const parsedBase = parseFloat(baseAmount)
+    if (!Number.isFinite(parsedBase) || parsedBase <= 0) {
+      setUsdcAmount('')
+      return
+    }
+    const baseValueUsd = parsedBase * baseTokenPrice
+    const targetUsdc = leverageFactor === 1
+      ? baseValueUsd
+      : leverageFactor === 1.5
+        ? baseValueUsd * 0.5
+        : 0
+    setUsdcAmount(targetUsdc === 0 ? '0' : targetUsdc.toFixed(2))
+  }, [baseAmount, leverageFactor, baseTokenPrice])
   const lpAPY = baseAPY
 
   const handleBaseAmountChange = (value: string) => {
@@ -72,13 +93,14 @@ export default function InfernoLPPositionModal({
       return
     }
 
-    if (!usdcAmount || parseFloat(usdcAmount) <= 0) {
+    const parsedUsdcInput = usdcAmount ? parseFloat(usdcAmount) : 0
+    if (leverageFactor < 2 && (!usdcAmount || parsedUsdcInput <= 0)) {
       alert('Please enter a valid USDC amount')
       return
     }
 
     const baseAmt = parseFloat(baseAmount)
-    const usdcAmt = parseFloat(usdcAmount)
+    const usdcAmt = usdcAmount ? parseFloat(usdcAmount) : 0
     const usdcBal = getBalance('USDC')
 
     const validation = validateLPPosition(
@@ -87,7 +109,9 @@ export default function InfernoLPPositionModal({
       baseTokenBalance,
       usdcBal,
       baseTokenSymbol,
-      baseTokenPrice
+      baseTokenPrice,
+      undefined,
+      leverageFactor === 2
     )
 
     if (!validation.valid) {
@@ -147,12 +171,49 @@ export default function InfernoLPPositionModal({
 
   const parsedBaseAmount = baseAmount ? parseFloat(baseAmount) : 0
   const parsedUsdcAmount = usdcAmount ? parseFloat(usdcAmount) : 0
-  const infernoOpenFee = parsedBaseAmount * INFERNO_OPEN_FEE_RATE
-  const baseAmountForPosition = Math.max(0, parsedBaseAmount - infernoOpenFee)
-  const userEquityValue = (parsedBaseAmount * baseTokenPrice) + parsedUsdcAmount
-  const borrowedUSDC = leverageFactor > 1
-    ? userEquityValue * (leverageFactor - 1)
+  const baseValueUsd = parsedBaseAmount * baseTokenPrice
+  const depositUsdcTarget = leverageFactor === 1
+    ? baseValueUsd
+    : leverageFactor === 1.5
+      ? baseValueUsd * 0.5
+      : 0
+  const borrowedUSDC = leverageFactor > 1 ? baseValueUsd - depositUsdcTarget : 0
+  const totalBaseAmountPreFee = parsedBaseAmount
+  const totalUsdcAmountPreFee = depositUsdcTarget + borrowedUSDC
+  const totalPositionValueUsd = (totalBaseAmountPreFee * baseTokenPrice) + totalUsdcAmountPreFee
+  const infernoOpenFeeUsd = totalPositionValueUsd * INFERNO_OPEN_FEE_RATE
+  const infernoOpenFeeBaseUsd = totalPositionValueUsd > 0
+    ? (infernoOpenFeeUsd * (totalBaseAmountPreFee * baseTokenPrice)) / totalPositionValueUsd
     : 0
+  const infernoOpenFeeBase = baseTokenPrice > 0
+    ? infernoOpenFeeBaseUsd / baseTokenPrice
+    : 0
+  const infernoOpenFeeUsdc = totalPositionValueUsd > 0
+    ? infernoOpenFeeUsd - infernoOpenFeeBaseUsd
+    : 0
+  const baseAmountForPosition = Math.max(0, totalBaseAmountPreFee - infernoOpenFeeBase)
+  const netUsdcForPosition = Math.max(0, totalUsdcAmountPreFee - infernoOpenFeeUsdc)
+  const lpTokenPrice = infernoLpPrice ?? 0
+  const crucible = getCrucible(crucibleAddress)
+  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+  const lpExchangeRate = exchangeRate > 0 ? exchangeRate : 1.0
+  const fallbackLpTokenPrice = baseTokenPrice * (1 + lpExchangeRate)
+  const lpTokenPriceAdjusted = lpTokenPrice > 0 ? lpTokenPrice * lpExchangeRate : fallbackLpTokenPrice
+  const lpTotalValueUsd = (baseAmountForPosition * baseTokenPrice) + netUsdcForPosition
+  const ifSolPriceUsd = baseTokenPrice * lpExchangeRate
+  const maxLpByUsdc = ifSolPriceUsd > 0 ? netUsdcForPosition / ifSolPriceUsd : 0
+  const fallbackLpTokens = Math.min(baseAmountForPosition, maxLpByUsdc)
+  const estimatedLpTokens = (baseAmountForPosition > 0 && netUsdcForPosition > 0)
+    ? (lpTokenPriceAdjusted > 0 ? lpTotalValueUsd / lpTokenPriceAdjusted : fallbackLpTokens)
+    : 0
+  const ctokenSymbol = crucible?.ptokenSymbol || 'cToken'
+  const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
+  const lpTokenDecimals = displayPairSymbol === 'ifSOL' ? 2 : 4
+  const lpUsdcPerBase = lpTokenPriceAdjusted > 0
+    ? Math.max(0, lpTokenPriceAdjusted - baseTokenPrice)
+    : baseAmountForPosition > 0
+      ? netUsdcForPosition / baseAmountForPosition
+      : baseTokenPrice
   const safeBaseApy = isNaN(baseAPY) ? 0 : baseAPY
   const effectiveAPY = leverageFactor > 1
     ? (safeBaseApy * leverageFactor) - (10 * (leverageFactor - 1))
@@ -172,12 +233,7 @@ export default function InfernoLPPositionModal({
         </button>
 
         <div className="mb-4">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/30 to-orange-500/10 flex items-center justify-center border border-orange-500/20">
-              <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
+          <div className="flex items-center mb-2">
             <div>
               <h2 className="text-xl font-heading text-white">Inferno LP</h2>
               <p className="text-forge-gray-400 text-xs">Leveraged LP with real swaps</p>
@@ -221,6 +277,7 @@ export default function InfernoLPPositionModal({
               type="number"
               value={usdcAmount}
               onChange={(e) => handleUSDCAmountChange(e.target.value)}
+              readOnly
               placeholder="0.0"
               className="w-full px-3 py-2.5 bg-forge-gray-900 border border-forge-gray-700 rounded-xl text-white focus:outline-none focus:border-orange-500/50"
             />
@@ -228,72 +285,43 @@ export default function InfernoLPPositionModal({
         </div>
 
         <div className="panel rounded-2xl p-3 mb-3 border border-forge-gray-700/50">
-          <h3 className="text-[11px] font-semibold text-forge-gray-300 mb-2 flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
+          <h3 className="text-[11px] font-semibold text-forge-gray-300 mb-2">
             Transaction Preview
           </h3>
           <div className="space-y-1.5">
-            <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-              <span className="text-forge-gray-400 text-xs font-satoshi">LP Token</span>
-              <span className="text-white text-base font-heading">ifSOL/USDC</span>
-            </div>
-            <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-              <span className="text-forge-gray-400 text-xs font-satoshi">{baseTokenSymbol} Deposited</span>
-              <span className="text-white text-sm font-heading">{formatSOL(baseAmountForPosition)} {baseTokenSymbol}</span>
-            </div>
-            {leverageFactor === 1.5 ? (
-              <>
-                <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                  <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Deposit</span>
-                  <span className="text-sm font-heading text-white">
-                    {formatUSDC(parsedUsdcAmount)} USDC
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                  <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Borrow</span>
-                  <span className="text-sm font-heading text-forge-primary-light">
-                    {formatUSDC(borrowedUSDC)} USDC
-                  </span>
-                </div>
-              </>
-            ) : (
+            {leverageFactor > 1 && (
               <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                <span className="text-forge-gray-400 text-xs font-satoshi">
-                  {leverageFactor === 1 ? 'USDC Deposited' : 'USDC Borrowed'}
-                </span>
-                <span className={`text-sm font-heading ${leverageFactor === 1 ? 'text-white' : 'text-forge-primary-light'}`}>
-                  {formatUSDC(leverageFactor === 1 ? parsedUsdcAmount : borrowedUSDC)} USDC
+                <span className="text-forge-gray-400 text-xs font-satoshi">USDC Borrowed</span>
+                <span className="text-sm font-heading text-forge-primary-light">
+                  {formatUSDC(borrowedUSDC)} USDC
                 </span>
               </div>
             )}
+            <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
+              <span className="text-forge-gray-400 text-xs font-satoshi">LP Tokens Received</span>
+              <span className="text-white text-sm font-heading">
+                {parsedBaseAmount > 0 ? formatNumberWithCommas(estimatedLpTokens, lpTokenDecimals) : formatNumberWithCommas(0, lpTokenDecimals)} if{baseTokenSymbol}/USDC
+              </span>
+            </div>
             {parsedBaseAmount > 0 && (
               <div className="flex justify-between items-center py-1.5 px-2.5 bg-red-500/10 rounded-lg border border-red-500/20">
-                <span className="text-red-400 text-xs font-satoshi flex items-center gap-1">
-                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Inferno Open Fee ({(INFERNO_OPEN_FEE_RATE * 100).toFixed(2)}%)
+                <span className="text-red-400 text-xs font-satoshi">
+                  Transaction Fees ({(INFERNO_OPEN_FEE_RATE * 100).toFixed(2)}%)
                 </span>
                 <span className="text-red-400 font-heading font-semibold text-xs">
-                  -{formatSOL(infernoOpenFee)} {baseTokenSymbol}
+                  -{formatSOL(infernoOpenFeeBase)} {baseTokenSymbol} / -{formatUSDC(infernoOpenFeeUsdc)} USDC
                 </span>
-              </div>
-            )}
-            <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
-              <span className="text-forge-primary-light text-xs font-satoshi">Effective APY</span>
-              <span className="text-forge-primary-light text-base font-heading">{effectiveAPY.toFixed(2)}%</span>
-            </div>
-            {leverageFactor > 1 && (
-              <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg border border-blue-500/20">
-                <span className="text-blue-300 text-xs font-satoshi">Borrowing Interest Rate</span>
-                <span className="text-blue-200 text-xs font-heading">5% APY</span>
               </div>
             )}
             <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-              <span className="text-forge-gray-400 text-xs font-satoshi">Total Value</span>
-              <span className="text-white text-sm font-heading">${totalValue}</span>
+              <span className="text-forge-gray-400 text-xs font-satoshi">Exchange Rate</span>
+              <span className="text-forge-primary font-heading font-semibold text-sm">
+                1 {baseTokenSymbol} + {formatUSDC(lpUsdcPerBase)} USDC = 1 {displayPairSymbol}/USDC
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
+              <span className="text-forge-primary-light text-xs font-satoshi">Base APY</span>
+              <span className="text-forge-primary-light text-base font-heading">{safeBaseApy.toFixed(2)}%</span>
             </div>
           </div>
         </div>

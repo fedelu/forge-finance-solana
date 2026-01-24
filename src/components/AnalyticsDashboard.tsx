@@ -7,13 +7,6 @@ import { useCrucible } from '../hooks/useCrucible'
 import { getLeveragedPositions, getLPPositions } from '../utils/localStorage';
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
-import { 
-  ChartBarIcon, 
-  CurrencyDollarIcon, 
-  BanknotesIcon,
-  CreditCardIcon,
-  ArrowTrendingUpIcon
-} from '@heroicons/react/24/outline';
 
 export const AnalyticsDashboard: React.FC = () => {
   const { solPrice } = usePrice();
@@ -223,11 +216,8 @@ export const AnalyticsDashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 justify-items-stretch">
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-forge-primary/20 transition-all duration-500 hover:border-forge-primary/50 hover:-translate-y-1 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          <div className="relative flex items-center space-x-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-forge-primary/30 to-forge-primary/10 rounded-xl flex items-center justify-center ring-2 ring-forge-primary/20 group-hover:ring-forge-primary/40 transition-all duration-300 group-hover:scale-110">
-              <CurrencyDollarIcon className="h-4 w-4 text-forge-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
+          <div className="relative flex items-center justify-center text-center">
+            <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">APY Earnings</p>
               <p className="text-lg font-heading text-white">{formatCurrency(getTotalAPYEarnings())}</p>
             </div>
@@ -236,11 +226,8 @@ export const AnalyticsDashboard: React.FC = () => {
 
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-forge-success/20 transition-all duration-500 hover:border-forge-success/50 hover:-translate-y-1 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-forge-success/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          <div className="relative flex items-center space-x-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-forge-success/30 to-forge-success/10 rounded-xl flex items-center justify-center ring-2 ring-forge-success/20 group-hover:ring-forge-success/40 transition-all duration-300 group-hover:scale-110">
-              <BanknotesIcon className="h-4 w-4 text-forge-success" />
-            </div>
-            <div className="flex-1 min-w-0">
+          <div className="relative flex items-center justify-center text-center">
+            <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">Total Deposited</p>
               <p className="text-lg font-heading text-white">{formatCurrency(getTotalDepositedValue())}</p>
             </div>
@@ -249,11 +236,8 @@ export const AnalyticsDashboard: React.FC = () => {
 
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-forge-primary/20 transition-all duration-500 hover:border-forge-primary/50 hover:-translate-y-1 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          <div className="relative flex items-center space-x-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-forge-primary/30 to-forge-primary/10 rounded-xl flex items-center justify-center ring-2 ring-forge-primary/20 group-hover:ring-forge-primary/40 transition-all duration-300 group-hover:scale-110">
-              <ArrowTrendingUpIcon className="h-4 w-4 text-forge-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
+          <div className="relative flex items-center justify-center text-center">
+            <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">Weighted APY</p>
               <p className="text-lg font-heading text-white">{formatNumber(getWeightedAPY(), 2)}%</p>
             </div>
@@ -262,11 +246,8 @@ export const AnalyticsDashboard: React.FC = () => {
 
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-orange-500/20 transition-all duration-500 hover:border-orange-500/50 hover:-translate-y-1 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          <div className="relative flex items-center space-x-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-orange-500/30 to-orange-500/10 rounded-xl flex items-center justify-center ring-2 ring-orange-500/20 group-hover:ring-orange-500/40 transition-all duration-300 group-hover:scale-110">
-              <CreditCardIcon className="h-4 w-4 text-orange-400" />
-            </div>
-            <div className="flex-1 min-w-0">
+          <div className="relative flex items-center justify-center text-center">
+            <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">Borrowed</p>
               <p className="text-lg font-heading text-white">{formatCurrency(getTotalBorrowed())}</p>
             </div>

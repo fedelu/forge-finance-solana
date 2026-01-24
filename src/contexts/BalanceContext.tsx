@@ -37,7 +37,7 @@ interface BalanceProviderProps {
 }
 
 export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) => {
-  const { solPrice } = usePrice();
+  const { solPrice, infernoLpPrice } = usePrice();
   const { connection, publicKey, connected } = useWallet();
   const [balances, setBalances] = useState<TokenBalance[]>([
     { symbol: 'SOL', amount: 25, usdValue: 5000 }, // Start with 25 SOL (will be recalculated with real price)
@@ -67,11 +67,11 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
       'BTC': 110000,
       'SPARK': 0.1,
       'HEAT': 0.05,
-      'ifSOL/USDC LP': solPrice * 2, // Inferno LP fallback price
+      'ifSOL/USDC LP': infernoLpPrice ?? 0, // Inferno LP price from oracle
       'cFORGE/USDC LP': 0.002 * 2, // LP token price = FORGE price * 2 (represents FORGE + USDC pair)
     };
     return prices[symbol] || 0;
-  }, [solPrice]);
+  }, [solPrice, infernoLpPrice]);
 
   const updateBalance = useCallback((symbol: string, amount: number) => {
     setBalances(prev => {

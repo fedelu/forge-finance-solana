@@ -53,6 +53,7 @@ export const SOLANA_TESTNET_CONFIG = {
   // Pyth Network price feed addresses on devnet
   PYTH_PRICE_FEEDS: {
     SOL_USD: 'ALP8SdU9oARYVLgLR7LrGzyc6M3zvTyUxE6QfkYYJJEt', // SOL/USD price feed on devnet
+    INFERNO_LP_USD: '3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv', // Inferno LP token price feed on devnet
   },
   // Basic APY configuration
   APY_CONFIG: {

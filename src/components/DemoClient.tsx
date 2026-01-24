@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
-import { FireIcon, BoltIcon, CurrencyDollarIcon, WalletIcon, BriefcaseIcon } from '@heroicons/react/24/outline'
 import SimpleStats from '../components/SimpleStats'
 import CrucibleManager from '../components/CrucibleManager'
 import MobileNav from '../components/MobileNav'
@@ -157,7 +156,7 @@ function DemoContent() {
           <div className="mx-auto max-w-screen-2xl">
             <div className="relative">
               <div className="pointer-events-none absolute inset-x-6 -bottom-px h-px bg-gradient-to-r from-transparent via-forge-primary/60 to-transparent opacity-70" />
-              <div className="relative grid grid-cols-[auto,1fr,auto] items-center gap-6 rounded-2xl panel px-6 py-4">
+              <div className="relative grid grid-cols-[auto,1fr,auto] items-center gap-6 rounded-2xl panel px-4 py-3">
                 <div className="flex items-center gap-4 flex-shrink-0 min-w-[180px]">
                   <img
                     src="/forge protocol transparent.png"
@@ -177,7 +176,6 @@ function DemoContent() {
                       }`}
                     >
                       <div className="flex items-center space-x-2">
-                        <FireIcon className="w-4 h-4" />
                         <span className="text-base">Crucibles</span>
                       </div>
                     </button>
@@ -190,7 +188,6 @@ function DemoContent() {
                       }`}
                     >
                       <div className="flex items-center space-x-2">
-                        <BriefcaseIcon className="w-4 h-4" />
                         <span className="text-base">Portfolio</span>
                       </div>
                     </button>
@@ -203,7 +200,6 @@ function DemoContent() {
                       }`}
                     >
                       <div className="flex items-center space-x-2">
-                        <CurrencyDollarIcon className="w-4 h-4" />
                         <span className="text-base">Lending</span>
                       </div>
                     </button>
@@ -235,7 +231,6 @@ function DemoContent() {
                     : 'text-forge-gray-300 border-white/10 hover:text-white hover:bg-white/10 hover:border-white/20'
                 }`}
               >
-                <FireIcon className="w-5 h-5" />
                 <span>Crucibles</span>
               </button>
               <button
@@ -246,7 +241,6 @@ function DemoContent() {
                     : 'text-forge-gray-300 border-white/10 hover:text-white hover:bg-white/10 hover:border-white/20'
                 }`}
               >
-                <BriefcaseIcon className="w-5 h-5" />
                 <span>Portfolio</span>
               </button>
               <button
@@ -257,7 +251,6 @@ function DemoContent() {
                     : 'text-forge-gray-300 border-white/10 hover:text-white hover:bg-white/10 hover:border-white/20'
                 }`}
               >
-                <CurrencyDollarIcon className="w-5 h-5" />
                 <span>Lending</span>
               </button>
             </div>
@@ -276,15 +269,10 @@ function DemoContent() {
                 <AnalyticsDashboard />
               ) : (
                 <div className="min-h-[calc(100vh-18rem)] w-full flex items-center justify-center">
-                  <div className="panel rounded-3xl p-10 text-center w-full max-w-2xl">
-                    <div className="flex justify-center mb-4">
-                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-forge-primary/30 to-forge-primary/10 border border-forge-primary/20 flex items-center justify-center">
-                        <WalletIcon className="w-8 h-8 text-forge-primary" />
-                      </div>
-                    </div>
-                    <h3 className="text-2xl font-heading text-white mb-2">Connect your wallet</h3>
-                    <p className="text-forge-gray-400 text-sm mb-6">
-                      Connect Phantom to view your portfolio, open positions, and yield analytics.
+                  <div className="panel rounded-3xl p-12 md:p-14 text-center w-full max-w-3xl">
+                    <h3 className="text-3xl font-heading text-white mb-3">Connect your wallet</h3>
+                    <p className="text-forge-gray-400 text-base mb-8">
+                      Connect your wallet to view your portfolio, open positions, and yield analytics.
                     </p>
                     <div className="flex justify-center">
                       <PhantomWalletButton />
@@ -298,10 +286,7 @@ function DemoContent() {
                 <div className="w-full max-w-4xl space-y-6">
                   <div className="panel rounded-3xl p-8">
                   {/* Header */}
-                  <div className="flex items-center gap-4 mb-8">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-forge-primary/30 to-forge-primary/10 border border-forge-primary/20 flex items-center justify-center shadow-lg shadow-forge-primary/20">
-                      <CurrencyDollarIcon className="w-8 h-8 text-forge-primary" />
-                    </div>
+                  <div className="flex items-center mb-8">
                     <div>
                       <h2 className="text-3xl font-heading text-white mb-1">Lending Markets</h2>
                       <p className="text-forge-gray-400 text-sm font-satoshi-light">
@@ -349,8 +334,7 @@ function DemoContent() {
                             {/* Stats Grid */}
                             <div className="grid grid-cols-2 gap-4 mb-6">
                               <div className="panel rounded-xl p-4 border border-forge-gray-700/30 bg-forge-gray-800/20">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <BoltIcon className="w-4 h-4 text-forge-gray-400" />
+                                <div className="mb-2">
                                   <p className="text-xs text-forge-gray-400 font-satoshi uppercase tracking-wide">TVL</p>
                                 </div>
                                 <p className="text-xl font-heading text-white">${market.tvl}</p>
@@ -361,8 +345,7 @@ function DemoContent() {
                                   ? 'border-orange-500/30 bg-orange-500/5' 
                                   : 'border-forge-gray-700/30 bg-forge-gray-800/20'
                               }`}>
-                                <div className="flex items-center gap-2 mb-2">
-                                  <FireIcon className={`w-4 h-4 ${isHighUtilization ? 'text-orange-400' : 'text-forge-gray-400'}`} />
+                                <div className="mb-2">
                                   <p className="text-xs text-forge-gray-400 font-satoshi uppercase tracking-wide">Utilization</p>
                                 </div>
                                 <p className={`text-xl font-heading ${isHighUtilization ? 'text-orange-400' : 'text-white'}`}>
@@ -374,16 +357,14 @@ function DemoContent() {
                             {/* APY Rates */}
                             <div className="space-y-3 mb-6">
                               <div className="flex items-center justify-between p-3 rounded-lg bg-forge-gray-800/30 border border-forge-gray-700/30 backdrop-blur-sm">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-green-400 shadow-lg shadow-green-400/50"></div>
+                                <div className="flex items-center">
                                   <span className="text-sm text-forge-gray-300 font-satoshi">Supply APY</span>
                                 </div>
                                 <span className="text-lg font-heading text-green-400">{supplyAPY}%</span>
                               </div>
                               
                               <div className="flex items-center justify-between p-3 rounded-lg bg-forge-gray-800/30 border border-forge-gray-700/30 backdrop-blur-sm">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-orange-400 shadow-lg shadow-orange-400/50"></div>
+                                <div className="flex items-center">
                                   <span className="text-sm text-forge-gray-300 font-satoshi">Borrow APY</span>
                                 </div>
                                 <span className="text-lg font-heading text-orange-400">{borrowAPY}%</span>
@@ -428,9 +409,6 @@ function DemoContent() {
               <span className="text-[0.65rem] uppercase tracking-[0.4em] text-forge-gray-500 font-heading">
                 Forge Ecosystem
               </span>
-              <p className="text-sm text-forge-gray-300 font-satoshi">
-                High-voltage yield infrastructure built for the next wave of on-chain finance.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-[0.65rem] uppercase tracking-[0.32em] text-forge-gray-500 font-heading">
               <a href="/docs" className="transition-colors hover:text-white">

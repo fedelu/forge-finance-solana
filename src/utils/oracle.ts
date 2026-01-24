@@ -4,6 +4,7 @@
  */
 
 const CACHE_TTL = 60000; // 60 seconds cache
+const PYTH_CACHE_TTL = 60000; // 60 seconds cache for Pyth feeds
 const MIN_REQUEST_INTERVAL = 1200; // 50 calls/min = 1200ms between calls (conservative)
 
 interface PriceCache {
@@ -14,6 +15,63 @@ interface PriceCache {
 // In-memory cache for SOL price
 let solPriceCache: PriceCache | null = null;
 let lastRequestTime: number = 0;
+const pythPriceCache = new Map<string, PriceCache>();
+
+function parsePythPrice(accountData: Uint8Array): number {
+  const MIN_REQUIRED_SIZE = 132;
+  if (accountData.length < MIN_REQUIRED_SIZE) {
+    throw new Error('Invalid Pyth price account data');
+  }
+
+  const PRICE_OFFSET = 96;
+  const EXPO_OFFSET = 104;
+
+  const view = new DataView(accountData.buffer, accountData.byteOffset, accountData.byteLength);
+  const price = Number(view.getBigInt64(PRICE_OFFSET, true));
+  const expo = view.getInt32(EXPO_OFFSET, true);
+
+  if (!Number.isFinite(price)) {
+    throw new Error('Invalid price value');
+  }
+
+  const scale = Math.pow(10, Math.abs(expo));
+  const priceUsd = expo >= 0 ? price * scale : price / scale;
+
+  if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
+    throw new Error('Invalid price data');
+  }
+
+  return priceUsd;
+}
+
+export async function fetchPythPrice(
+  connection: import('@solana/web3.js').Connection,
+  priceAccount: import('@solana/web3.js').PublicKey
+): Promise<number> {
+  const accountInfo = await connection.getAccountInfo(priceAccount);
+  if (!accountInfo?.data) {
+    throw new Error('Price account not found');
+  }
+
+  return parsePythPrice(accountInfo.data);
+}
+
+export async function getCachedPythPrice(
+  connection: import('@solana/web3.js').Connection,
+  priceAccount: import('@solana/web3.js').PublicKey
+): Promise<number> {
+  const cacheKey = priceAccount.toBase58();
+  const now = Date.now();
+  const cached = pythPriceCache.get(cacheKey);
+
+  if (cached && (now - cached.timestamp) < PYTH_CACHE_TTL) {
+    return cached.price;
+  }
+
+  const price = await fetchPythPrice(connection, priceAccount);
+  pythPriceCache.set(cacheKey, { price, timestamp: now });
+  return price;
+}
 
 /**
  * Fetch current SOL/USD price from CoinGecko

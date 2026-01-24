@@ -158,6 +158,7 @@ pub mod forge_crucibles_inferno {
         crucible.fee_rate = fee_rate;
         crucible.paused = false;
         crucible.expected_vault_balance = 0;
+        crucible.expected_usdc_vault_balance = 0;
         let oracle_key = ctx.accounts.oracle.key();
         crucible.oracle = if oracle_key == System::id() { None } else { Some(oracle_key) };
         crucible.treasury_base = ctx.accounts.treasury_base.key();

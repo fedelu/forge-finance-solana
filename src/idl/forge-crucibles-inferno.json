@@ -1098,6 +1098,10 @@
             "type": "u64"
           },
           {
+            "name": "expected_usdc_vault_balance",
+            "type": "u64"
+          },
+          {
             "name": "oracle",
             "type": {
               "option": "pubkey"

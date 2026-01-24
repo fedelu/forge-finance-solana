@@ -7,6 +7,7 @@ use lending_pool_usdc::program::LendingPoolUsdc;
 use crate::state::{InfernoCrucible, InfernoLPPositionAccount, InfernoCrucibleError};
 
 const PRICE_SCALE: u64 = 1_000_000;
+const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 const SLIPPAGE_TOLERANCE_BPS: u64 = 100;
 const OPEN_FEE_BPS: u64 = 100;
 const CLOSE_FEE_PRINCIPAL_BPS: u64 = 200;
@@ -58,7 +59,7 @@ pub fn open_inferno_lp_position(
 
     let base_value = (base_amount as u128)
         .checked_mul(base_token_price as u128)
-        .and_then(|v| v.checked_div(PRICE_SCALE as u128))
+        .and_then(|v| v.checked_div(LAMPORTS_PER_SOL as u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let usdc_value = usdc_amount as u128;
 
@@ -221,26 +222,28 @@ pub fn open_inferno_lp_position(
         token::transfer(cpi_ctx, protocol_fee_usdc)?;
     }
 
-    // Mint LP tokens
-    let product = base_value
-        .checked_mul(usdc_value)
+    // Mint LP tokens based on limiting side:
+    // 1 LP = 1 SOL + (SOL price in USDC * exchange rate)
+    let exchange_rate = if crucible.exchange_rate == 0 {
+        PRICE_SCALE
+    } else {
+        crucible.exchange_rate
+    };
+    let adjusted_price = (base_token_price as u128)
+        .checked_mul(exchange_rate as u128)
+        .and_then(|v| v.checked_div(PRICE_SCALE as u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
-    require!(product > 0, InfernoCrucibleError::InvalidAmount);
-    let mut guess = product;
-    let mut prev_guess = 0u128;
-    while guess != prev_guess {
-        prev_guess = guess;
-        let quotient = product.checked_div(guess).ok_or(ProgramError::ArithmeticOverflow)?;
-        guess = (guess.checked_add(quotient).ok_or(ProgramError::ArithmeticOverflow)?) / 2;
-    }
-    let sqrt_product = guess;
-    let lp_tokens_scaled = sqrt_product
-        .checked_mul(1_000u128)
+    require!(adjusted_price > 0, InfernoCrucibleError::InvalidAmount);
+
+    let max_lp_by_usdc = (net_usdc_amount as u128)
+        .checked_mul(LAMPORTS_PER_SOL as u128)
+        .and_then(|v| v.checked_div(adjusted_price))
         .ok_or(ProgramError::ArithmeticOverflow)?;
-    let lp_tokens_to_mint = if lp_tokens_scaled > u64::MAX as u128 {
+    let lp_tokens_to_mint_u128 = (net_base_amount as u128).min(max_lp_by_usdc);
+    let lp_tokens_to_mint = if lp_tokens_to_mint_u128 > u64::MAX as u128 {
         return Err(ProgramError::ArithmeticOverflow.into());
     } else {
-        lp_tokens_scaled as u64
+        lp_tokens_to_mint_u128 as u64
     };
 
     let crucible_bump = ctx.bumps.crucible;
@@ -278,6 +281,15 @@ pub fn open_inferno_lp_position(
     position.bump = ctx.bumps.position;
 
     crucible.total_lp_positions = position_id;
+    crucible.expected_vault_balance = crucible.expected_vault_balance
+        .checked_add(net_base_amount)
+        .and_then(|v| v.checked_add(vault_fee_base))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    crucible.expected_usdc_vault_balance = crucible.expected_usdc_vault_balance
+        .checked_add(net_usdc_amount)
+        .and_then(|v| v.checked_add(vault_fee_usdc))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+
     crucible.total_lp_token_supply = crucible.total_lp_token_supply
         .checked_add(lp_tokens_to_mint)
         .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -286,6 +298,9 @@ pub fn open_inferno_lp_position(
             .checked_add(vault_fee_base)
             .ok_or(ProgramError::ArithmeticOverflow)?;
     }
+
+    update_lp_exchange_rate(crucible, base_token_price)?;
+    crucible.last_update_slot = Clock::get()?.slot;
 
     emit!(InfernoLPPositionOpened {
         position_id,
@@ -326,7 +341,7 @@ pub fn close_inferno_lp_position(
 
     let current_base_value = (position.base_amount as u128)
         .checked_mul(current_base_token_price as u128)
-        .and_then(|v| v.checked_div(PRICE_SCALE as u128))
+        .and_then(|v| v.checked_div(LAMPORTS_PER_SOL as u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let current_usdc_value = position.usdc_amount as u128;
     let current_total_value = current_base_value
@@ -335,7 +350,7 @@ pub fn close_inferno_lp_position(
 
     let entry_base_value = (position.base_amount as u128)
         .checked_mul(position.entry_price as u128)
-        .and_then(|v| v.checked_div(PRICE_SCALE as u128))
+        .and_then(|v| v.checked_div(LAMPORTS_PER_SOL as u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let entry_usdc_value = position.usdc_amount as u128;
     let entry_total_value = entry_base_value
@@ -505,6 +520,20 @@ pub fn close_inferno_lp_position(
     let burn_ctx = CpiContext::new(burn_program, burn_accounts);
     token::burn(burn_ctx, ctx.accounts.user_lp_token_account.amount)?;
 
+    let base_vault_out = base_to_return
+        .checked_add(protocol_fee_base)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let usdc_vault_out = usdc_to_return
+        .checked_add(protocol_fee_usdc)
+        .and_then(|v| v.checked_add(repay_amount))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    crucible.expected_vault_balance = crucible.expected_vault_balance
+        .checked_sub(base_vault_out)
+        .ok_or(InfernoCrucibleError::InvalidAmount)?;
+    crucible.expected_usdc_vault_balance = crucible.expected_usdc_vault_balance
+        .checked_sub(usdc_vault_out)
+        .ok_or(InfernoCrucibleError::InvalidAmount)?;
+
     crucible.total_lp_token_supply = crucible.total_lp_token_supply
         .checked_sub(ctx.accounts.user_lp_token_account.amount)
         .ok_or(InfernoCrucibleError::InvalidAmount)?;
@@ -513,6 +542,9 @@ pub fn close_inferno_lp_position(
             .checked_add(vault_fee_base)
             .ok_or(ProgramError::ArithmeticOverflow)?;
     }
+
+    update_lp_exchange_rate(crucible, current_base_token_price)?;
+    crucible.last_update_slot = Clock::get()?.slot;
 
     position.is_open = false;
 
@@ -591,6 +623,33 @@ fn calculate_total_owed(
     }
 
     Ok(total_owed as u64)
+}
+
+fn update_lp_exchange_rate(crucible: &mut InfernoCrucible, base_token_price: u64) -> Result<()> {
+    if crucible.total_lp_token_supply == 0 {
+        crucible.exchange_rate = PRICE_SCALE;
+        return Ok(());
+    }
+
+    let base_value = (crucible.expected_vault_balance as u128)
+        .checked_mul(base_token_price as u128)
+        .and_then(|v| v.checked_div(LAMPORTS_PER_SOL as u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    if base_value == 0 {
+        crucible.exchange_rate = PRICE_SCALE;
+        return Ok(());
+    }
+
+    let usdc_value = crucible.expected_usdc_vault_balance as u128;
+    let exchange_rate = usdc_value
+        .checked_mul(PRICE_SCALE as u128)
+        .and_then(|v| v.checked_div(base_value))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    if exchange_rate > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    }
+    crucible.exchange_rate = exchange_rate as u64;
+    Ok(())
 }
 
 pub fn get_oracle_price(
@@ -847,7 +906,7 @@ fn calculate_ltv_bps(
 
     let base_value = (position.base_amount as u128)
         .checked_mul(current_base_token_price as u128)
-        .and_then(|v| v.checked_div(PRICE_SCALE as u128))
+        .and_then(|v| v.checked_div(LAMPORTS_PER_SOL as u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let usdc_value = position.usdc_amount as u128;
     let total_value = base_value

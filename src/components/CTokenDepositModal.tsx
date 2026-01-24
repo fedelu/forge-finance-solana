@@ -52,8 +52,9 @@ export default function CTokenDepositModal({
   const { sendTransaction: adapterSendTransaction } = useSolanaWallet() // Use adapter's sendTransaction directly
   const { balances, getBalance, subtractFromBalance, addToBalance } = useBalance()
   const { getCrucible } = useCrucible()
-  const { solPrice } = usePrice()
+  const { solPrice, infernoLpPrice } = usePrice()
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
+  const lpTokenDecimals = displayPairSymbol === 'ifSOL' ? 2 : 4
   
   // Fetch actual wallet balance when modal opens and wallet is connected
   React.useEffect(() => {
@@ -83,6 +84,7 @@ export default function CTokenDepositModal({
   }, [publicKey])
   
   const { deposit, loading: depositLoading } = useCToken(crucibleAddress, ctokenMint, publicKeyForHook)
+  const showBalances = connected && !!publicKey
   const { wrapTokens, unwrapTokens, trackLeveragedPosition } = useCrucible()
   const { openPosition: openLPPosition, loading: lpLoading } = useLP({
     crucibleAddress,
@@ -101,11 +103,11 @@ export default function CTokenDepositModal({
     : getBalance(baseTokenSymbol)
   const usdcBalance = getBalance('USDC')
   const loading = depositLoading || lpLoading || leveragedLoading || submitting
-const parsedAmount = amount ? parseFloat(amount) : 0
-const infernoOpenFee = mode === 'lp' ? parsedAmount * INFERNO_OPEN_FEE_RATE : 0
-const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - infernoOpenFee) : parsedAmount
-const wrapFeeAmount = mode === 'wrap' ? parsedAmount * WRAP_FEE_RATE : 0
-const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount) : 0
+  const parsedAmount = amount ? parseFloat(amount) : 0
+  const wrapFeeAmount = mode === 'wrap' ? parsedAmount * WRAP_FEE_RATE : 0
+  const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount) : 0
+
+  const baseValueUsdPreFee = parsedAmount * baseTokenPrice
 
   // Calculate USDC needed for LP positions
   const calculateUSDCNeeded = (baseAmount: number, leverageValue: number): { totalUSDC: number, depositUSDC: number, borrowUSDC: number } => {
@@ -437,20 +439,22 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
       } else {
         // LP mode
         const baseAmt = parseFloat(amount)
-        const openFeeAmount = baseAmt * INFERNO_OPEN_FEE_RATE
-        const baseForPosition = baseAmt - openFeeAmount
+        const baseForPosition = baseAmountForPosition
 
         if (baseForPosition <= 0) {
           alert('Amount too small after applying the Forge open fee.')
           return
         }
 
-        const usdcDetails = calculateUSDCNeeded(baseForPosition, leverage)
+        const usdcDetailsForPosition = usdcDetails
+        const usdcDepositForPosition = leverage === 1
+          ? Math.max(0, usdcDetailsForPosition.depositUSDC - infernoOpenFeeUsdc)
+          : usdcDetailsForPosition.depositUSDC
         
         if (leverage === 1) {
           // Standard LP: deposit equal USDC
-          if (usdcDetails.depositUSDC > usdcBalance) {
-            alert(`Insufficient USDC balance. You need ${formatUSDC(usdcDetails.depositUSDC)} USDC but only have ${formatUSDC(usdcBalance)} USDC.`)
+          if (usdcDetailsForPosition.depositUSDC > usdcBalance) {
+            alert(`Insufficient USDC balance. You need ${formatUSDC(usdcDetailsForPosition.depositUSDC)} USDC but only have ${formatUSDC(usdcBalance)} USDC.`)
             return
           }
           
@@ -460,7 +464,7 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
             return
           }
           
-          await openLPPosition(baseForPosition, usdcDetails.depositUSDC)
+          await openLPPosition(baseForPosition, usdcDepositForPosition)
           
           // Track this position in userBalances for exchange rate growth (same as normal wrap)
           // This allows cToken price to increase over time
@@ -473,11 +477,22 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
           // Add LP tokens to wallet (calculate LP token amount)
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
-          // Calculate LP tokens: baseAmount becomes cToken via exchange rate, then sqrt(cToken * USDC)
+          const isInferno = crucibleAddress === 'inferno-lp-crucible'
           // Use actual exchange rate from crucible (scaled by 1e6), default to 1.0
           const lpExchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
           const cTokenAmount = baseForPosition * lpExchangeRate
-          const lpTokenAmount = Math.sqrt(cTokenAmount * usdcDetails.depositUSDC) // Constant product formula
+          const netUsdcForLp = leverage === 1 ? Math.max(0, usdcDetails.depositUSDC - infernoOpenFeeUsdc) : usdcDetails.depositUSDC
+          const lpTokenPrice = infernoLpPrice ?? 0
+          const lpExchangeRateAdjusted = isInferno && exchangeRate > 0 ? exchangeRate : 1.0
+          const fallbackLpTokenPrice = isInferno ? baseTokenPrice * (1 + lpExchangeRateAdjusted) : 0
+          const lpTokenPriceAdjusted = lpTokenPrice > 0 ? lpTokenPrice * lpExchangeRateAdjusted : fallbackLpTokenPrice
+          const lpTotalValueUsd = (baseForPosition * baseTokenPrice) + netUsdcForLp
+          const ifSolPriceUsd = baseTokenPrice * lpExchangeRateAdjusted
+          const maxLpByUsdc = ifSolPriceUsd > 0 ? netUsdcForLp / ifSolPriceUsd : 0
+          const fallbackLpTokens = Math.min(baseForPosition, maxLpByUsdc)
+          const lpTokenAmount = isInferno
+            ? (lpTokenPriceAdjusted > 0 ? lpTotalValueUsd / lpTokenPriceAdjusted : fallbackLpTokens)
+            : Math.sqrt(cTokenAmount * usdcDetails.depositUSDC) // Constant product formula
           addToBalance(lpTokenSymbol, lpTokenAmount)
           
           // Force immediate wallet balance recalculation
@@ -577,10 +592,52 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
 
   if (!isOpen) return null
 
+  const crucible = getCrucible(crucibleAddress)
+  const allowInferno = crucibleAddress !== 'sol-crucible'
+  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+
   const baseValueUSD = amount ? parseFloat(amount) * baseTokenPrice : 0
-  const usdcDetails = mode === 'lp' && baseAmountForPosition > 0
-    ? calculateUSDCNeeded(baseAmountForPosition, leverage)
+  const usdcDetails = mode === 'lp' && parsedAmount > 0
+    ? calculateUSDCNeeded(parsedAmount, leverage)
     : { totalUSDC: 0, depositUSDC: 0, borrowUSDC: 0 }
+  const totalPositionValueUsd = mode === 'lp'
+    ? baseValueUsdPreFee + usdcDetails.totalUSDC
+    : 0
+  const infernoOpenFeeUsd = mode === 'lp'
+    ? totalPositionValueUsd * INFERNO_OPEN_FEE_RATE
+    : 0
+  const infernoOpenFeeBaseUsd = totalPositionValueUsd > 0
+    ? (infernoOpenFeeUsd * baseValueUsdPreFee) / totalPositionValueUsd
+    : 0
+  const infernoOpenFeeBase = baseTokenPrice > 0
+    ? infernoOpenFeeBaseUsd / baseTokenPrice
+    : 0
+  const infernoOpenFeeUsdc = totalPositionValueUsd > 0
+    ? infernoOpenFeeUsd - infernoOpenFeeBaseUsd
+    : 0
+  const baseAmountForPosition = mode === 'lp'
+    ? Math.max(0, parsedAmount - infernoOpenFeeBase)
+    : parsedAmount
+  const netUsdcForPosition = mode === 'lp'
+    ? Math.max(0, usdcDetails.totalUSDC - infernoOpenFeeUsdc)
+    : 0
+  const lpTokenPrice = infernoLpPrice ?? 0
+  const isInferno = crucibleAddress === 'inferno-lp-crucible'
+  const lpExchangeRate = isInferno && exchangeRate > 0 ? exchangeRate : 1.0
+  const fallbackLpTokenPrice = isInferno ? baseTokenPrice * (1 + lpExchangeRate) : 0
+  const lpTokenPriceAdjusted = lpTokenPrice > 0 ? lpTokenPrice * lpExchangeRate : fallbackLpTokenPrice
+  const lpTotalValueUsd = baseAmountForPosition * baseTokenPrice + netUsdcForPosition
+  const ifSolPriceUsd = baseTokenPrice * lpExchangeRate
+  const maxLpByUsdc = ifSolPriceUsd > 0 ? netUsdcForPosition / ifSolPriceUsd : 0
+  const fallbackLpTokens = Math.min(baseAmountForPosition, maxLpByUsdc)
+  const estimatedLpTokens = mode === 'lp' && baseAmountForPosition > 0
+    ? (lpTokenPriceAdjusted > 0 ? lpTotalValueUsd / lpTokenPriceAdjusted : fallbackLpTokens)
+    : 0
+  const lpUsdcPerBase = lpTokenPriceAdjusted > 0
+    ? Math.max(0, lpTokenPriceAdjusted - baseTokenPrice)
+    : baseAmountForPosition > 0
+      ? netUsdcForPosition / baseAmountForPosition
+      : baseTokenPrice
   const hasEnoughUSDC = leverage === 1 ? usdcDetails.depositUSDC <= usdcBalance : true // Leveraged positions borrow, so no balance check needed
   
   // Check lending pool liquidity for leveraged positions (1.5x and 2x)
@@ -597,14 +654,7 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
       : (safeCurrentAPY * leverage) - (10 * (leverage - 1)) // Leveraged: base * leverage - borrow cost
     : safeCurrentAPY
 
-  const crucible = getCrucible(crucibleAddress)
-  const allowInferno = crucibleAddress !== 'sol-crucible'
-  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
-  const baseValueUsdForLp = baseAmountForPosition * baseTokenPrice
   const estimatedCTokens = netWrapAmount > 0 ? netWrapAmount / exchangeRate : 0
-  const estimatedLpTokens = mode === 'lp' && parsedAmount > 0
-    ? Math.sqrt(baseValueUsdForLp * usdcDetails.totalUSDC) * 1000
-    : 0
 
   React.useEffect(() => {
     if (!allowInferno && mode === 'lp') {
@@ -626,18 +676,7 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
 
         {/* Header - Compact */}
         <div className="mb-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center border ${
-              mode === 'wrap' 
-                ? 'from-forge-primary/30 to-forge-primary/10 border-forge-primary/20'
-                : 'from-orange-500/30 to-orange-500/10 border-orange-500/20'
-            }`}>
-              {mode === 'wrap' ? (
-                <FireIcon className="w-5 h-5 text-forge-primary" />
-              ) : (
-                <BoltIcon className="w-5 h-5 text-orange-400" />
-              )}
-            </div>
+          <div className="flex items-center">
             <div>
               <h2 className="text-xl font-heading text-white">Open Position</h2>
               <p className="text-forge-gray-400 text-xs">
@@ -721,12 +760,14 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
             }`}>
               {baseTokenSymbol}
             </span>
-            <span className="ml-auto text-xs text-forge-gray-500">
-              Balance: {baseTokenBalance.toFixed(4)} {baseTokenSymbol}
-              {baseTokenSymbol === 'SOL' && actualWalletBalance !== null && (
-                <span className="ml-1 text-green-400" title="Live wallet balance">●</span>
-              )}
-            </span>
+            {showBalances && (
+              <span className="ml-auto text-xs text-forge-gray-500">
+                Balance: {baseTokenBalance.toFixed(4)} {baseTokenSymbol}
+                {baseTokenSymbol === 'SOL' && actualWalletBalance !== null && (
+                  <span className="ml-1 text-green-400" title="Live wallet balance">●</span>
+                )}
+              </span>
+            )}
           </label>
           <div className="flex space-x-2">
             <div className="flex-1 relative">
@@ -765,7 +806,7 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
               <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded-md text-xs font-medium">
                 {leverage === 1 ? 'Equal Value' : leverage === 1.5 ? 'Split' : 'Full Borrow'}
               </span>
-              {leverage === 1 && (
+              {leverage === 1 && showBalances && (
                 <span className="ml-auto text-xs text-forge-gray-500">
                   Balance: {formatUSDC(usdcBalance)} USDC
                 </span>
@@ -791,69 +832,6 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
                   </span>
                 )}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Position Summary */}
-        {amount && parseFloat(amount) > 0 && (
-          <div className="mb-4 p-4 panel-muted backdrop-blur-sm rounded-2xl border border-forge-gray-700/60">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs uppercase tracking-[0.18em] text-forge-gray-300 font-heading">Summary</span>
-              <span className="text-xs text-forge-gray-500">Estimates</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-forge-gray-400">Mode</span>
-                <span className="text-white font-semibold">{mode === 'wrap' ? 'Wrap' : 'Inferno'}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-forge-gray-400">Effective APY</span>
-                <span className="text-forge-accent font-semibold">{effectiveAPY.toFixed(2)}%</span>
-              </div>
-              {mode === 'wrap' ? (
-                <>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Wrap fee</span>
-                    <span className="text-white font-semibold">{formatSOL(wrapFeeAmount)} {baseTokenSymbol}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Net deposit</span>
-                    <span className="text-white font-semibold">{formatSOL(netWrapAmount)} {baseTokenSymbol}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Est. {ctokenSymbol}</span>
-                    <span className="text-white font-semibold">{formatNumberWithCommas(estimatedCTokens, 4)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Exchange rate</span>
-                    <span className="text-white font-semibold">{exchangeRate.toFixed(6)}</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Forge open fee</span>
-                    <span className="text-white font-semibold">{formatSOL(infernoOpenFee)} {baseTokenSymbol}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Net base</span>
-                    <span className="text-white font-semibold">{formatSOL(baseAmountForPosition)} {baseTokenSymbol}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">USDC deposit</span>
-                    <span className="text-white font-semibold">{formatUSDC(usdcDetails.depositUSDC)} USDC</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">USDC borrowed</span>
-                    <span className="text-white font-semibold">{formatUSDC(usdcDetails.borrowUSDC)} USDC</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-forge-gray-400">Est. LP tokens</span>
-                    <span className="text-white font-semibold">{formatNumberWithCommas(estimatedLpTokens, 4)}</span>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         )}
@@ -885,10 +863,7 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
 
         {/* Preview - Compact */}
         <div className="panel rounded-2xl p-4 mb-4 border border-forge-gray-700/50">
-          <h3 className="text-xs font-semibold text-forge-gray-300 mb-3 flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
+          <h3 className="text-xs font-semibold text-forge-gray-300 mb-3">
             Transaction Preview
           </h3>
           <div className="space-y-2">
@@ -907,10 +882,7 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
                         </span>
                       </div>
                       <div className="flex justify-between items-center py-2.5 px-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                        <span className="text-red-400 text-xs font-satoshi flex items-center gap-1">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                        <span className="text-red-400 text-xs font-satoshi">
                           Wrap Fee ({(WRAP_FEE_RATE * 100).toFixed(2)}%)
                         </span>
                         <span className="text-red-400 font-heading font-semibold">
@@ -931,62 +903,40 @@ const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount
               </>
             ) : (
               <>
-                <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                  <span className="text-forge-gray-400 text-xs font-satoshi">LP Token</span>
-                  <span className="text-white text-base font-heading">{displayPairSymbol}/USDC</span>
-                </div>
-                <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                  <span className="text-forge-gray-400 text-xs font-satoshi">{baseTokenSymbol} Deposited</span>
-                  <span className="text-white text-sm font-heading">{mode === 'lp' && amount ? baseAmountForPosition.toFixed(2) : '0.00'} {baseTokenSymbol}</span>
-                </div>
-                {leverage === 1.5 ? (
-                  <>
-                    <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                      <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Deposit</span>
-                      <span className="text-sm font-heading text-white">
-                        {formatUSDC(usdcDetails.depositUSDC)} USDC
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                      <span className="text-forge-gray-400 text-xs font-satoshi">USDC to Borrow</span>
-                      <span className="text-sm font-heading text-forge-primary-light">
-                        {formatUSDC(usdcDetails.borrowUSDC)} USDC
-                      </span>
-                    </div>
-                  </>
-                ) : (
+                {leverage > 1 && (
                   <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-                    <span className="text-forge-gray-400 text-xs font-satoshi">
-                      {leverage === 1 ? 'USDC Deposited' : 'USDC Borrowed'}
-                    </span>
-                    <span className={`text-sm font-heading ${leverage === 1 ? 'text-white' : 'text-forge-primary-light'}`}>
-                      {formatUSDC(usdcDetails.totalUSDC)} USDC
+                    <span className="text-forge-gray-400 text-xs font-satoshi">USDC Borrowed</span>
+                    <span className="text-sm font-heading text-forge-primary-light">
+                      {formatUSDC(usdcDetails.borrowUSDC)} USDC
                     </span>
                   </div>
                 )}
+                <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
+                  <span className="text-forge-gray-400 text-xs font-satoshi">LP Tokens Received</span>
+                  <span className="text-white text-sm font-heading">
+                    {amount && parseFloat(amount) > 0 ? formatNumberWithCommas(estimatedLpTokens, lpTokenDecimals) : formatNumberWithCommas(0, lpTokenDecimals)} {displayPairSymbol}/USDC
+                  </span>
+                </div>
                 {mode === 'lp' && amount && parseFloat(amount) > 0 && (
                   <div className="flex justify-between items-center py-1.5 px-2.5 bg-red-500/10 rounded-lg border border-red-500/20">
-                    <span className="text-red-400 text-xs font-satoshi flex items-center gap-1">
-                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Inferno Open Fee ({(INFERNO_OPEN_FEE_RATE * 100).toFixed(2)}%)
+                    <span className="text-red-400 text-xs font-satoshi">
+                      Transaction Fees ({(INFERNO_OPEN_FEE_RATE * 100).toFixed(2)}%)
                     </span>
                     <span className="text-red-400 font-heading font-semibold text-xs">
-                      -{(parseFloat(amount) * INFERNO_OPEN_FEE_RATE).toFixed(2)} {baseTokenSymbol}
+                      -{formatSOL(infernoOpenFeeBase)} {baseTokenSymbol} / -{formatUSDC(infernoOpenFeeUsdc)} USDC
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
-                  <span className="text-forge-primary-light text-xs font-satoshi">Effective APY</span>
-                  <span className="text-forge-primary-light text-lg font-heading">{effectiveAPY.toFixed(2)}%</span>
+                <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
+                  <span className="text-forge-gray-400 text-xs font-satoshi">Exchange Rate</span>
+                  <span className="text-forge-primary font-heading font-semibold text-sm">
+                    1 {baseTokenSymbol} + {formatUSDC(lpUsdcPerBase)} USDC = 1 {displayPairSymbol}/USDC
+                  </span>
                 </div>
-                {leverage > 1 && (
-                  <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg border border-blue-500/20">
-                    <span className="text-blue-300 text-xs font-satoshi">Borrowing Interest Rate</span>
-                    <span className="text-blue-200 text-xs font-heading">5% APY</span>
-                  </div>
-                )}
+                <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
+                  <span className="text-forge-primary-light text-xs font-satoshi">Base APY</span>
+                  <span className="text-forge-primary-light text-lg font-heading">{safeCurrentAPY.toFixed(2)}%</span>
+                </div>
               </>
             )}
           </div>

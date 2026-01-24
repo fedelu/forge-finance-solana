@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { XMarkIcon, ArrowDownIcon } from '@heroicons/react/24/outline'
+import { XMarkIcon } from '@heroicons/react/24/outline'
 import { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddress, getAccount, createCloseAccountInstruction } from '@solana/spl-token'
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react'
@@ -625,10 +625,7 @@ export default function ClosePositionModal({
         {/* Header */}
         <div className="relative bg-gradient-to-r from-forge-primary/20 via-forge-primary/10 to-transparent p-6 border-b border-forge-gray-700/50">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-forge-primary/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                <ArrowDownIcon className="h-6 w-6 text-forge-primary" />
-              </div>
+            <div className="flex items-center">
               <h2 className="text-2xl font-heading text-white">Close Position</h2>
             </div>
             <button

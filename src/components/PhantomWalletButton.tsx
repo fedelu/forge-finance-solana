@@ -45,9 +45,9 @@ export const PhantomWalletButton: React.FC = () => {
       return formattedAddress;
     }
     if (buttonState === 'connecting' || buttonState === 'has-wallet') {
-      return buttonState === 'connecting' ? 'Connecting...' : 'Connect';
+      return buttonState === 'connecting' ? 'Connecting...' : 'Connect Wallet';
     }
-    return 'Connect';
+    return 'Connect Wallet';
   }, [buttonState, formattedAddress, publicKey]);
 
   return (
