@@ -9,7 +9,7 @@ use lp::*;
 use metadata::*;
 use state::*;
 
-declare_id!("Ep2FZ1WZGbeajKoRs768cZ7fjP963xqvga6kHWJ5K9kv");
+declare_id!("HbhXC9vgDfrgq3gAj22TwXPtEkxmBrKp9MidEY4Y3vMk");
 
 // Lending pool program ID (devnet)
 pub const LENDING_POOL_PROGRAM_ID: Pubkey = Pubkey::new_from_array([

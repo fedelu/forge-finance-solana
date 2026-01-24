@@ -8,7 +8,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
 pub mod state;
 use state::*;
 
-declare_id!("DNV9nTmTztTaufsdKQd3WW1vfaKHMB5uiGzWRXD3AgYd");
+declare_id!("6izkeaYVyYFmDfQ4y749jE1Ew3EVtvNDeWxNzebjYFjs");
 
 pub const RATE_SCALE: u128 = 1_000_000_000u128; // align with crucibles/lending
 

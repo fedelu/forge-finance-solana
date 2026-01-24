@@ -33,6 +33,7 @@ export const PriceProvider: React.FC<PriceProviderProps> = ({ children }) => {
   const { connection } = useWallet();
   const [solPrice, setSolPrice] = useState<number>(DEFAULT_SOL_PRICE);
   const [infernoLpPrice, setInfernoLpPrice] = useState<number | null>(null);
+  const [infernoLpDisabled, setInfernoLpDisabled] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
 
@@ -44,17 +45,33 @@ export const PriceProvider: React.FC<PriceProviderProps> = ({ children }) => {
     }
   }, []);
 
+  const shouldDisableInfernoLpPrice = useCallback((error: unknown) => {
+    const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    return (
+      message.includes('invalid pyth price account data') ||
+      message.includes('price account not found') ||
+      message.includes('invalid price data')
+    );
+  }, []);
+
+  useEffect(() => {
+    setInfernoLpDisabled(false);
+  }, [connection?.rpcEndpoint, infernoPriceAccount?.toBase58()]);
+
   const refreshPrice = useCallback(async () => {
     try {
       setIsLoading(true);
       const price = await getCachedSolPrice();
       setSolPrice(price);
-      if (connection && infernoPriceAccount) {
+      if (connection && infernoPriceAccount && !infernoLpDisabled) {
         try {
           const lpPrice = await getCachedPythPrice(connection, infernoPriceAccount);
           setInfernoLpPrice(lpPrice);
         } catch (error: any) {
-          console.warn('⚠️ Failed to refresh Inferno LP price:', error.message || error);
+          if (shouldDisableInfernoLpPrice(error)) {
+            setInfernoLpDisabled(true);
+            setInfernoLpPrice(null);
+          }
         }
       }
       setLastUpdate(Date.now());

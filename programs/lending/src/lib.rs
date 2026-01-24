@@ -11,7 +11,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, MintTo, Burn}
 pub mod state;
 use state::*;
 
-declare_id!("BeJW4TrT31GWgW5wpLeYS4tFiCQquHd5bHcfYrPykErs");
+declare_id!("5SXKQRhg6eEXKqqBUnCEVTToVK1YbvXKbE67FCnKzj8c");
 
 pub const RATE_SCALE: u128 = 1_000_000_000u128; // 1e9 fixed point for rates
 
@@ -484,24 +484,24 @@ pub struct InitializeMarket<'info> {
         seeds = [b"market", base_mint.key().as_ref()],
         bump
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
     #[account(mut)]
     pub authority: Signer<'info>,
-    pub base_mint: Account<'info, Mint>,
+    pub base_mint: Box<Account<'info, Mint>>,
     #[account(
         init,
         payer = authority,
         token::mint = base_mint,
         token::authority = market
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
         mint::decimals = 9,
         mint::authority = market
     )]
-    pub receipt_mint: Account<'info, Mint>,
+    pub receipt_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,

@@ -14,7 +14,7 @@ use lp::*;
 use metadata::*;
 use state::*;
 
-declare_id!("B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry");
+declare_id!("5b3uiJPBasMfRGZwMdHdZroY2UKzVrVHVbDj1b6KMDXy");
 
 // Lending pool program ID - deployed to devnet
 // Program ID: 3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx

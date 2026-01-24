@@ -40,7 +40,6 @@ function parsePythPrice(accountData: Uint8Array): number {
   if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
     throw new Error('Invalid price data');
   }
-
   return priceUsd;
 }
 

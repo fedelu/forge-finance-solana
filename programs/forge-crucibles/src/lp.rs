@@ -1141,7 +1141,7 @@ pub struct OpenLPPosition<'info> {
     pub crucible: UncheckedAccount<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
-    pub base_mint: Account<'info, Mint>,
+    pub base_mint: Box<Account<'info, Mint>>,
     #[account(mut)]
     pub user_base_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
@@ -1151,7 +1151,7 @@ pub struct OpenLPPosition<'info> {
     #[account(mut)]
     pub crucible_usdc_vault: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
-    pub lp_token_mint: Account<'info, Mint>,
+    pub lp_token_mint: Box<Account<'info, Mint>>,
     #[account(mut)]
     pub user_lp_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
@@ -1177,13 +1177,13 @@ pub struct OpenLPPosition<'info> {
         mut,
         constraint = treasury_base.mint == base_mint.key() @ CrucibleError::InvalidTreasury
     )]
-    pub treasury_base: Account<'info, TokenAccount>,
+    pub treasury_base: Box<Account<'info, TokenAccount>>,
     /// Treasury account for USDC
     #[account(
         mut,
         constraint = treasury_usdc.mint == user_usdc_account.mint @ CrucibleError::InvalidTreasury
     )]
-    pub treasury_usdc: Account<'info, TokenAccount>,
+    pub treasury_usdc: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }

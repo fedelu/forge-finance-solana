@@ -6,12 +6,12 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-forge_core = "CtR5tkwzpUmyxMNnihkPdSZzVk5fws1LumXXGyU4phJa"
-forge_crucibles = "B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry"
-forge_crucibles_inferno = "Ep2FZ1WZGbeajKoRs768cZ7fjP963xqvga6kHWJ5K9kv"
-lending = "BeJW4TrT31GWgW5wpLeYS4tFiCQquHd5bHcfYrPykErs"
-lending_pool = "AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL"
-lvf = "DNV9nTmTztTaufsdKQd3WW1vfaKHMB5uiGzWRXD3AgYd"
+forge_core = "9XAEC5TPTzd2UZjJ4DZkTwqzBCyx4VDwHjSp3N7cGWkM"
+forge_crucibles = "5b3uiJPBasMfRGZwMdHdZroY2UKzVrVHVbDj1b6KMDXy"
+forge_crucibles_inferno = "HbhXC9vgDfrgq3gAj22TwXPtEkxmBrKp9MidEY4Y3vMk"
+lending = "5SXKQRhg6eEXKqqBUnCEVTToVK1YbvXKbE67FCnKzj8c"
+lending_pool = "7hwTzKPSKdio6TZdi4SY7wEuGpFha15ebsaiTPp2y3G2"
+lvf = "6izkeaYVyYFmDfQ4y749jE1Ew3EVtvNDeWxNzebjYFjs"
 
 [programs.testnet]
 forge_core = "DWkDGw5Pvqgh3DN6HZwssn31AUAkuWLtjDnjyEUdgRHU"

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
 
-declare_id!("AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL");
+declare_id!("7hwTzKPSKdio6TZdi4SY7wEuGpFha15ebsaiTPp2y3G2");
 
 // Backward compatibility: old pool layout (no authority/paused).
 const OLD_POOL_ACCOUNT_LEN: usize = 8 + 32 + 8 + 8 + 8 + 8 + 1; // discriminator + fields
