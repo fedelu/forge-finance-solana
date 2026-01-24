@@ -21,7 +21,7 @@ export default function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <link rel="icon" type="image/png" href="/favicon.png" />
+        <link rel="icon" type="image/png" href="/forge%20logotype.png" />
       </Head>
       <div className="background-video-wrapper" aria-hidden="true">
         <video

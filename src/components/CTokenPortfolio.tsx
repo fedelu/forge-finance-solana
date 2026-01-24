@@ -173,7 +173,9 @@ export default function CTokenPortfolio() {
       
       if (isLeveraged) {
         // For leveraged positions: deposited value = token collateral + deposited USDC (NOT borrowed)
-        const depositUSDC = 'depositUSDC' in pos ? (pos.depositUSDC || 0) : 0
+        const depositUSDC = 'depositUSDC' in pos && typeof pos.depositUSDC === 'number'
+          ? pos.depositUSDC
+          : 0
         return sum + (tokenCollateralValue + depositUSDC)
       } else {
         // For standard LP positions: deposited value = token collateral + deposited USDC
@@ -221,7 +223,9 @@ export default function CTokenPortfolio() {
       
       let value = 0
       if (isLeveraged) {
-        const depositUSDC = 'depositUSDC' in pos ? (pos.depositUSDC || 0) : 0
+        const depositUSDC = 'depositUSDC' in pos && typeof pos.depositUSDC === 'number'
+          ? pos.depositUSDC
+          : 0
         value = tokenCollateralValue + depositUSDC
       } else {
         const depositedUSDC = pos.usdcAmount || 0
