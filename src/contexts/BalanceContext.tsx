@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, ReactNode, useCallback, use
 import { usePrice } from './PriceContext';
 import { useWallet } from './WalletContext';
 import { PublicKey } from '@solana/web3.js';
-import { getAssociatedTokenAddress } from '@solana/spl-token';
-import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet';
+import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet';
 
 interface TokenBalance {
   symbol: string;
@@ -47,7 +47,7 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
     { symbol: 'USDC', amount: 0, usdValue: 0 }, // Will be fetched from wallet
     { symbol: 'ETH', amount: 0, usdValue: 0 }, // Start with 0 ETH
     { symbol: 'BTC', amount: 0, usdValue: 0 }, // Start with 0 BTC
-    { symbol: 'cSOL/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
+    { symbol: 'ifSOL/USDC LP', amount: 0, usdValue: 0 }, // Inferno LP tokens
     { symbol: 'cFORGE/USDC LP', amount: 0, usdValue: 0 }, // Initialize LP tokens to 0
   ]);
   
@@ -67,8 +67,8 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
       'BTC': 110000,
       'SPARK': 0.1,
       'HEAT': 0.05,
-      'cSOL/USDC LP': 1.0, // LP token price (calculated from underlying assets)
-      'cFORGE/USDC LP': 1.0, // LP token price (calculated from underlying assets)
+      'ifSOL/USDC LP': solPrice * 2, // Inferno LP fallback price
+      'cFORGE/USDC LP': 0.002 * 2, // LP token price = FORGE price * 2 (represents FORGE + USDC pair)
     };
     return prices[symbol] || 0;
   }, [solPrice]);
@@ -141,37 +141,117 @@ export const BalanceProvider: React.FC<BalanceProviderProps> = ({ children }) =>
       try {
         const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC);
         const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey);
-        
-        // Check if token account exists
-        const accountInfo = await connection.getAccountInfo(userUsdcAccount);
-        if (!accountInfo) {
-          // Token account doesn't exist, balance is 0
-          updateBalance('USDC', 0);
-          return;
-        }
-
-        // Get token account balance
-        const balance = await connection.getTokenAccountBalance(userUsdcAccount);
-        if (balance.value) {
+        // Use getAccount from @solana/spl-token for more reliable balance fetching
+        try {
+          const tokenAccount = await getAccount(connection, userUsdcAccount);
           // USDC has 6 decimals
-          const usdcAmount = Number(balance.value.amount) / 1e6;
+          const usdcAmount = Number(tokenAccount.amount) / 1e6;
           updateBalance('USDC', usdcAmount);
-        } else {
-          updateBalance('USDC', 0);
+        } catch (tokenError: any) {
+          // Token account doesn't exist - this is normal if user has never received USDC
+          // Check error message to confirm it's a "not found" error
+          if (tokenError.name === 'TokenAccountNotFoundError' || 
+              tokenError.message?.includes('Account not found') ||
+              tokenError.message?.includes('could not find account') ||
+              tokenError.message?.includes('InvalidAccountData')) {
+            updateBalance('USDC', 0);
+          } else {
+            // Other error - log it but set balance to 0
+            console.error('❌ Error fetching USDC token account:', tokenError);
+            updateBalance('USDC', 0);
+          }
         }
-      } catch (error) {
-        console.error('Error fetching USDC balance:', error);
-        // On error, keep current balance or set to 0
+      } catch (error: any) {
+        console.error('❌ Error fetching USDC balance:', error);
+        // On error, set balance to 0
         updateBalance('USDC', 0);
       }
     };
 
     fetchUSDCBalance();
 
-    // Refresh balance every 10 seconds when wallet is connected
-    const interval = connected ? setInterval(fetchUSDCBalance, 10000) : null;
+    const handleRefreshUSDC = () => {
+      fetchUSDCBalance();
+    };
+    
+    window.addEventListener('depositComplete', handleRefreshUSDC);
+    window.addEventListener('refreshUSDCBalance', handleRefreshUSDC);
+    
     return () => {
-      if (interval) clearInterval(interval);
+      window.removeEventListener('depositComplete', handleRefreshUSDC);
+      window.removeEventListener('refreshUSDCBalance', handleRefreshUSDC);
+    };
+  }, [connection, publicKey, connected, updateBalance]);
+
+  // Fetch LP token balances from on-chain
+  useEffect(() => {
+    const fetchLPBalances = async () => {
+      if (!connection || !publicKey || !connected) {
+        // Reset to 0 when wallet is disconnected
+        updateBalance('ifSOL/USDC LP', 0);
+        updateBalance('cFORGE/USDC LP', 0);
+        return;
+      }
+
+      try {
+        // Inferno LP token balance (if configured)
+        if (DEPLOYED_ACCOUNTS.INFERNO_LP_MINT) {
+          const infernoLpMint = new PublicKey(DEPLOYED_ACCOUNTS.INFERNO_LP_MINT);
+          const infernoLpAccount = await getAssociatedTokenAddress(infernoLpMint, publicKey);
+          try {
+            const tokenAccount = await getAccount(connection, infernoLpAccount);
+            const lpAmount = Number(tokenAccount.amount) / 1e9;
+            updateBalance('ifSOL/USDC LP', lpAmount);
+          } catch (tokenError: any) {
+            if (tokenError.name === 'TokenAccountNotFoundError' ||
+                tokenError.message?.includes('Account not found') ||
+                tokenError.message?.includes('could not find account')) {
+              updateBalance('ifSOL/USDC LP', 0);
+            } else {
+              console.error('Error fetching ifSOL/USDC LP token account:', tokenError);
+              updateBalance('ifSOL/USDC LP', 0);
+            }
+          }
+        } else {
+          updateBalance('ifSOL/USDC LP', 0);
+        }
+
+        // TODO: Add FORGE crucible LP token balance fetching when FORGE crucible is deployed
+        updateBalance('cFORGE/USDC LP', 0);
+      } catch (error: any) {
+        console.error('Error fetching LP token balances:', error);
+        updateBalance('ifSOL/USDC LP', 0);
+        updateBalance('cFORGE/USDC LP', 0);
+      }
+    };
+
+    fetchLPBalances();
+
+    // Listen for LP position events to refresh balance immediately
+    const handleLPPositionOpened = () => {
+      fetchLPBalances();
+    };
+    
+    const handleLPPositionClosed = () => {
+      fetchLPBalances();
+    };
+    
+    const handleRefreshLPBalance = () => {
+      fetchLPBalances();
+    };
+
+    window.addEventListener('lpPositionOpened', handleLPPositionOpened);
+    window.addEventListener('lpPositionClosed', handleLPPositionClosed);
+    window.addEventListener('infernoLpPositionOpened', handleLPPositionOpened);
+    window.addEventListener('infernoLpPositionClosed', handleLPPositionClosed);
+    window.addEventListener('refreshLPBalance', handleRefreshLPBalance);
+
+    return () => {
+      window.removeEventListener('lpPositionOpened', handleLPPositionOpened);
+      window.removeEventListener('lpPositionClosed', handleLPPositionClosed);
+      window.removeEventListener('infernoLpPositionOpened', handleLPPositionOpened);
+      window.removeEventListener('infernoLpPositionClosed', handleLPPositionClosed);
+      window.removeEventListener('refreshLPBalance', handleRefreshLPBalance);
     };
   }, [connection, publicKey, connected, updateBalance]);
 

@@ -10,11 +10,56 @@ import {
   FireIcon
 } from '@heroicons/react/24/outline'
 import { useWallet } from '../../contexts/WalletContext'
+import { useBalance } from '../../contexts/BalanceContext'
+import { formatUSDC } from '../../utils/math'
+import { getUSDCFromFaucet, getUSDCInstructions } from '../../utils/usdcFaucet'
+import { useEffect } from 'react'
 
 export default function LendingPage() {
-  const { markets, positions, supply, withdraw } = useLending()
-  const { connected } = useWallet()
+  const { markets, positions, supply, withdraw, loading } = useLending()
+  const { connected, publicKey, connection, signTransaction } = useWallet()
+  const { getBalance, updateBalance } = useBalance()
   const [selectedMarket, setSelectedMarket] = useState<string | null>(null)
+  const [supplyAmount, setSupplyAmount] = useState('')
+  const [supplyLoading, setSupplyLoading] = useState(false)
+  const [gettingUSDC, setGettingUSDC] = useState(false)
+  const [showUSDCInstructions, setShowUSDCInstructions] = useState(false)
+  
+  // Force refresh USDC balance when supply modal opens
+  useEffect(() => {
+    if (selectedMarket && connected && publicKey && connection) {
+      const refreshUSDCBalance = async () => {
+        try {
+          const { PublicKey } = await import('@solana/web3.js')
+          const { getAssociatedTokenAddress, getAccount } = await import('@solana/spl-token')
+          const { SOLANA_TESTNET_CONFIG } = await import('../../config/solana-testnet')
+          
+          const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
+          const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey)
+          
+          try {
+            const tokenAccount = await getAccount(connection, userUsdcAccount)
+            const usdcAmount = Number(tokenAccount.amount) / 1e6
+            console.log('🔄 Refreshed USDC balance:', usdcAmount, 'USDC')
+            updateBalance('USDC', usdcAmount)
+          } catch (tokenError: any) {
+            if (tokenError.name === 'TokenAccountNotFoundError' || 
+                tokenError.message?.includes('Account not found') ||
+                tokenError.message?.includes('could not find account') ||
+                tokenError.message?.includes('InvalidAccountData')) {
+              updateBalance('USDC', 0)
+            } else {
+              console.error('Error refreshing USDC balance:', tokenError)
+            }
+          }
+        } catch (error) {
+          console.error('Error refreshing USDC balance:', error)
+        }
+      }
+      
+      refreshUSDCBalance()
+    }
+  }, [selectedMarket, connected, publicKey, connection, updateBalance])
 
   const formatCurrency = (value: string) => {
     return value
@@ -40,7 +85,7 @@ export default function LendingPage() {
               />
             </div>
             <div>
-              <h3 className="text-xl font-heading text-white">{market.baseMint}</h3>
+              <h3 className="text-xl font-heading text-white">USDC</h3>
               <p className="text-sm text-forge-gray-400 font-satoshi">Lending Market</p>
             </div>
           </div>
@@ -99,7 +144,7 @@ export default function LendingPage() {
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm text-forge-gray-300 font-satoshi">Your Position</p>
               <p className="text-sm text-forge-primary font-heading">
-                {userPosition.suppliedAmount.toLocaleString()} {market.baseMint}
+                {userPosition.suppliedAmount.toLocaleString()} USDC
               </p>
             </div>
             <div className="flex items-center justify-between">
@@ -191,6 +236,163 @@ export default function LendingPage() {
           ))}
         </div>
       )}
+
+      {/* Supply Modal */}
+      {selectedMarket && (() => {
+        const market = markets.find(m => m.marketPubkey === selectedMarket)
+        if (!market) return null
+        
+        const usdcBalance = getBalance('USDC')
+        
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md">
+            <div className="panel rounded-3xl w-full max-w-md p-8 relative">
+              <button 
+                onClick={() => {
+                  setSelectedMarket(null)
+                  setSupplyAmount('')
+                }} 
+                className="absolute top-5 right-5 text-forge-gray-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+              
+              <h3 className="text-2xl font-heading text-white mb-6">Supply USDC</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-forge-gray-400 mb-2">Amount</label>
+                  <input
+                    type="number"
+                    value={supplyAmount}
+                    onChange={(e) => setSupplyAmount(e.target.value)}
+                    className="w-full px-4 py-3 panel-muted rounded-lg text-white placeholder-forge-gray-500 focus:outline-none focus:ring-2 focus:ring-forge-primary"
+                    placeholder="0.00"
+                    disabled={supplyLoading}
+                  />
+                  <div className="flex justify-between mt-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-forge-gray-500">
+                        Balance: {formatUSDC(usdcBalance)} USDC
+                      </span>
+                      <button
+                        onClick={async () => {
+                          if (!connection || !publicKey) return
+                          try {
+                            const { PublicKey } = await import('@solana/web3.js')
+                            const { getAssociatedTokenAddress, getAccount } = await import('@solana/spl-token')
+                            const { SOLANA_TESTNET_CONFIG } = await import('../../config/solana-testnet')
+                            
+                            const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
+                            console.log('🔄 Manual refresh - USDC mint:', usdcMint.toString())
+                            const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, publicKey)
+                            console.log('🔄 Manual refresh - Token account:', userUsdcAccount.toString())
+                            
+                            const tokenAccount = await getAccount(connection, userUsdcAccount)
+                            const usdcAmount = Number(tokenAccount.amount) / 1e6
+                            console.log('✅ Manual refresh - Balance:', usdcAmount, 'USDC')
+                            updateBalance('USDC', usdcAmount)
+                            alert(`Balance refreshed: ${formatUSDC(usdcAmount)} USDC`)
+                          } catch (error: any) {
+                            console.error('❌ Manual refresh error:', error)
+                            if (error.name === 'TokenAccountNotFoundError' || 
+                                error.message?.includes('Account not found') ||
+                                error.message?.includes('could not find account')) {
+                              updateBalance('USDC', 0)
+                              alert('USDC token account not found. Please receive USDC first.')
+                            } else {
+                              alert(`Error refreshing balance: ${error.message}`)
+                            }
+                          }
+                        }}
+                        className="text-xs text-forge-primary hover:underline"
+                        title="Refresh USDC balance"
+                      >
+                        🔄
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {usdcBalance === 0 && (
+                        <button
+                          onClick={() => setShowUSDCInstructions(!showUSDCInstructions)}
+                          className="text-xs text-orange-400 hover:underline"
+                        >
+                          {showUSDCInstructions ? 'Hide' : 'Get USDC'}
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => setSupplyAmount(usdcBalance.toString())} 
+                        className="text-xs text-forge-primary hover:underline disabled:opacity-50"
+                        disabled={supplyLoading || usdcBalance === 0}
+                      >
+                        Max
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {showUSDCInstructions && usdcBalance === 0 && (
+                    <div className="mt-4 p-4 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                      <p className="text-sm text-orange-300 font-satoshi font-medium mb-2">
+                        How to get USDC on Solana Devnet:
+                      </p>
+                      <ol className="text-xs text-orange-200/80 space-y-1 list-decimal list-inside font-satoshi">
+                        <li>Visit <a href="https://spl-token-faucet.com/" target="_blank" rel="noopener noreferrer" className="underline hover:text-orange-100">spl-token-faucet.com</a></li>
+                        <li>Select "USDC" from the token list</li>
+                        <li>Paste your wallet address: <code className="bg-orange-900/30 px-1 rounded">{publicKey?.toString().substring(0, 8)}...</code></li>
+                        <li>Click "Get Tokens" and wait for confirmation</li>
+                        <li>Refresh this page after receiving USDC</li>
+                      </ol>
+                      <p className="text-xs text-orange-200/60 mt-3 font-satoshi">
+                        Alternative: Use <a href="https://jup.ag/swap" target="_blank" rel="noopener noreferrer" className="underline">Jupiter</a> to swap SOL for USDC on devnet
+                      </p>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="panel-muted rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-forge-gray-400 text-sm">Supply APY</span>
+                    <span className="text-forge-success font-heading">{(market.supplyApyBps / 100).toFixed(2)}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-forge-gray-400 text-sm">Utilization</span>
+                    <span className="text-white font-heading">{(market.utilizationBps / 100).toFixed(2)}%</span>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={async () => {
+                    if (!supplyAmount || parseFloat(supplyAmount) <= 0) {
+                      alert('Please enter a valid amount')
+                      return
+                    }
+                    if (parseFloat(supplyAmount) > usdcBalance) {
+                      alert(`Insufficient USDC balance. You have ${formatUSDC(usdcBalance)} USDC`)
+                      return
+                    }
+                    
+                    setSupplyLoading(true)
+                    try {
+                      await supply(selectedMarket, supplyAmount)
+                      setSelectedMarket(null)
+                      setSupplyAmount('')
+                      alert(`Successfully supplied ${formatUSDC(parseFloat(supplyAmount))} USDC`)
+                    } catch (error: any) {
+                      alert(error.message || 'Supply failed')
+                    } finally {
+                      setSupplyLoading(false)
+                    }
+                  }}
+                  disabled={supplyLoading || !connected || parseFloat(supplyAmount) <= 0 || parseFloat(supplyAmount) > usdcBalance}
+                  className="w-full px-4 py-3 bg-forge-primary hover:bg-forge-primary/90 text-white rounded-xl font-satoshi font-medium transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-forge-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                >
+                  {supplyLoading ? 'Supplying...' : 'Supply'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

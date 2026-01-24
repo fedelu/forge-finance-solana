@@ -2,6 +2,7 @@ import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor'
 import { Connection, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js'
 import { SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 import BN from 'bn.js'
+import forgeCruciblesIdl from '../idl/forge-crucibles.json'
 
 /**
  * Wallet adapter interface for Anchor
@@ -220,9 +221,28 @@ export function getCruciblesProgram(
 
   const programId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
   
-  // For Anchor 0.32, use Program constructor with provider
-  // Cast everything to bypass IDL type checking issues
-  // @ts-ignore - Manual IDL doesn't satisfy Anchor's Idl type constraint, but works at runtime
-  const idlWithAddress = { ...(FORGE_CRUCIBLES_IDL as any), address: programId.toString() } as Idl
-  return new Program(idlWithAddress, provider) as any
+  // Use the actual IDL file but remove accounts array to prevent eager account resolution
+  // Anchor will resolve accounts lazily when .account.*.fetch() is called
+  // This prevents "Account not found: crucible" errors during program initialization
+  const idlData = forgeCruciblesIdl as any
+  const idlWithoutAccounts = {
+    ...idlData,
+    address: programId.toString(),
+    // Remove accounts array - Anchor tries to resolve them during init, causing errors
+    // Accounts will be resolved lazily when actually needed
+    accounts: []
+  } as Idl
+  
+  try {
+    return new Program(idlWithoutAccounts, provider) as any
+  } catch (error: any) {
+    // If still fails, try with manual IDL as fallback (also without accounts)
+    console.warn('Failed to create program with IDL, using fallback:', error.message)
+    const fallbackIdl = { 
+      ...(FORGE_CRUCIBLES_IDL as any), 
+      address: programId.toString(),
+      accounts: [] // Also remove accounts from fallback
+    } as Idl
+    return new Program(fallbackIdl, provider) as any
+  }
 }

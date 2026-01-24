@@ -182,7 +182,8 @@ export async function fetchLPPosition(
     const anchorWallet = createAnchorWallet(userPublicKey)
     const program = getCruciblesProgram(connection, anchorWallet)
     
-    // Derive LP position PDA
+    // TEMPORARY: Use crucibleAddress to match CURRENT on-chain program (uses crucible.key() in seeds)
+    // TODO: After redeploying program with base_mint seeds, change to use baseMint
     const [positionPDA] = deriveLPPositionPDA(userPublicKey, crucibleAddress)
     
     // Fetch position account

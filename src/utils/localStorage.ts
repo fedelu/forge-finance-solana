@@ -18,6 +18,11 @@ export interface StoredLPPosition {
   pnl?: number;
 }
 
+export interface StoredInfernoLPPosition extends StoredLPPosition {
+  borrowedUSDC: number;
+  leverageFactor: number;
+}
+
 export interface StoredLeveragedPosition {
   id: string;
   owner: string;
@@ -65,6 +70,16 @@ function validateLPPosition(position: any): position is StoredLPPosition {
     position.baseAmount >= 0 &&
     position.usdcAmount >= 0 &&
     position.entryPrice > 0
+  );
+}
+
+function validateInfernoLPPosition(position: any): position is StoredInfernoLPPosition {
+  return (
+    validateLPPosition(position) &&
+    typeof position.borrowedUSDC === 'number' &&
+    typeof position.leverageFactor === 'number' &&
+    position.borrowedUSDC >= 0 &&
+    position.leverageFactor >= 1
   );
 }
 
@@ -148,6 +163,57 @@ export function setLPPositions(positions: StoredLPPosition[]): void {
     localStorage.setItem('lp_positions_checksum', checksum);
   } catch (error) {
     console.error('Failed to store LP positions to localStorage:', error);
+    throw error;
+  }
+}
+
+export function getInfernoLPPositions(): StoredInfernoLPPosition[] {
+  try {
+    const stored = localStorage.getItem('inferno_lp_positions');
+    if (!stored) return [];
+
+    const checksumKey = 'inferno_lp_positions_checksum';
+    const expectedChecksum = localStorage.getItem(checksumKey);
+    if (expectedChecksum) {
+      const actualChecksum = generateChecksum(stored);
+      if (actualChecksum !== expectedChecksum) {
+        console.warn('⚠️ localStorage checksum mismatch for inferno_lp_positions - data may be corrupted');
+        return [];
+      }
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      console.warn('⚠️ Invalid localStorage data format for inferno_lp_positions');
+      return [];
+    }
+
+    const validPositions = parsed.filter(validateInfernoLPPosition);
+    if (validPositions.length !== parsed.length) {
+      console.warn(`⚠️ Filtered out ${parsed.length - validPositions.length} invalid Inferno LP positions`);
+    }
+
+    return validPositions;
+  } catch (error) {
+    console.warn('Failed to load Inferno LP positions from localStorage:', error);
+    return [];
+  }
+}
+
+export function setInfernoLPPositions(positions: StoredInfernoLPPosition[]): void {
+  try {
+    const validPositions = positions.filter(validateInfernoLPPosition);
+    if (validPositions.length !== positions.length) {
+      console.warn(`⚠️ Filtered out ${positions.length - validPositions.length} invalid Inferno LP positions before storing`);
+    }
+
+    const serialized = JSON.stringify(validPositions);
+    const checksum = generateChecksum(serialized);
+
+    localStorage.setItem('inferno_lp_positions', serialized);
+    localStorage.setItem('inferno_lp_positions_checksum', checksum);
+  } catch (error) {
+    console.error('Failed to store Inferno LP positions to localStorage:', error);
     throw error;
   }
 }

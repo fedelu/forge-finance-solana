@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
-import { FireIcon, BoltIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline'
+import { FireIcon, BoltIcon, CurrencyDollarIcon, WalletIcon, BriefcaseIcon } from '@heroicons/react/24/outline'
 import SimpleStats from '../components/SimpleStats'
 import CrucibleManager from '../components/CrucibleManager'
 import MobileNav from '../components/MobileNav'
@@ -122,6 +122,7 @@ function DemoContent() {
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const { markets, supply, loading: lendingLoading } = useLending()
   const [supplyModal, setSupplyModal] = useState<{open: boolean, market: string | null}>({ open: false, market: null })
+  const { connected } = useWallet()
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -153,20 +154,20 @@ function DemoContent() {
 
       <div className="min-h-screen flex flex-col">
         <header className="sticky top-0 z-50 px-4 pt-4">
-          <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-screen-2xl">
             <div className="relative">
               <div className="pointer-events-none absolute inset-x-6 -bottom-px h-px bg-gradient-to-r from-transparent via-forge-primary/60 to-transparent opacity-70" />
-              <div className="relative flex items-center gap-6 rounded-2xl panel px-6 py-4">
-                <div className="flex items-center gap-4 flex-shrink-0">
+              <div className="relative grid grid-cols-[auto,1fr,auto] items-center gap-6 rounded-2xl panel px-6 py-4">
+                <div className="flex items-center gap-4 flex-shrink-0 min-w-[180px]">
                   <img
                     src="/forge protocol transparent.png"
                     alt="Forge Protocol"
-                    className="h-10 w-auto object-contain drop-shadow-[0_20px_45px_rgba(255,106,0,0.35)]"
+                    className="h-9 w-auto object-contain drop-shadow-[0_20px_45px_rgba(255,106,0,0.35)]"
                   />
                 </div>
 
                 <div className="flex-1 flex justify-center">
-                  <nav className="hidden md:flex items-center justify-center space-x-3 uppercase tracking-[0.14em] text-sm font-heading">
+                  <nav className="hidden md:flex w-full items-center justify-center space-x-3 uppercase tracking-[0.14em] text-sm font-heading">
                     <button
                       onClick={() => setMainTab('crucibles')}
                       className={`px-5 py-3 rounded-xl transition-all duration-200 shadow-sm border ${
@@ -189,7 +190,7 @@ function DemoContent() {
                       }`}
                     >
                       <div className="flex items-center space-x-2">
-                        <BoltIcon className="w-4 h-4" />
+                        <BriefcaseIcon className="w-4 h-4" />
                         <span className="text-base">Portfolio</span>
                       </div>
                     </button>
@@ -209,7 +210,7 @@ function DemoContent() {
                   </nav>
                 </div>
 
-                <div className="flex items-center justify-end gap-4 flex-shrink-0">
+                <div className="flex items-center justify-center gap-4 flex-shrink-0 min-w-[180px]">
                   <PhantomWalletButton />
                   <button
                     onClick={() => setShowMobileMenu(!showMobileMenu)}
@@ -245,7 +246,7 @@ function DemoContent() {
                     : 'text-forge-gray-300 border-white/10 hover:text-white hover:bg-white/10 hover:border-white/20'
                 }`}
               >
-                <BoltIcon className="w-5 h-5" />
+                <BriefcaseIcon className="w-5 h-5" />
                 <span>Portfolio</span>
               </button>
               <button
@@ -270,10 +271,32 @@ function DemoContent() {
                 <CrucibleManager />
               </div>
             )}
-            {mainTab === 'analytics' && <AnalyticsDashboard />}
+            {mainTab === 'analytics' && (
+              connected ? (
+                <AnalyticsDashboard />
+              ) : (
+                <div className="min-h-[calc(100vh-18rem)] w-full flex items-center justify-center">
+                  <div className="panel rounded-3xl p-10 text-center w-full max-w-2xl">
+                    <div className="flex justify-center mb-4">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-forge-primary/30 to-forge-primary/10 border border-forge-primary/20 flex items-center justify-center">
+                        <WalletIcon className="w-8 h-8 text-forge-primary" />
+                      </div>
+                    </div>
+                    <h3 className="text-2xl font-heading text-white mb-2">Connect your wallet</h3>
+                    <p className="text-forge-gray-400 text-sm mb-6">
+                      Connect Phantom to view your portfolio, open positions, and yield analytics.
+                    </p>
+                    <div className="flex justify-center">
+                      <PhantomWalletButton />
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
             {mainTab === 'lending' && (
-              <div className="space-y-6">
-                <div className="panel rounded-3xl p-8">
+              <div className="min-h-[calc(100vh-18rem)] w-full flex items-center justify-center">
+                <div className="w-full max-w-4xl space-y-6">
+                  <div className="panel rounded-3xl p-8">
                   {/* Header */}
                   <div className="flex items-center gap-4 mb-8">
                     <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-forge-primary/30 to-forge-primary/10 border border-forge-primary/20 flex items-center justify-center shadow-lg shadow-forge-primary/20">
@@ -379,6 +402,7 @@ function DemoContent() {
                       })}
                     </div>
                   </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -397,7 +421,7 @@ function DemoContent() {
           />
         )}
 
-        <footer className="relative mt-auto px-4 pb-10 pt-8">
+        <footer className="relative mt-auto px-4 pb-10 pt-4">
           <div className="absolute inset-x-6 -top-px h-px bg-gradient-to-r from-transparent via-forge-primary/60 to-transparent opacity-70" />
           <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 rounded-2xl border border-white/10 bg-black/55 px-6 py-6 backdrop-blur-2xl shadow-[0_30px_80px_rgba(4,5,15,0.55)] sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2">

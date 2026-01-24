@@ -4,11 +4,11 @@ import { useCToken } from '../hooks/useCToken'
 import { useCrucible } from '../hooks/useCrucible'
 import { useLVFPosition } from '../hooks/useLVFPosition'
 import { useLP } from '../hooks/useLP'
+import { useInfernoLP } from '../hooks/useInfernoLP'
 import { useLending } from '../hooks/useLending'
 import { useBalance } from '../contexts/BalanceContext'
 import { usePrice } from '../contexts/PriceContext'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
-import LVFPositionCard from './LVFPositionCard'
 import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { calculateBorrowInterest } from '../utils/lendingProgram'
 
@@ -37,64 +37,49 @@ export default function CTokenPortfolio() {
     leverage: undefined, // Will be fetched from useCToken
   }))
 
-  // Fetch LVF positions for SOL crucible
-  const solCrucible = positions.find(p => p.baseTokenSymbol === 'SOL')
-  
-  const solLVFPosition = useLVFPosition({
-    crucibleAddress: solCrucible?.crucibleAddress || '',
-    baseTokenSymbol: 'SOL',
-  })
+  const infernoCrucible = positions.find(p => p.crucibleAddress === 'inferno-lp-crucible')
 
-  // Fetch LP positions for SOL crucible
-  const solLP = useLP({
-    crucibleAddress: solCrucible?.crucibleAddress || '',
+  const solInfernoLP = useInfernoLP({
+    crucibleAddress: infernoCrucible?.crucibleAddress || '',
     baseTokenSymbol: 'SOL',
-    baseAPY: solCrucible?.baseAPY || 0,
+    baseAPY: infernoCrucible?.baseAPY || 0,
   })
 
   // Fetch lending pool positions
   const { positions: lendingPositions, withdraw: withdrawLending, repay: repayLending } = useLending()
 
   // Store refetch functions in refs to avoid dependency issues
-  const solLVFRefetchRef = React.useRef(solLVFPosition.refetch)
-  const solLPRefetchRef = React.useRef(solLP.refetch)
+  const solInfernoRefetchRef = React.useRef(solInfernoLP.refetch)
 
   // Update refs when refetch functions change
   React.useEffect(() => {
-    solLVFRefetchRef.current = solLVFPosition.refetch
-    solLPRefetchRef.current = solLP.refetch
-  }, [solLVFPosition.refetch, solLP.refetch])
+    solInfernoRefetchRef.current = solInfernoLP.refetch
+  }, [solInfernoLP.refetch])
 
   // Listen for position opened/closed events to refresh - IMMEDIATE
   React.useEffect(() => {
     const handlePositionChange = (event?: CustomEvent) => {
       // Trigger refresh - localStorage is already updated
       // Use refs to avoid dependency issues
-      solLVFRefetchRef.current()
-      solLPRefetchRef.current()
+      solInfernoRefetchRef.current()
       setRefreshKey(prev => prev + 1)
       
       // Single delayed refresh to catch any async updates
       const timeoutId = setTimeout(() => {
-        solLVFRefetchRef.current()
-        solLPRefetchRef.current()
+        solInfernoRefetchRef.current()
         setRefreshKey(prev => prev + 1)
       }, 200)
       
       return () => clearTimeout(timeoutId)
     }
     
-    window.addEventListener('lvfPositionOpened', handlePositionChange as EventListener)
-    window.addEventListener('lvfPositionClosed', handlePositionChange as EventListener)
-    window.addEventListener('lpPositionOpened', handlePositionChange as EventListener)
-    window.addEventListener('lpPositionClosed', handlePositionChange as EventListener)
+    window.addEventListener('infernoLpPositionOpened', handlePositionChange as EventListener)
+    window.addEventListener('infernoLpPositionClosed', handlePositionChange as EventListener)
     window.addEventListener('forceRecalculateLP', handlePositionChange as EventListener)
     
     return () => {
-      window.removeEventListener('lvfPositionOpened', handlePositionChange as EventListener)
-      window.removeEventListener('lvfPositionClosed', handlePositionChange as EventListener)
-      window.removeEventListener('lpPositionOpened', handlePositionChange as EventListener)
-      window.removeEventListener('lpPositionClosed', handlePositionChange as EventListener)
+      window.removeEventListener('infernoLpPositionOpened', handlePositionChange as EventListener)
+      window.removeEventListener('infernoLpPositionClosed', handlePositionChange as EventListener)
       window.removeEventListener('forceRecalculateLP', handlePositionChange as EventListener)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,119 +88,58 @@ export default function CTokenPortfolio() {
   // Refetch positions when refresh key changes
   React.useEffect(() => {
     if (refreshKey > 0) {
-      solLVFRefetchRef.current()
-      solLPRefetchRef.current()
+      solInfernoRefetchRef.current()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey])
 
-  // Combine all leveraged positions - read from hooks' state
-  const allLVFPositions = React.useMemo(() => {
-    const sol = solLVFPosition.positions
+  const allInfernoPositions = React.useMemo(() => {
+    const sol = solInfernoLP.positions
       .filter(p => p.isOpen) // Only open positions
-      .map(p => ({ 
-        ...p, 
-        crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
+      .map(p => ({
+        ...p,
+        crucible: infernoCrucible || positions.find(pos => pos.baseTokenSymbol === 'SOL')!,
+        isInferno: true,
       }))
     return sol
-  }, [solLVFPosition.positions, positions])
-
-  // Combine all LP positions - read from hooks' state
-  const allLPPositions = React.useMemo(() => {
-    const sol = solLP.positions
-      .filter(p => p.isOpen) // Only open positions
-      .map(p => ({ 
-        ...p, 
-        crucible: positions.find(pos => pos.baseTokenSymbol === 'SOL')! 
-      }))
-    return sol
-  }, [solLP.positions, positions])
+  }, [solInfernoLP.positions, positions, infernoCrucible])
 
   // Refetch positions periodically and on mount
   React.useEffect(() => {
     // Initial fetch
-    solLVFPosition.refetch()
-    solLP.refetch()
+    solInfernoLP.refetch()
     
     // Set up interval to refetch every 5 seconds
     const interval = setInterval(() => {
-      solLVFPosition.refetch()
-      solLP.refetch()
+      solInfernoLP.refetch()
     }, 5000)
     
     return () => clearInterval(interval)
-  }, [solLVFPosition.refetch, solLP.refetch])
+  }, [solInfernoLP.refetch])
 
   // Combine all LP and leveraged positions for cTOKENS/USDC section
   const allCTokenUSDCPositions = React.useMemo(() => {
-    // Map LP positions to show with leverage info
-    const lpWithDetails = allLPPositions
-      .filter(lp => {
-        const isOpen = lp.isOpen === true || lp.isOpen === undefined // Treat undefined as open for backwards compatibility
-        const hasValidData = lp.baseAmount > 0 && lp.usdcAmount > 0
+    const infernoWithDetails = allInfernoPositions
+      .filter((inferno) => {
+        const isOpen = inferno.isOpen === true || inferno.isOpen === undefined
+        const hasValidData = inferno.baseAmount > 0 && inferno.usdcAmount > 0
         return isOpen && hasValidData
       })
-      .map(lp => ({
-        ...lp,
-        leverage: 1.0,
-        borrowedUSDC: 0,
-        collateralUSDC: lp.usdcAmount,
+      .map((inferno) => ({
+        ...inferno,
+        leverage: inferno.leverageFactor || 1.0,
+        borrowedUSDC: inferno.borrowedUSDC || 0,
+        collateralUSDC: inferno.usdcAmount,
+        baseToken: inferno.baseToken,
+        baseAmount: inferno.baseAmount,
+        usdcAmount: inferno.usdcAmount,
+        isInferno: true,
+        lpAPY: inferno.crucible.baseAPY,
       }))
     
-    // Map leveraged positions
-    const lvfWithDetails = allLVFPositions
-      .filter(lvf => {
-        const isOpen = lvf.isOpen === true || lvf.isOpen === undefined // Treat undefined as open
-        const hasValidData = lvf.collateral > 0
-        return isOpen && hasValidData
-      })
-      .map(lvf => {
-        const basePrice = lvf.token === 'FORGE' ? 0.002 : solPrice
-        const tokenCollateralValue = lvf.collateral * basePrice // Token collateral value (after fee)
-        const leverageFactor = lvf.leverageFactor || 1.0
-        const borrowedUSDC = lvf.borrowedUSDC || 0
-        
-        // Calculate deposited USDC from leverage factor
-        // For 1.5x: depositUSDC = 0.5 * originalCollateralValue (equal to borrowedUSDC)
-        // For 2x: depositUSDC = 0 (only borrowed)
-        let depositUSDC = lvf.depositUSDC
-        if (depositUSDC === undefined || depositUSDC === null) {
-          // Reconstruct original collateral value from borrowedUSDC
-          let originalCollateralValue: number
-          if (leverageFactor === 1.5) {
-            originalCollateralValue = borrowedUSDC / 0.5 // borrowedUSDC = 0.5 * originalCollateralValue
-            depositUSDC = originalCollateralValue * 0.5 // 50% deposited, 50% borrowed
-          } else if (leverageFactor === 2.0) {
-            originalCollateralValue = borrowedUSDC // borrowedUSDC = 1.0 * originalCollateralValue
-            depositUSDC = 0 // 2x: all borrowed, nothing deposited
-          } else {
-            depositUSDC = 0 // Fallback
-          }
-        }
-        
-        // Total collateral = token collateral value + deposited USDC
-        // The deposited USDC is also part of the collateral
-        const totalCollateralValue = tokenCollateralValue + (depositUSDC || 0)
-        
-        // Calculate total USDC for the position (deposited + borrowed)
-        const totalUSDC = (depositUSDC || 0) + borrowedUSDC
-        
-        return {
-          ...lvf,
-          leverage: leverageFactor,
-          borrowedUSDC: borrowedUSDC,
-          collateralUSDC: totalCollateralValue, // Total collateral includes token value + deposited USDC
-          baseToken: lvf.token,
-          baseAmount: lvf.collateral,
-          usdcAmount: totalUSDC, // Use total USDC (deposit + borrow) for display
-          depositUSDC: depositUSDC || 0, // Store deposited USDC separately
-          lpAPY: 0, // Will be calculated based on base APY * leverage multiplier
-        }
-      })
-    
-    const combined = [...lpWithDetails, ...lvfWithDetails]
+    const combined = [...infernoWithDetails]
     return combined
-  }, [allLPPositions, allLVFPositions])
+  }, [allInfernoPositions])
 
   // Calculate total portfolio value
   const totalPortfolioValue = React.useMemo(() => {
@@ -337,81 +261,26 @@ export default function CTokenPortfolio() {
   }, [positions, userBalances])
 
   return (
-    <div className="space-y-8">
-      {/* Unified Dashboard Summary - Enhanced */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="panel rounded-2xl p-6 hover:shadow-forge-lg hover:border-forge-primary/30 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-forge-primary/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-forge-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="text-forge-gray-400 text-sm font-medium">Total Deposited Value</div>
-            </div>
-            <div className="text-3xl font-heading text-white">
-              ${formatUSD(totalPortfolioValue)}
-            </div>
-          </div>
-        </div>
-        <div className="panel rounded-2xl p-6 hover:shadow-forge-lg hover:border-forge-primary/30 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-              </div>
-              <div className="text-forge-gray-400 text-sm font-medium">Weighted APY</div>
-            </div>
-            <div className="text-3xl font-heading text-green-400">
-              {weightedAPY.toFixed(2)}%
-            </div>
-          </div>
-        </div>
-        <div className="panel rounded-2xl p-6 hover:shadow-forge-lg hover:border-forge-primary/30 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-forge-primary/20 flex items-center justify-center">
-                <svg className="w-5 h-5 text-forge-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
-              <div className="text-forge-gray-400 text-sm font-medium">Active Positions</div>
-            </div>
-            <div className="text-3xl font-heading text-white">
-              {cTokenPositions.length + allCTokenUSDCPositions.length + lendingPositions.length}
-              <span className="text-base text-forge-gray-400 ml-2 font-normal">
-                ({cTokenPositions.length} cTokens, {allCTokenUSDCPositions.length} ifTOKEN/USDC, {lendingPositions.length} Lending)
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div className="space-y-2 min-h-0 flex flex-col">
       {/* cTOKENS Section - Simple wrap positions */}
-      <div className="panel rounded-3xl p-8">
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/30 to-blue-500/10 flex items-center justify-center ring-2 ring-blue-500/20">
-            <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      <div className="panel rounded-3xl p-6 xl:p-10 flex-1 flex flex-col">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/30 to-blue-500/10 flex items-center justify-center ring-2 ring-blue-500/20">
+            <svg className="w-4.5 h-4.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9a2.25 2.25 0 01-1.125 1.948L12 21.75m9-14.25l-9 5.25m0 0L3 7.5m9 5.25v9" />
             </svg>
           </div>
-          <h3 className="text-2xl font-heading text-white">cTOKENS</h3>
-          <span className="px-4 py-1.5 bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 text-xs text-lg font-heading rounded-full border border-blue-500/30">{cTokenPositions.length}</span>
+          <h3 className="text-base font-heading text-white">cTOKENS</h3>
+          <span className="px-2.5 py-0.5 bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 text-[11px] font-heading rounded-full border border-blue-500/30">{cTokenPositions.length}</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+        <div className={`overflow-x-auto ${cTokenPositions.length > 2 ? 'max-h-[320px] overflow-y-auto pr-1' : ''}`}>
+          <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b border-forge-gray-700/50">
-                <th className="text-left py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">cToken</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Balance</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Value</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">APY</th>
+                <th className="text-left py-2.5 px-3 text-forge-gray-400 font-semibold text-[11px] uppercase tracking-wider">cToken</th>
+                <th className="text-right py-2.5 px-3 text-forge-gray-400 font-semibold text-[11px] uppercase tracking-wider">Balance</th>
+                <th className="text-right py-2.5 px-3 text-forge-gray-400 font-semibold text-[11px] uppercase tracking-wider">Value</th>
+                <th className="text-right py-2.5 px-3 text-forge-gray-400 font-semibold text-[11px] uppercase tracking-wider">APY</th>
               </tr>
             </thead>
             <tbody>
@@ -431,31 +300,31 @@ export default function CTokenPortfolio() {
                       className="group border-b border-forge-gray-800/50 hover:bg-gradient-to-r hover:from-forge-gray-800/40 hover:to-forge-gray-800/20 transition-all duration-300"
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
-                      <td className="py-5 px-6">
+                      <td className="py-2.5 px-3">
                         <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500/30 to-blue-500/10 rounded-xl flex items-center justify-center ring-2 ring-blue-500/20 group-hover:ring-blue-500/40 transition-all duration-300 group-hover:scale-110">
-                            <span className="text-blue-400 text-lg font-heading text-base">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-500/30 to-blue-500/10 rounded-xl flex items-center justify-center ring-2 ring-blue-500/20 group-hover:ring-blue-500/40 transition-all duration-300 group-hover:scale-110">
+                            <span className="text-blue-400 text-sm font-heading">
                               {position.ctokenSymbol.substring(1, 2).toUpperCase()}
                             </span>
                           </div>
                           <div>
-                            <div className="text-white font-semibold text-base">{position.ctokenSymbol}</div>
-                            <div className="text-forge-gray-500 text-xs font-medium mt-0.5">{position.baseTokenSymbol}</div>
+                            <div className="text-white font-semibold text-sm">{position.ctokenSymbol}</div>
+                            <div className="text-forge-gray-500 text-[11px] font-medium mt-0.5">{position.baseTokenSymbol}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="text-right py-5 px-6">
-                        <div className="text-white font-semibold text-base">
+                      <td className="text-right py-2.5 px-3">
+                        <div className="text-white font-semibold text-sm">
                           {formatSOL(ctokenBalance)} {position.ctokenSymbol}
                         </div>
                       </td>
-                      <td className="text-right py-5 px-6">
-                        <div className="text-white font-semibold text-base">
+                      <td className="text-right py-2.5 px-3">
+                        <div className="text-white font-semibold text-sm">
                           ${formatUSD(valueUSD)} USD
                         </div>
                       </td>
-                      <td className="text-right py-5 px-6">
-                        <span className="inline-flex items-center px-3 py-1 bg-blue-500/20 text-blue-400 font-semibold rounded-lg text-sm border border-blue-500/30">
+                      <td className="text-right py-2.5 px-3">
+                        <span className="inline-flex items-center px-2.5 py-0.5 bg-blue-500/20 text-blue-400 font-semibold rounded-lg text-[11px] border border-blue-500/30">
                           {position.baseAPY.toFixed(2)}%
                         </span>
                       </td>
@@ -464,8 +333,8 @@ export default function CTokenPortfolio() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={4} className="py-16 px-6 text-center">
-                    <div className="text-forge-gray-400 text-sm font-medium">
+                  <td colSpan={4} className="py-8 px-3 text-center">
+                    <div className="text-forge-gray-400 text-xs font-medium">
                       No cToken positions yet. Wrap tokens to create a position.
                     </div>
                   </td>
@@ -477,42 +346,42 @@ export default function CTokenPortfolio() {
       </div>
 
       {/* ifTOKEN/USDC Section - LP positions with detailed info */}
-      <div className="panel rounded-2xl p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-            <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="panel rounded-3xl p-6 xl:p-10 flex-1 flex flex-col">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+            <svg className="w-4.5 h-4.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
-          <h3 className="text-2xl font-heading text-white">ifTOKEN/USDC</h3>
-          <span className="px-3 py-1 bg-green-500/20 text-green-400 text-xs text-lg font-heading rounded-full">{allCTokenUSDCPositions.length}</span>
+          <h3 className="text-base font-heading text-white">ifTOKEN/USDC</h3>
+          <span className="px-2.5 py-0.5 bg-green-500/20 text-green-400 text-[11px] font-heading rounded-full">{allCTokenUSDCPositions.length}</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+        <div className={`overflow-x-auto ${allCTokenUSDCPositions.filter(p => p.isOpen).length > 2 ? 'max-h-[320px] overflow-y-auto pr-1' : ''}`}>
+          <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b border-forge-gray-700">
-                <th className="text-left py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Pair</th>
-                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
+                <th className="text-left py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">Pair</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">
                   <div className="flex flex-col items-end gap-0.5">
                     <span>Collateral</span>
-                    <span className="text-[10px] text-forge-gray-500 font-satoshi">cToken value</span>
+                    <span className="text-[9px] text-forge-gray-500 font-satoshi">cToken value</span>
                   </div>
                 </th>
-                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">
                   <div className="flex flex-col items-end gap-0.5">
                     <span>Borrowed</span>
-                    <span className="text-[10px] text-forge-gray-500 font-satoshi">USDC</span>
+                    <span className="text-[9px] text-forge-gray-500 font-satoshi">USDC</span>
                   </div>
                 </th>
-                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Leverage</th>
-                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">Leverage</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">
                   <div className="flex flex-col items-end gap-0.5">
                     <span>Health</span>
-                    <span className="text-[10px] text-forge-gray-500 font-satoshi">Factor</span>
+                    <span className="text-[9px] text-forge-gray-500 font-satoshi">Factor</span>
                   </div>
                 </th>
-                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">APY</th>
-                <th className="text-right py-3 px-4 text-forge-gray-400 text-xs font-heading uppercase tracking-[0.18em]">Total Value</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">APY</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em]">Total Value</th>
               </tr>
             </thead>
             <tbody>
@@ -534,6 +403,7 @@ export default function CTokenPortfolio() {
                   
                   const borrowedUSDC = position.borrowedUSDC || 0
                   const leverage = position.leverage || ('leverageFactor' in position ? position.leverageFactor : 1.0)
+                  const isInferno = (position as any).isInferno === true
                   const healthFactor = 'health' in position && position.health 
                     ? position.health 
                     : borrowedUSDC > 0 
@@ -549,38 +419,42 @@ export default function CTokenPortfolio() {
                   
                   return (
                     <tr key={position.id} className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
-                      <td className="py-4 px-4">
+                      <td className="py-2.5 px-3">
                         <div className="flex items-center space-x-2">
-                          <span className="text-white text-base font-heading">
+                          <span className="text-white text-sm font-heading">
                             {crucible
                               ? `if${crucible.ctokenSymbol.replace(/^c/i, '')}/USDC`
                               : `if${position.baseToken.replace(/^if/i, '')}/USDC`}
                           </span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-heading uppercase tracking-[0.16em] ${
-                            leverage > 1 ? 'bg-orange-500/20 text-orange-400' : 'bg-green-500/20 text-green-400'
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-heading uppercase tracking-[0.16em] ${
+                            isInferno
+                              ? 'bg-red-500/20 text-red-400'
+                              : leverage > 1
+                              ? 'bg-orange-500/20 text-orange-400'
+                              : 'bg-green-500/20 text-green-400'
                           }`}>
-                            {leverage > 1 ? 'Leveraged' : 'LP'}
+                            {isInferno ? 'Inferno' : leverage > 1 ? 'Leveraged' : 'LP'}
                           </span>
                         </div>
                       </td>
-                      <td className="text-right py-4 px-4">
-                        <div className="text-white text-base font-heading">
+                      <td className="text-right py-2.5 px-3">
+                        <div className="text-white text-sm font-heading">
                           ${formatUSD(collateralValueUSD)} USD
                         </div>
-                        <div className="text-forge-gray-500 text-xs font-satoshi mt-1">
+                        <div className="text-forge-gray-500 text-[11px] font-satoshi mt-1">
                           {formatSOL(position.baseAmount)} {position.baseToken}
                           {depositUSDC > 0 && (
                             <span className="ml-2 text-green-400 font-heading">+ {formatUSDC(depositUSDC)} USDC</span>
                           )}
                         </div>
                       </td>
-                      <td className="text-right py-4 px-4">
-                        <span className={`text-base font-heading ${borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'}`}>
+                      <td className="text-right py-2.5 px-3">
+                        <span className={`text-sm font-heading ${borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'}`}>
                           {borrowedUSDC > 0 ? `${formatUSDC(borrowedUSDC)} USDC` : '-'}
                         </span>
                       </td>
-                      <td className="text-right py-4 px-4">
-                        <span className={`px-2 py-1 rounded text-xs font-heading uppercase tracking-[0.16em] ${
+                      <td className="text-right py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-heading uppercase tracking-[0.16em] ${
                           leverage === 2.0 ? 'bg-yellow-500/20 text-yellow-400' :
                           leverage === 1.5 ? 'bg-orange-500/20 text-orange-400' :
                           'bg-green-500/20 text-green-400'
@@ -588,7 +462,7 @@ export default function CTokenPortfolio() {
                           {leverage.toFixed(1)}x
                         </span>
                       </td>
-                      <td className="text-right py-4 px-4">
+                      <td className="text-right py-2.5 px-3">
                         <span className={`text-xs font-heading ${
                           healthFactor >= 999 ? 'text-forge-gray-500' :
                           healthFactor >= 2.0 ? 'text-green-400' :
@@ -599,19 +473,19 @@ export default function CTokenPortfolio() {
                           {healthFactor >= 999 ? '-' : `${healthFactor.toFixed(2)}x`}
                         </span>
                       </td>
-                      <td className="text-right py-4 px-4">
-                        <span className="text-green-400 text-base font-heading">{lpAPY.toFixed(2)}%</span>
+                      <td className="text-right py-2.5 px-3">
+                        <span className="text-green-400 text-sm font-heading">{lpAPY.toFixed(2)}%</span>
                       </td>
-                      <td className="text-right py-4 px-4">
-                        <span className="text-white text-base font-heading">${formatUSD(totalValue)}</span>
+                      <td className="text-right py-2.5 px-3">
+                        <span className="text-white text-sm font-heading">${formatUSD(totalValue)}</span>
                       </td>
                     </tr>
                   )
                 })
                 ) : (
                   <tr>
-                    <td colSpan={7} className="py-8 px-4 text-center">
-                      <div className="text-forge-gray-400 text-sm">
+                    <td colSpan={7} className="py-5 px-3 text-center">
+                      <div className="text-forge-gray-400 text-xs">
                         No LP positions yet. Create an LP position to see it here.
                       </div>
                     </td>
@@ -624,26 +498,25 @@ export default function CTokenPortfolio() {
       </div>
 
       {/* Lending Pool Positions Section */}
-      <div className="panel rounded-3xl p-8">
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/30 to-purple-500/10 flex items-center justify-center ring-2 ring-purple-500/20">
-            <BanknotesIcon className="w-6 h-6 text-purple-400" />
+      <div className="panel rounded-3xl p-6 xl:p-10 flex-1 flex flex-col">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500/30 to-purple-500/10 flex items-center justify-center ring-2 ring-purple-500/20">
+            <BanknotesIcon className="w-4 h-4 text-purple-400" />
           </div>
-          <h3 className="text-2xl font-heading text-white">Lending Pool</h3>
-          <span className="px-4 py-1.5 bg-gradient-to-r from-purple-500/20 to-purple-500/10 text-purple-400 text-xs text-lg font-heading rounded-full border border-purple-500/30">
+          <h3 className="text-base font-heading text-white">Lending Pool</h3>
+          <span className="px-2.5 py-0.5 bg-gradient-to-r from-purple-500/20 to-purple-500/10 text-purple-400 text-[11px] font-heading rounded-full border border-purple-500/30">
             {lendingPositions.filter(p => (p.suppliedAmount > 0) || (p.borrowedAmount && p.borrowedAmount > 0)).length}
           </span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+        <div className={`overflow-x-auto ${lendingPositions.filter(p => (p.suppliedAmount > 0) || (p.borrowedAmount && p.borrowedAmount > 0)).length > 2 ? 'max-h-[320px] overflow-y-auto pr-1' : ''}`}>
+          <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b border-forge-gray-700">
-                <th className="text-left py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Type</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Amount</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">APY</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Interest</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Value</th>
-                <th className="text-right py-4 px-6 text-forge-gray-400 font-semibold text-sm uppercase tracking-wider">Actions</th>
+                <th className="text-left py-2 px-2.5 text-forge-gray-400 font-semibold text-[10px] uppercase tracking-wider">Type</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 font-semibold text-[10px] uppercase tracking-wider">Amount</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 font-semibold text-[10px] uppercase tracking-wider">APY</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 font-semibold text-[10px] uppercase tracking-wider">Interest</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 font-semibold text-[10px] uppercase tracking-wider">Value</th>
               </tr>
             </thead>
             <tbody>
@@ -682,106 +555,71 @@ export default function CTokenPortfolio() {
                       <React.Fragment key={`${position.marketPubkey}-${index}`}>
                         {isSupplied && (
                           <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
-                            <td className="py-4 px-6">
+                            <td className="py-2.5 px-3">
                               <div className="flex items-center space-x-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-green-500/30 to-green-500/10 rounded-xl flex items-center justify-center ring-2 ring-green-500/20">
-                                  <span className="text-green-400 text-lg font-heading">S</span>
+                                <div className="w-9 h-9 bg-gradient-to-br from-green-500/30 to-green-500/10 rounded-xl flex items-center justify-center ring-2 ring-green-500/20">
+                                  <span className="text-green-400 text-sm font-heading">S</span>
                                 </div>
                                 <div>
-                                  <div className="text-white text-base font-heading">Supplied</div>
-                                  <div className="text-forge-gray-500 text-xs font-satoshi">Lending</div>
+                                  <div className="text-white text-sm font-heading">Supplied</div>
+                                  <div className="text-forge-gray-500 text-[11px] font-satoshi">Lending</div>
                                 </div>
                               </div>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <div className="text-white text-base font-heading">
+                            <td className="text-right py-2.5 px-3">
+                              <div className="text-white text-sm font-heading">
                                 {formatNumberWithCommas(position.suppliedAmount || 0)} USDC
                               </div>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <span className="inline-flex items-center px-3 py-1 bg-green-500/20 text-green-400 font-semibold rounded-lg text-sm border border-green-500/30">
+                            <td className="text-right py-2.5 px-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 bg-green-500/20 text-green-400 font-semibold rounded-lg text-[11px] border border-green-500/30">
                                 {(position.effectiveApy || 4.5).toFixed(2)}%
                               </span>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <div className="text-green-400 text-base font-heading">
+                            <td className="text-right py-2.5 px-3">
+                              <div className="text-green-400 text-sm font-heading">
                                 +{formatNumberWithCommas(position.interestEarned || 0)} USDC
                               </div>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <div className="text-white text-base font-heading">
+                            <td className="text-right py-2.5 px-3">
+                              <div className="text-white text-sm font-heading">
                                 ${formatNumberWithCommas(suppliedValue)}
                               </div>
-                            </td>
-                            <td className="text-right py-4 px-6">
-                              <button
-                                onClick={async () => {
-                                  if (confirm(`Withdraw ${formatUSDC(position.suppliedAmount)} USDC?`)) {
-                                    try {
-                                      await withdrawLending(position.marketPubkey, position.suppliedAmount.toString())
-                                      alert('Withdrawal successful!')
-                                    } catch (error: any) {
-                                      alert(`Withdrawal failed: ${error.message}`)
-                                    }
-                                  }
-                                }}
-                                className="px-4 py-2 bg-forge-gray-700 hover:bg-forge-gray-600 text-white rounded-lg font-satoshi font-medium transition-all duration-200 hover:scale-105 text-sm"
-                              >
-                                Withdraw
-                              </button>
                             </td>
                           </tr>
                         )}
                         {isBorrowed && position.borrowedAmount && (
                           <tr className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
-                            <td className="py-4 px-6">
+                            <td className="py-2.5 px-3">
                               <div className="flex items-center space-x-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-orange-500/30 to-orange-500/10 rounded-xl flex items-center justify-center ring-2 ring-orange-500/20">
-                                  <span className="text-orange-400 text-lg font-heading">B</span>
+                                <div className="w-9 h-9 bg-gradient-to-br from-orange-500/30 to-orange-500/10 rounded-xl flex items-center justify-center ring-2 ring-orange-500/20">
+                                  <span className="text-orange-400 text-sm font-heading">B</span>
                                 </div>
                                 <div>
-                                  <div className="text-white text-base font-heading">Borrowed</div>
-                                  <div className="text-forge-gray-500 text-xs font-satoshi">Debt</div>
+                                  <div className="text-white text-sm font-heading">Borrowed</div>
+                                  <div className="text-forge-gray-500 text-[11px] font-satoshi">Debt</div>
                                 </div>
                               </div>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <div className="text-white text-base font-heading">
+                            <td className="text-right py-2.5 px-3">
+                              <div className="text-white text-sm font-heading">
                                 {formatNumberWithCommas(position.borrowedAmount || 0)} USDC
                               </div>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <span className="inline-flex items-center px-3 py-1 bg-orange-500/20 text-orange-400 font-semibold rounded-lg text-sm border border-orange-500/30">
+                            <td className="text-right py-2.5 px-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 bg-orange-500/20 text-orange-400 font-semibold rounded-lg text-[11px] border border-orange-500/30">
                                 10.00%
                               </span>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <div className="text-orange-400 text-base font-heading">
+                            <td className="text-right py-2.5 px-3">
+                              <div className="text-orange-400 text-sm font-heading">
                                 -{formatNumberWithCommas(borrowedInterest)} USDC
                               </div>
                             </td>
-                            <td className="text-right py-4 px-6">
-                              <div className="text-white text-base font-heading">
+                            <td className="text-right py-2.5 px-3">
+                              <div className="text-white text-sm font-heading">
                                 ${formatNumberWithCommas(borrowedValue)}
                               </div>
-                            </td>
-                            <td className="text-right py-4 px-6">
-                              <button
-                                onClick={async () => {
-                                  const totalOwed = position.borrowedAmount! + borrowedInterest
-                                  if (confirm(`Repay ${formatUSDC(totalOwed)} USDC (principal + interest)?`)) {
-                                    try {
-                                      await repayLending(totalOwed)
-                                      alert('Repayment successful!')
-                                    } catch (error: any) {
-                                      alert(`Repayment failed: ${error.message}`)
-                                    }
-                                  }
-                                }}
-                                className="px-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-lg font-satoshi font-medium transition-all duration-200 hover:scale-105 text-sm border border-orange-500/30"
-                              >
-                                Repay
-                              </button>
                             </td>
                           </tr>
                         )}
@@ -791,8 +629,8 @@ export default function CTokenPortfolio() {
                 } else {
                   return (
                     <tr>
-                      <td colSpan={6} className="py-16 px-6 text-center">
-                        <div className="text-forge-gray-400 text-sm font-medium">
+                      <td colSpan={5} className="py-8 px-3 text-center">
+                        <div className="text-forge-gray-400 text-xs font-medium">
                           No lending positions yet. Supply USDC to earn yield or borrow for leverage.
                         </div>
                       </td>
@@ -832,19 +670,34 @@ function ClosePositionButton({ position, crucible, onClose }: {
     baseTokenSymbol: crucible.baseTokenSymbol as 'SOL',
     baseAPY: crucible.baseAPY,
   })
+
+  const { closePosition: closeInfernoPosition, loading: infernoLoading } = useInfernoLP({
+    crucibleAddress: crucible.crucibleAddress,
+    baseTokenSymbol: crucible.baseTokenSymbol as 'SOL',
+    baseAPY: crucible.baseAPY,
+  })
   
   const { addToBalance, subtractFromBalance } = useBalance()
   const { getCrucible } = useCrucible()
   
+  const isInferno = position.isInferno === true
   const isLeveraged = position.leverage && position.leverage > 1
-  const loading = isLeveraged ? lvfLoading : lpLoading
+  const loading = isInferno ? infernoLoading : (isLeveraged ? lvfLoading : lpLoading)
   
   const handleClose = async () => {
-    if (!confirm(`Are you sure you want to close this ${isLeveraged ? 'leveraged' : 'LP'} position?`)) {
+    if (!confirm(`Are you sure you want to close this ${isInferno ? 'Inferno LP' : (isLeveraged ? 'leveraged' : 'LP')} position?`)) {
       return
     }
     
     try {
+      if (isInferno) {
+        await closeInfernoPosition(position.id)
+        window.dispatchEvent(new CustomEvent('infernoLpPositionClosed'))
+        alert('Inferno LP position closed. Wallet balances refresh automatically.')
+        onClose()
+        return
+      }
+
       const result = isLeveraged 
         ? await closeLVFPosition(position.id)
         : await closeLPPosition(position.id)

@@ -8,6 +8,8 @@ interface LeveragedProjectionChartProps {
   currentPrice: number // Base token price in USD
   currentExchangeRate: number // 1 cToken = X base tokens
   baseTokenSymbol: 'SOL'
+  showLpSeries?: boolean
+  showCTokenSeries?: boolean
 }
 
 export default function LeveragedProjectionChart({
@@ -16,6 +18,8 @@ export default function LeveragedProjectionChart({
   currentPrice,
   currentExchangeRate,
   baseTokenSymbol,
+  showLpSeries = true,
+  showCTokenSeries = true,
 }: LeveragedProjectionChartProps) {
   const [showChart, setShowChart] = useState(false)
   
@@ -73,17 +77,17 @@ export default function LeveragedProjectionChart({
   ]
   
   return (
-    <div className="panel rounded-2xl p-6">
+    <div className="panel rounded-2xl p-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-heading text-white mb-1">
+          <h3 className="text-base font-heading text-white mb-1">
             Yield Projections
           </h3>
         </div>
         <button
           onClick={() => setShowChart(!showChart)}
-          className={`px-4 py-2 rounded-lg text-xs font-heading uppercase tracking-[0.18em] transition-all duration-300 flex items-center gap-2 ${
+          className={`px-3 py-1.5 rounded-lg text-[11px] font-heading uppercase tracking-[0.18em] transition-all duration-300 flex items-center gap-2 ${
             showChart
               ? 'bg-forge-primary-light/30 border border-forge-primary/40 text-white shadow-[0_10px_25px_rgba(255,102,14,0.25)] hover:bg-forge-primary/30 hover:border-forge-primary/50'
               : 'bg-white/5 border border-white/10 text-forge-gray-200 hover:text-white hover:bg-white/10 hover:border-white/20'
@@ -100,7 +104,7 @@ export default function LeveragedProjectionChart({
 
       {/* Chart */}
       {showChart && (
-        <div className="mt-6 h-64">
+        <div className="mt-4 h-48">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
@@ -126,45 +130,51 @@ export default function LeveragedProjectionChart({
                 labelFormatter={(label) => `Time: ${label}`}
               />
               <Legend 
-                wrapperStyle={{ paddingTop: '10px', fontSize: '12px' }}
+                wrapperStyle={{ paddingTop: '6px', fontSize: '11px' }}
                 iconType="line"
               />
-              <Line 
-                type="monotone" 
-                dataKey="cToken" 
-                stroke="#FFA500" 
-                strokeWidth={2}
-                name={`c${baseTokenSymbol}`}
-                dot={false}
-                activeDot={{ r: 5 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="lp1x" 
-                stroke="#22c55e" 
-                strokeWidth={2}
-                name={`if${baseTokenSymbol}/USDC 1x`}
-                dot={false}
-                activeDot={{ r: 5 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="lp1_5x" 
-                stroke="#3b82f6" 
-                strokeWidth={2}
-                name={`if${baseTokenSymbol}/USDC 1.5x`}
-                dot={false}
-                activeDot={{ r: 5 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="lp2x" 
-                stroke="#ef4444" 
-                strokeWidth={2}
-                name={`if${baseTokenSymbol}/USDC 2x`}
-                dot={false}
-                activeDot={{ r: 5 }}
-              />
+              {showCTokenSeries && (
+                <Line 
+                  type="monotone" 
+                  dataKey="cToken" 
+                  stroke="#FFA500" 
+                  strokeWidth={2}
+                  name={`c${baseTokenSymbol}`}
+                  dot={false}
+                  activeDot={{ r: 5 }}
+                />
+              )}
+              {showLpSeries && (
+                <>
+                  <Line 
+                    type="monotone" 
+                    dataKey="lp1x" 
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    name={`if${baseTokenSymbol}/USDC 1x`}
+                    dot={false}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="lp1_5x" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    name={`if${baseTokenSymbol}/USDC 1.5x`}
+                    dot={false}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="lp2x" 
+                    stroke="#ef4444" 
+                    strokeWidth={2}
+                    name={`if${baseTokenSymbol}/USDC 2x`}
+                    dot={false}
+                    activeDot={{ r: 5 }}
+                  />
+                </>
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>

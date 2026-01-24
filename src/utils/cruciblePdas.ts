@@ -38,11 +38,12 @@ export function deriveCrucibleAuthorityPDA(baseMint: PublicKey): [PublicKey, num
 
 /**
  * Derive LP position PDA address
- * Seeds: ["lp_position", user, crucible]
+ * Seeds: ["lp_position", user, base_mint]
+ * NOTE: The program uses base_mint in the seeds, not crucible
  */
-export function deriveLPPositionPDA(user: PublicKey, crucible: PublicKey): [PublicKey, number] {
+export function deriveLPPositionPDA(user: PublicKey, baseMint: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from('lp_position'), user.toBuffer(), crucible.toBuffer()],
+    [Buffer.from('lp_position'), user.toBuffer(), baseMint.toBuffer()],
     FORGE_CRUCIBLES_PROGRAM_ID
   )
 }

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
+use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer, MintTo, Burn};
 
 use crate::state::{Crucible, LPPositionAccount, CrucibleError};
 use crate::lvf::get_oracle_price;
@@ -19,14 +19,158 @@ const MIN_LP_USDC_AMOUNT: u64 = 1_000; // Minimum USDC amount for LP position (1
 const MAX_LP_BASE_AMOUNT: u64 = 1_000_000_000_000_000_000; // 1 billion tokens with 9 decimals
 const MAX_LP_USDC_AMOUNT: u64 = 1_000_000_000_000_000; // 1 billion USDC with 6 decimals
 
+// Old format crucible size: 244 bytes total (8 discriminator + 236 struct)
+// New format crucible size: 276 bytes total (8 discriminator + 268 struct)
+const OLD_FORMAT_SIZE: usize = 244;
+const NEW_FORMAT_SIZE: usize = 276;
+
+/// Manually deserialize old format crucible account
+/// Old format doesn't have: lp_token_mint, total_lp_token_supply, oracle, treasury, total_fees_accrued
+fn deserialize_old_format_crucible(
+    data: &[u8],
+    ctoken_mint: Pubkey, // Use ctoken_mint as placeholder for lp_token_mint
+    treasury: Pubkey, // Use passed treasury account
+) -> Result<Crucible> {
+    require!(data.len() >= 8, CrucibleError::InvalidConfig);
+    
+    let mut offset = 8; // Skip discriminator
+    
+    // Read base_mint (32 bytes)
+    require!(data.len() >= offset + 32, CrucibleError::InvalidConfig);
+    let base_mint = Pubkey::try_from(&data[offset..offset+32])
+        .map_err(|_| CrucibleError::InvalidConfig)?;
+    offset += 32;
+    
+    // Read ctoken_mint (32 bytes) - already passed as parameter, but read for validation
+    require!(data.len() >= offset + 32, CrucibleError::InvalidConfig);
+    let _ctoken_mint_read = Pubkey::try_from(&data[offset..offset+32])
+        .map_err(|_| CrucibleError::InvalidConfig)?;
+    require!(_ctoken_mint_read == ctoken_mint, CrucibleError::InvalidConfig);
+    offset += 32;
+    
+    // Old format: no lp_token_mint, use ctoken_mint as placeholder
+    let lp_token_mint = ctoken_mint;
+    
+    // Read vault (32 bytes)
+    require!(data.len() >= offset + 32, CrucibleError::InvalidConfig);
+    let vault = Pubkey::try_from(&data[offset..offset+32])
+        .map_err(|_| CrucibleError::InvalidConfig)?;
+    offset += 32;
+    
+    // Read vault_bump (1 byte)
+    require!(data.len() >= offset + 1, CrucibleError::InvalidConfig);
+    let vault_bump = data[offset];
+    offset += 1;
+    
+    // Read bump (1 byte)
+    require!(data.len() >= offset + 1, CrucibleError::InvalidConfig);
+    let bump = data[offset];
+    offset += 1;
+    
+    // Read total_base_deposited (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let total_base_deposited = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Read total_ctoken_supply (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let total_ctoken_supply = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Old format: no total_lp_token_supply, default to 0
+    let total_lp_token_supply = 0u64;
+    
+    // Read exchange_rate (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let exchange_rate = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Read last_update_slot (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let last_update_slot = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Read fee_rate (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let fee_rate = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Read paused (1 byte)
+    require!(data.len() >= offset + 1, CrucibleError::InvalidConfig);
+    let paused = data[offset] != 0;
+    offset += 1;
+    
+    // Read total_leveraged_positions (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let total_leveraged_positions = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Read total_lp_positions (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let total_lp_positions = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Read expected_vault_balance (8 bytes)
+    require!(data.len() >= offset + 8, CrucibleError::InvalidConfig);
+    let expected_vault_balance = u64::from_le_bytes(
+        data[offset..offset+8].try_into().map_err(|_| CrucibleError::InvalidConfig)?
+    );
+    offset += 8;
+    
+    // Old format: no oracle, treasury, total_fees_accrued
+    let oracle: Option<Pubkey> = None;
+    let total_fees_accrued = 0u64;
+    
+    Ok(Crucible {
+        base_mint,
+        ctoken_mint,
+        lp_token_mint,
+        vault,
+        vault_bump,
+        bump,
+        total_base_deposited,
+        total_ctoken_supply,
+        total_lp_token_supply,
+        exchange_rate,
+        last_update_slot,
+        fee_rate,
+        paused,
+        total_leveraged_positions,
+        total_lp_positions,
+        expected_vault_balance,
+        oracle,
+        treasury,
+        total_fees_accrued,
+    })
+}
+
 pub fn open_lp_position(
     ctx: Context<OpenLPPosition>,
     base_amount: u64,
     usdc_amount: u64,
     max_slippage_bps: u64, // Maximum slippage in basis points (e.g., 100 = 1%)
 ) -> Result<u64> {
-    // Check if crucible is paused
-    require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
+    // #region agent log
+    msg!("[DEBUG] open_lp_position: entry - base_amount={}, usdc_amount={}, max_slippage_bps={}", base_amount, usdc_amount, max_slippage_bps);
+    msg!("[DEBUG] crucible key: {}", ctx.accounts.crucible.key());
+    msg!("[DEBUG] user key: {}", ctx.accounts.user.key());
+    msg!("[DEBUG] position key: {}", ctx.accounts.position.key());
+    msg!("[DEBUG] base_mint key: {}", ctx.accounts.base_mint.key());
+    // #endregion
     
     require!(
         max_slippage_bps <= 10_000 &&
@@ -35,21 +179,120 @@ pub fn open_lp_position(
         CrucibleError::InvalidAmount
     );
     
-    let crucible = &mut ctx.accounts.crucible;
+    // #region agent log
+    msg!("[DEBUG] Amount validation passed");
+    // #endregion
+    
+    // Manually deserialize crucible account to handle old and new formats
+    let crucible_data = ctx.accounts.crucible.try_borrow_data()?;
+    
+    // #region agent log
+    let crucible_data_len = crucible_data.len();
+    let expected_len = 8 + Crucible::LEN; // discriminator + struct size
+    msg!("[DEBUG] crucible_data length: {}, expected: {}", crucible_data_len, expected_len);
+    // #endregion
+    
+    // SECURITY FIX: Check bounds before slicing to prevent access violations
+    if crucible_data_len < 8 {
+        msg!("[DEBUG] ERROR: crucible_data too small (< 8 bytes)");
+        return Err(CrucibleError::InvalidConfig.into());
+    }
+    
+    // Detect format: old format is 244 bytes, new format is 276 bytes
+    let is_old_format = crucible_data_len < NEW_FORMAT_SIZE;
+    
+    // #region agent log
+    msg!("[DEBUG] Format detection: is_old_format={}, data_len={}", is_old_format, crucible_data_len);
+    // #endregion
+    
+    let mut crucible: Crucible;
+    
+    if is_old_format {
+        // OLD FORMAT: Manually read fields
+        msg!("[DEBUG] Reading old format crucible manually");
+        
+        require!(
+            crucible_data_len >= OLD_FORMAT_SIZE,
+            CrucibleError::InvalidConfig
+        );
+        
+        // Get ctoken_mint from accounts to use as placeholder for lp_token_mint
+        let ctoken_mint = ctx.accounts.crucible.key(); // We'll read it from data
+        // Actually, we need to read ctoken_mint from the data first
+        // Let's read it temporarily to get the value
+        require!(crucible_data_len >= 8 + 32 + 32, CrucibleError::InvalidConfig);
+        let ctoken_mint_from_data = Pubkey::try_from(&crucible_data[8+32..8+32+32])
+            .map_err(|_| CrucibleError::InvalidConfig)?;
+        
+        // Use treasury_base as treasury for old format
+        let treasury = ctx.accounts.treasury_base.key();
+        
+        crucible = deserialize_old_format_crucible(
+            &crucible_data,
+            ctoken_mint_from_data,
+            treasury,
+        )?;
+        
+        msg!("[DEBUG] Old format crucible read successfully, using passed lp_token_mint account");
+    } else {
+        // NEW FORMAT: Deserialize normally
+        msg!("[DEBUG] Attempting to deserialize new format crucible account...");
+        
+        crucible = Crucible::try_deserialize(&mut &crucible_data[8..])
+            .map_err(|e| {
+                msg!("[DEBUG] ERROR: Crucible deserialization failed: {:?}", e);
+                CrucibleError::InvalidConfig
+            })?;
+        
+        msg!("[DEBUG] New format crucible deserialized successfully");
+    }
+    
+    // Check if crucible is paused
+    require!(!crucible.paused, CrucibleError::ProtocolPaused);
+    
+    // Handle old format crucibles: if lp_token_mint equals ctoken_mint, use the passed lp_token_mint account
+    // This allows old crucibles to work with LP positions by passing the LP token mint separately
+    let crucible_lp_mint = if crucible.lp_token_mint == crucible.ctoken_mint {
+        // Old format: use the LP token mint from accounts (must be passed)
+        ctx.accounts.lp_token_mint.key()
+    } else {
+        // New format: use the LP token mint from crucible account
+        crucible.lp_token_mint
+    };
+    
+    // Validate that the passed LP token mint matches what we expect
+    require!(
+        ctx.accounts.lp_token_mint.key() == crucible_lp_mint,
+        CrucibleError::InvalidConfig
+    );
     let clock = Clock::get()?;
 
     // Get base token price from oracle
-    // Validate oracle account matches crucible configuration
-    if let Some(crucible_oracle) = crucible.oracle {
-        require!(
-            ctx.accounts.oracle.as_ref().map(|o| o.key()) == Some(crucible_oracle),
-            CrucibleError::InvalidOraclePrice
-        );
-    }
+    // SAFETY: Handle optional oracle account safely to prevent access violations
+    let oracle_account_opt = match (crucible.oracle, ctx.accounts.oracle.as_ref()) {
+        (Some(crucible_oracle), Some(oracle_acc)) => {
+            // Validate the oracle account matches what crucible expects
+            require!(
+                oracle_acc.key() == crucible_oracle,
+                CrucibleError::InvalidOraclePrice
+            );
+            // SAFETY: Only access account data if account is valid
+            // UncheckedAccount doesn't validate account data, so we need to be careful
+            // We'll pass the account info to get_oracle_price which will handle validation
+            Some(oracle_acc.as_ref())
+        }
+        (Some(_), None) => {
+            // Crucible expects an oracle but none was provided
+            return Err(CrucibleError::InvalidOraclePrice.into());
+        }
+        (None, _) => {
+            // Crucible doesn't have an oracle configured, oracle account should be None
+            None
+        }
+    };
     
-    let oracle_account_opt = ctx.accounts.oracle.as_ref().map(|o| o.as_ref());
     let base_token_price = get_oracle_price(
-        crucible,
+        &crucible,
         &oracle_account_opt,
         &ctx.accounts.base_mint.key(),
     )?;
@@ -63,7 +306,8 @@ pub fn open_lp_position(
     // USDC value is 1:1 (1 USDC = 1 USDC)
     let usdc_value = usdc_amount as u128;
 
-    let tolerance = base_value
+    // Note: tolerance calculation removed - using direct slippage calculation below
+    let _tolerance = base_value
         .checked_mul(SLIPPAGE_TOLERANCE_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -103,7 +347,8 @@ pub fn open_lp_position(
         .checked_mul(VAULT_FEE_SHARE_BPS as u128)
         .and_then(|v| v.checked_div(10_000u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
-    let protocol_fee_share = open_fee_usdc
+    // Protocol fee share is calculated per-token below, not needed here
+    let _protocol_fee_share = open_fee_usdc
         .checked_sub(vault_fee_share)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
@@ -287,11 +532,86 @@ pub fn open_lp_position(
         .checked_add(1)
         .ok_or(ProgramError::ArithmeticOverflow)?;
 
+    // Calculate LP tokens to mint using constant product formula: sqrt(base_value * usdc_value)
+    // Both values are in USDC (base_value already converted)
+    // Use integer square root: sqrt(x) ≈ x / sqrt(x) for large numbers, but for exact we use:
+    // sqrt(a * b) where a and b are in USDC units (scaled by 1e6)
+    // To maintain precision, we calculate: sqrt((base_value * usdc_value) / 1e6) * 1e3
+    // This gives us LP tokens with 9 decimals (same as base token)
+    let product = base_value
+        .checked_mul(usdc_value)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate integer square root using Newton's method
+    // Start with an initial guess
+    if product == 0 {
+        return Err(CrucibleError::InvalidAmount.into());
+    }
+    let mut guess = product;
+    let mut prev_guess = 0u128;
+    // Newton's method: x_new = (x + n/x) / 2
+    while guess != prev_guess {
+        prev_guess = guess;
+        let quotient = product.checked_div(guess).ok_or(ProgramError::ArithmeticOverflow)?;
+        guess = (guess.checked_add(quotient).ok_or(ProgramError::ArithmeticOverflow)?) / 2;
+    }
+    let sqrt_product = guess;
+    
+    // Scale to LP tokens with 9 decimals
+    // base_value and usdc_value are in USDC (6 decimals), product has 12 decimals
+    // sqrt(product) has 6 decimals, scale to 9 decimals: multiply by 1000
+    let lp_tokens_scaled = sqrt_product
+        .checked_mul(1_000u128) // Scale up to 9 decimals
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Ensure LP tokens fit in u64
+    let lp_tokens_to_mint = if lp_tokens_scaled > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        lp_tokens_scaled as u64
+    };
+
+    // Mint LP tokens to user
+    // Get bump from context (populated by account constraint)
+    let crucible_bump = ctx.bumps.crucible;
+    let seeds = &[
+        b"crucible",
+        crucible.base_mint.as_ref(),
+        &[crucible_bump],
+    ];
+    let signer = &[&seeds[..]];
+    
+    // Mint LP tokens to user
+    // For old format crucibles, we need to use the crucible PDA as mint authority
+    // For new format, the crucible PDA is already the mint authority
+    let mint_to_accounts = MintTo {
+        mint: ctx.accounts.lp_token_mint.to_account_info(),
+        to: ctx.accounts.user_lp_token_account.to_account_info(),
+        authority: ctx.accounts.crucible_authority.to_account_info(),
+    };
+    let mint_to_program = ctx.accounts.token_program.to_account_info();
+    let mint_to_ctx = CpiContext::new_with_signer(mint_to_program, mint_to_accounts, signer);
+    token::mint_to(mint_to_ctx, lp_tokens_to_mint)?;
+    
+    // #region agent log
+    msg!("[DEBUG] LP tokens minted: {} to user {}", lp_tokens_to_mint, ctx.accounts.user.key());
+    // #endregion
+
+    // #region agent log
+    msg!("[DEBUG] Initializing position account...");
+    msg!("[DEBUG] position_id: {}, bump: {}", position_id, ctx.bumps.position);
+    // #endregion
+    
     // Initialize position account
     let position = &mut ctx.accounts.position;
+    
+    // #region agent log
+    msg!("[DEBUG] Position account mutable reference obtained");
+    // #endregion
+    
     position.position_id = position_id;
     position.owner = ctx.accounts.user.key();
-    position.crucible = crucible.key();
+    position.crucible = ctx.accounts.crucible.key();
     position.base_mint = ctx.accounts.base_mint.key();
     position.base_amount = net_base_amount;
     position.usdc_amount = net_usdc_amount;
@@ -299,9 +619,17 @@ pub fn open_lp_position(
     position.created_at = clock.slot;
     position.is_open = true;
     position.bump = ctx.bumps.position;
+    
+    // #region agent log
+    msg!("[DEBUG] Position account fields set successfully");
+    // #endregion
 
     // Update crucible state and track fees
     crucible.total_lp_positions = position_id;
+    crucible.total_lp_token_supply = crucible
+        .total_lp_token_supply
+        .checked_add(lp_tokens_to_mint)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
     
     // Track vault fee share in total fees accrued (for base token crucible)
     // Note: USDC fees go to USDC vault, not base token crucible vault
@@ -312,6 +640,11 @@ pub fn open_lp_position(
             .checked_add(vault_fee_base)
             .ok_or(ProgramError::ArithmeticOverflow)?;
     }
+    
+    // Serialize crucible back to account data
+    let mut crucible_data = ctx.accounts.crucible.try_borrow_mut_data()?;
+    let mut crucible_slice = &mut crucible_data[8..]; // Skip discriminator
+    crucible.serialize(&mut crucible_slice)?;
     
     // SECURITY FIX: Emit event for LP position opening
     emit!(LPPositionOpened {
@@ -336,32 +669,79 @@ pub fn close_lp_position(
     ctx: Context<CloseLPPosition>,
     max_slippage_bps: u64, // Maximum slippage in basis points (e.g., 100 = 1%)
 ) -> Result<()> {
-    // Check if crucible is paused
-    require!(!ctx.accounts.crucible.paused, CrucibleError::ProtocolPaused);
-    
     require!(
         max_slippage_bps <= 10_000,
         CrucibleError::InvalidAmount
     );
     
+    // Manually deserialize crucible account to handle old and new formats
+    let crucible_data = ctx.accounts.crucible.try_borrow_data()?;
+    let crucible_data_len = crucible_data.len();
+    
+    // Detect format: old format is 244 bytes, new format is 276 bytes
+    let is_old_format = crucible_data_len < NEW_FORMAT_SIZE;
+    
+    let mut crucible: Crucible;
+    
+    if is_old_format {
+        // OLD FORMAT: Manually read fields
+        msg!("[DEBUG] Reading old format crucible manually in close_lp_position");
+        
+        require!(
+            crucible_data_len >= OLD_FORMAT_SIZE,
+            CrucibleError::InvalidConfig
+        );
+        
+        // Read ctoken_mint from data
+        require!(crucible_data_len >= 8 + 32 + 32, CrucibleError::InvalidConfig);
+        let ctoken_mint_from_data = Pubkey::try_from(&crucible_data[8+32..8+32+32])
+            .map_err(|_| CrucibleError::InvalidConfig)?;
+        
+        // Use treasury_base as treasury for old format
+        let treasury = ctx.accounts.treasury_base.key();
+        
+        crucible = deserialize_old_format_crucible(
+            &crucible_data,
+            ctoken_mint_from_data,
+            treasury,
+        )?;
+        
+        msg!("[DEBUG] Old format crucible read successfully in close_lp_position");
+    } else {
+        // NEW FORMAT: Deserialize normally
+        crucible = Crucible::try_deserialize(&mut &crucible_data[8..])
+            .map_err(|_| CrucibleError::InvalidConfig)?;
+    }
+    
+    // Check if crucible is paused
+    require!(!crucible.paused, CrucibleError::ProtocolPaused);
+    
     let position = &mut ctx.accounts.position;
-    let crucible = &mut ctx.accounts.crucible;
+    
+    // Read crucible LP token mint before we use it later (after mutable operations)
+    // For old format, use the passed lp_token_mint account
+    let crucible_lp_mint = if crucible.lp_token_mint == crucible.ctoken_mint {
+        // Old format: use the LP token mint from accounts (must be passed)
+        ctx.accounts.lp_token_mint.key()
+    } else {
+        // New format: use the LP token mint from crucible account
+        crucible.lp_token_mint
+    };
 
     // Validate position exists and is open
     require!(position.is_open, CrucibleError::PositionNotOpen);
     require!(position.owner == ctx.accounts.user.key(), CrucibleError::Unauthorized);
-    require!(position.crucible == crucible.key(), CrucibleError::InvalidLPAmounts);
+    require!(position.crucible == ctx.accounts.crucible.key(), CrucibleError::InvalidLPAmounts);
 
     // SECURITY FIX: Fetch current oracle price and validate slippage
-    // Get base_mint before mutable borrow of crucible
     let base_mint_key = crucible.base_mint;
     
     // Get current base token price from oracle
     let oracle_account_opt = ctx.accounts.oracle.as_ref().map(|o| o.as_ref());
     let current_base_token_price = get_oracle_price(
-        crucible,
+        &crucible,
         &oracle_account_opt,
-        &base_mint_key,
+        &ctx.accounts.base_mint.key(),
     )?;
     
     // Calculate current position value using current oracle price
@@ -518,11 +898,36 @@ pub fn close_lp_position(
         .checked_sub(fee_usdc_amount_u64)
         .ok_or(CrucibleError::InvalidAmount)?;
 
-    // Transfer base tokens back to user (net amount)
+    // INFERNO MODE: Convert USDC to SOL (like cSOL unwrap)
+    // Calculate SOL equivalent of USDC to return (after fees)
+    // USDC has 6 decimals, base token (SOL) has 9 decimals
+    // Convert: (usdc_to_return * PRICE_SCALE) / base_token_price
+    let usdc_to_sol_amount = (usdc_to_return as u128)
+        .checked_mul(PRICE_SCALE as u128)
+        .and_then(|v| v.checked_div(base_token_price as u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Ensure it fits in u64
+    let usdc_to_sol_amount = if usdc_to_sol_amount > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        usdc_to_sol_amount as u64
+    };
+    
+    // Add converted SOL amount to base_to_return
+    // Now user gets all value back as SOL (like cSOL unwrap)
+    let total_sol_to_return = base_to_return
+        .checked_add(usdc_to_sol_amount)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+
+    // Transfer base tokens back to user (net amount + converted USDC)
+    // INFERNO MODE: User gets all value back as SOL (like cSOL unwrap)
+    // Get bump from context (populated by account constraint)
+    let crucible_bump = ctx.bumps.crucible;
     let seeds = &[
         b"crucible",
         crucible.base_mint.as_ref(),
-        &[crucible.bump],
+        &[crucible_bump],
     ];
     let signer = &[&seeds[..]];
 
@@ -531,6 +936,8 @@ pub fn close_lp_position(
         CrucibleError::InvalidProgram
     );
     
+    // Transfer total SOL (base + converted USDC) to user
+    // This matches cSOL flow: user deposits SOL, gets cSOL, then unwraps to get SOL back
     let cpi_accounts = Transfer {
         from: ctx.accounts.crucible_base_vault.to_account_info(),
         to: ctx.accounts.user_base_token_account.to_account_info(),
@@ -538,7 +945,7 @@ pub fn close_lp_position(
     };
     let cpi_program = ctx.accounts.token_program.to_account_info();
     let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-    token::transfer(cpi_ctx, base_to_return)?;
+    token::transfer(cpi_ctx, total_sol_to_return)?;
 
     // Transfer vault fee share to vault (increases yield for remaining LP positions)
     if vault_fee_base > 0 {
@@ -577,26 +984,15 @@ pub fn close_lp_position(
         CrucibleError::InvalidProgram
     );
     
-    // Transfer USDC back to user (net amount)
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.crucible_usdc_vault.to_account_info(),
-        to: ctx.accounts.user_usdc_account.to_account_info(),
-        authority: ctx.accounts.crucible_authority.to_account_info(),
-    };
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
-    token::transfer(cpi_ctx, usdc_to_return)?;
-    
-    // Transfer protocol fee share to treasury (USDC)
+    // INFERNO MODE IMPROVEMENT: Convert USDC to SOL (like cSOL unwrap)
+    // Transfer USDC from vault to treasury (we're converting it, not returning it)
+    // Protocol fee USDC goes to treasury
     if protocol_fee_usdc > 0 && protocol_fee_usdc <= position.usdc_amount {
-        // SECURITY FIX: Validate treasury_usdc is a proper TokenAccount for USDC
-        // The account constraint already validates mint matches, but we add explicit check here for clarity
         require!(
             ctx.accounts.treasury_usdc.mint == ctx.accounts.user_usdc_account.mint,
             CrucibleError::InvalidTreasury
         );
         
-        // SECURITY FIX: Explicitly validate token program ID (defense-in-depth, Anchor Program type already validates)
         require!(
             ctx.accounts.token_program.key() == anchor_spl::token::ID,
             CrucibleError::InvalidProgram
@@ -612,6 +1008,30 @@ pub fn close_lp_position(
         token::transfer(cpi_ctx, protocol_fee_usdc)?;
     }
     
+    // Transfer remaining USDC (after protocol fee) from vault to treasury
+    // This USDC is being "converted" to SOL, so we move it to treasury
+    // The equivalent SOL amount is already added to total_sol_to_return above
+    let usdc_remaining_after_protocol_fee = usdc_to_return
+        .checked_sub(protocol_fee_usdc.min(usdc_to_return))
+        .ok_or(CrucibleError::InvalidAmount)?;
+    
+    if usdc_remaining_after_protocol_fee > 0 {
+        // Move USDC to treasury (it's being converted to SOL)
+        // In a real DEX, you'd swap USDC for SOL, but for simplicity we:
+        // 1. Move USDC to treasury (protocol keeps it)
+        // 2. Add equivalent SOL amount to base_to_return (already done above)
+        // This maintains the value while simplifying the flow
+        
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.crucible_usdc_vault.to_account_info(),
+            to: ctx.accounts.treasury_usdc.to_account_info(),
+            authority: ctx.accounts.crucible_authority.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::transfer(cpi_ctx, usdc_remaining_after_protocol_fee)?;
+    }
+    
     // Track vault fee share in total fees accrued (for base token crucible)
     if vault_fee_base > 0 {
         crucible.total_fees_accrued = crucible
@@ -619,6 +1039,65 @@ pub fn close_lp_position(
             .checked_add(vault_fee_base)
             .ok_or(ProgramError::ArithmeticOverflow)?;
     }
+
+    // Calculate LP tokens to burn (same formula as mint: sqrt(base_value * usdc_value))
+    // Use current position values to calculate proportional LP tokens
+    let current_base_value = (position.base_amount as u128)
+        .checked_mul(base_token_price as u128)
+        .and_then(|v| v.checked_div(PRICE_SCALE as u128))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let current_usdc_value = position.usdc_amount as u128;
+    let product = current_base_value
+        .checked_mul(current_usdc_value)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate integer square root
+    if product == 0 {
+        return Err(CrucibleError::InvalidAmount.into());
+    }
+    let mut guess = product;
+    let mut prev_guess = 0u128;
+    while guess != prev_guess {
+        prev_guess = guess;
+        let quotient = product.checked_div(guess).ok_or(ProgramError::ArithmeticOverflow)?;
+        guess = (guess.checked_add(quotient).ok_or(ProgramError::ArithmeticOverflow)?) / 2;
+    }
+    let sqrt_product = guess;
+    let lp_tokens_to_burn_scaled = sqrt_product
+        .checked_mul(1_000u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let lp_tokens_to_burn = if lp_tokens_to_burn_scaled > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        lp_tokens_to_burn_scaled as u64
+    };
+
+    // Burn LP tokens from user
+    // Validate that the passed LP token mint matches what we expect
+    // (crucible_lp_mint was already set earlier in the function)
+    require!(
+        ctx.accounts.lp_token_mint.key() == crucible_lp_mint,
+        CrucibleError::InvalidConfig
+    );
+    
+    let burn_accounts = anchor_spl::token::Burn {
+        mint: ctx.accounts.lp_token_mint.to_account_info(),
+        from: ctx.accounts.user_lp_token_account.to_account_info(),
+        authority: ctx.accounts.user.to_account_info(),
+    };
+    let burn_program = ctx.accounts.token_program.to_account_info();
+    let burn_ctx = CpiContext::new(burn_program, burn_accounts);
+    token::burn(burn_ctx, lp_tokens_to_burn)?;
+    
+    // #region agent log
+    msg!("[DEBUG] LP tokens burned: {} from user {}", lp_tokens_to_burn, ctx.accounts.user.key());
+    // #endregion
+
+    // Update crucible LP token supply
+    crucible.total_lp_token_supply = crucible
+        .total_lp_token_supply
+        .checked_sub(lp_tokens_to_burn)
+        .ok_or(CrucibleError::InvalidAmount)?;
 
     // Mark position as closed
     position.is_open = false;
@@ -628,25 +1107,38 @@ pub fn close_lp_position(
     // with unique addresses, so we don't need to reuse IDs. The counter only
     // tracks the next available ID and should never decrease.
     // crucible.total_lp_positions remains unchanged
+    
+    // Serialize crucible back to account data
+    let mut crucible_data = ctx.accounts.crucible.try_borrow_mut_data()?;
+    let mut crucible_slice = &mut crucible_data[8..]; // Skip discriminator
+    crucible.serialize(&mut crucible_slice)?;
 
     // SECURITY FIX: Emit event for LP position closure
+    // INFERNO MODE: User gets SOL back (converted from USDC), matching cSOL flow
     emit!(LPPositionClosed {
         position_id: position.position_id,
         owner: position.owner,
         crucible: position.crucible,
-        base_amount_returned: base_to_return,
-        usdc_amount_returned: usdc_to_return,
+        base_amount_returned: total_sol_to_return, // Total SOL returned (base + converted USDC)
+        usdc_amount_returned: 0, // USDC was converted to SOL, so 0 returned
         total_fee: total_fee_value as u64,
     });
 
-    msg!("LP position closed: {}", position.position_id);
+    msg!("LP position closed: {} (returned {} SOL total, converted from {} base + {} USDC)", 
+         position.position_id, total_sol_to_return, base_to_return, usdc_to_return);
     Ok(())
 }
 
 #[derive(Accounts)]
 pub struct OpenLPPosition<'info> {
-    #[account(mut)]
-    pub crucible: Box<Account<'info, Crucible>>,
+    /// CHECK: Crucible account - using UncheckedAccount to handle old account formats
+    /// We manually deserialize it in the instruction to handle backward compatibility
+    #[account(
+        mut,
+        seeds = [b"crucible", base_mint.key().as_ref()],
+        bump,
+    )]
+    pub crucible: UncheckedAccount<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub base_mint: Account<'info, Mint>,
@@ -658,18 +1150,23 @@ pub struct OpenLPPosition<'info> {
     pub crucible_base_vault: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub crucible_usdc_vault: Box<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub lp_token_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub user_lp_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = user,
         space = 8 + LPPositionAccount::LEN,
-        seeds = [b"lp_position", user.key().as_ref(), crucible.key().as_ref()],
+        seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref()],
         bump
     )]
     pub position: Box<Account<'info, LPPositionAccount>>,
     /// CHECK: Crucible authority PDA
+    /// We derive this from base_mint since crucible is UncheckedAccount
     #[account(
-        seeds = [b"crucible", crucible.base_mint.as_ref()],
-        bump = crucible.bump,
+        seeds = [b"crucible", base_mint.key().as_ref()],
+        bump,
     )]
     pub crucible_authority: UncheckedAccount<'info>,
     /// CHECK: Optional oracle account for price feeds
@@ -693,13 +1190,19 @@ pub struct OpenLPPosition<'info> {
 
 #[derive(Accounts)]
 pub struct CloseLPPosition<'info> {
-    #[account(mut)]
-    pub crucible: Box<Account<'info, Crucible>>,
-    #[account(mut)]
-    pub user: Signer<'info>,
+    /// CHECK: Crucible account - using UncheckedAccount to handle old account formats
     #[account(
         mut,
-        seeds = [b"lp_position", user.key().as_ref(), crucible.key().as_ref()],
+        seeds = [b"crucible", base_mint.key().as_ref()],
+        bump,
+    )]
+    pub crucible: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub base_mint: Account<'info, Mint>,
+    #[account(
+        mut,
+        seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref()],
         bump = position.bump,
         constraint = position.owner == user.key() @ CrucibleError::Unauthorized,
     )]
@@ -708,14 +1211,20 @@ pub struct CloseLPPosition<'info> {
     pub user_base_token_account: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub user_usdc_account: Box<Account<'info, TokenAccount>>,
+    /// CHECK: User's LP token account (for burning LP tokens)
+    #[account(mut)]
+    pub user_lp_token_account: Box<Account<'info, TokenAccount>>,
+    /// CHECK: LP token mint (validated to match crucible.lp_token_mint)
+    pub lp_token_mint: Account<'info, Mint>,
     #[account(mut)]
     pub crucible_base_vault: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub crucible_usdc_vault: Box<Account<'info, TokenAccount>>,
     /// CHECK: Crucible authority PDA
+    /// We derive this from base_mint since crucible is UncheckedAccount
     #[account(
-        seeds = [b"crucible", crucible.base_mint.as_ref()],
-        bump = crucible.bump,
+        seeds = [b"crucible", base_mint.key().as_ref()],
+        bump,
     )]
     pub crucible_authority: UncheckedAccount<'info>,
     /// CHECK: Optional oracle account for price feeds (required for slippage protection)
@@ -724,7 +1233,7 @@ pub struct CloseLPPosition<'info> {
     /// SECURITY FIX: Validate treasury_base is a TokenAccount for base_mint
     #[account(
         mut,
-        constraint = treasury_base.mint == crucible.base_mint @ CrucibleError::InvalidTreasury
+        constraint = treasury_base.mint == base_mint.key() @ CrucibleError::InvalidTreasury
     )]
     pub treasury_base: Account<'info, TokenAccount>,
     /// SECURITY FIX: Validate treasury_usdc is a TokenAccount for USDC

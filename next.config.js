@@ -2,7 +2,7 @@
 const webpackLib = require('webpack')
 
 const nextConfig = {
-  output: 'export',
+  // Remove output: 'export' for development
   trailingSlash: true,
   images: {
     unoptimized: true
@@ -12,6 +12,7 @@ const nextConfig = {
     NEXT_PUBLIC_RPC_URL: 'https://api.devnet.solana.com',
     NEXT_PUBLIC_EXPLORER_URL: 'https://explorer.solana.com',
     NEXT_PUBLIC_COMMITMENT: 'confirmed',
+    NEXT_PUBLIC_APP_DOMAIN: 'http://localhost:3000',
   },
   webpack: (config) => {
     config.resolve = config.resolve || {}

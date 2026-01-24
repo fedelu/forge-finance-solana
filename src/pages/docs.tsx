@@ -313,6 +313,7 @@ export default function DocsPage() {
                         <li>• Close Fee: 2% principal + 10% yield</li>
                         <li>• LP APY: ~3x base Crucible APY</li>
                         <li>• Dual Fee Capture: DEX + arbitrage fees</li>
+                        <li>• Arbitrage Split: 80% to crucible vault, 20% to treasury</li>
                         <li>• Volatility Amplification</li>
                       </ul>
                     </div>

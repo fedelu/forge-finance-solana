@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
+use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer, MintTo, Burn};
 use crate::state::*;
 use crate::LENDING_POOL_PROGRAM_ID;
 use lending_pool_usdc::cpi::accounts::BorrowUSDC;
@@ -159,6 +159,74 @@ pub fn open_leveraged_position(
         lending_pool_usdc::cpi::borrow_usdc(cpi_ctx, borrowed_usdc)?;
     }
 
+    // Calculate LP tokens to mint for leveraged position
+    // Leveraged positions create LP tokens: sqrt(collateral_value * (borrowed_usdc + deposited_usdc))
+    // For 2x leverage: borrowed_usdc = collateral_value, deposited_usdc = 0
+    // For 1.5x leverage: borrowed_usdc = 0.5 * collateral_value, deposited_usdc = 0.5 * collateral_value
+    let leverage_multiplier = leverage_factor as u128;
+    let leverage_excess = leverage_multiplier
+        .checked_sub(100)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate deposited USDC (if any)
+    let deposited_usdc = if leverage_factor == 150 {
+        // 1.5x: deposit 50% of collateral value
+        collateral_value_usdc / 2
+    } else {
+        // 2x: deposit 0% (all borrowed)
+        0
+    };
+    
+    let total_usdc = (borrowed_usdc as u128)
+        .checked_add(deposited_usdc as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate LP tokens: sqrt(collateral_value_usdc * total_usdc)
+    let product = (collateral_value_usdc as u128)
+        .checked_mul(total_usdc)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate integer square root
+    if product == 0 {
+        return Err(CrucibleError::InvalidAmount.into());
+    }
+    let mut guess = product;
+    let mut prev_guess = 0u128;
+    while guess != prev_guess {
+        prev_guess = guess;
+        let quotient = product.checked_div(guess).ok_or(ProgramError::ArithmeticOverflow)?;
+        guess = (guess.checked_add(quotient).ok_or(ProgramError::ArithmeticOverflow)?) / 2;
+    }
+    let sqrt_product = guess;
+    
+    // Scale to LP tokens with 9 decimals
+    let lp_tokens_scaled = sqrt_product
+        .checked_mul(1_000u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let lp_tokens_to_mint = if lp_tokens_scaled > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        lp_tokens_scaled as u64
+    };
+
+    // Mint LP tokens to user
+    let seeds = &[
+        b"crucible",
+        crucible.base_mint.as_ref(),
+        &[crucible.bump],
+    ];
+    let signer = &[&seeds[..]];
+    
+    let mint_to_accounts = anchor_spl::token::MintTo {
+        mint: ctx.accounts.lp_token_mint.to_account_info(),
+        to: ctx.accounts.user_lp_token_account.to_account_info(),
+        authority: ctx.accounts.crucible_authority.to_account_info(),
+    };
+    let mint_to_program = ctx.accounts.token_program.to_account_info();
+    let mint_to_ctx = CpiContext::new_with_signer(mint_to_program, mint_to_accounts, signer);
+    anchor_spl::token::mint_to(mint_to_ctx, lp_tokens_to_mint)?;
+
     // Initialize position
     position.id = ctx.accounts.position_id.key();
     position.owner = ctx.accounts.user.key();
@@ -176,6 +244,10 @@ pub fn open_leveraged_position(
     // Update crucible state
     crucible.total_leveraged_positions = crucible.total_leveraged_positions
         .checked_add(1)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    crucible.total_lp_token_supply = crucible
+        .total_lp_token_supply
+        .checked_add(lp_tokens_to_mint)
         .ok_or(ProgramError::ArithmeticOverflow)?;
 
     emit!(LeveragedPositionOpened {
@@ -208,8 +280,9 @@ pub fn close_leveraged_position(
         CrucibleError::InvalidAmount
     );
     
-    // Get base_mint before mutable borrow of crucible
+    // Get base_mint and LP token mint before mutable borrow of crucible
     let base_mint_key = ctx.accounts.crucible.base_mint;
+    let crucible_lp_mint = ctx.accounts.crucible.lp_token_mint;
     
     // Lending integration enabled - repay loan before closing
     let position = &mut ctx.accounts.position;
@@ -507,6 +580,70 @@ pub fn close_leveraged_position(
         CrucibleError::InvalidProgram
     );
 
+    // Calculate LP tokens to burn (same formula as mint: sqrt(collateral_value * total_usdc))
+    let current_collateral_value = (position.collateral as u128)
+        .checked_mul(current_base_token_price as u128)
+        .and_then(|v| v.checked_div(1_000_000))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate total USDC (borrowed + deposited)
+    let deposited_usdc = if position.leverage_factor == 150 {
+        current_collateral_value / 2
+    } else {
+        0
+    };
+    let total_usdc = (position.borrowed_usdc as u128)
+        .checked_add(deposited_usdc)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate LP tokens: sqrt(collateral_value * total_usdc)
+    let product = current_collateral_value
+        .checked_mul(total_usdc)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Calculate integer square root
+    if product == 0 {
+        return Err(CrucibleError::InvalidAmount.into());
+    }
+    let mut guess = product;
+    let mut prev_guess = 0u128;
+    while guess != prev_guess {
+        prev_guess = guess;
+        let quotient = product.checked_div(guess).ok_or(ProgramError::ArithmeticOverflow)?;
+        guess = (guess.checked_add(quotient).ok_or(ProgramError::ArithmeticOverflow)?) / 2;
+    }
+    let sqrt_product = guess;
+    let lp_tokens_to_burn_scaled = sqrt_product
+        .checked_mul(1_000u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let lp_tokens_to_burn = if lp_tokens_to_burn_scaled > u64::MAX as u128 {
+        return Err(ProgramError::ArithmeticOverflow.into());
+    } else {
+        lp_tokens_to_burn_scaled as u64
+    };
+
+    // Burn LP tokens from user
+    // Validate LP token mint matches crucible (using value read earlier before mutable borrow)
+    require!(
+        ctx.accounts.lp_token_mint.key() == crucible_lp_mint,
+        CrucibleError::InvalidConfig
+    );
+    // Burn LP tokens from user (do this before updating crucible to avoid borrow conflicts)
+    let burn_accounts = Burn {
+        mint: ctx.accounts.lp_token_mint.to_account_info(),
+        from: ctx.accounts.user_lp_token_account.to_account_info(),
+        authority: ctx.accounts.user.to_account_info(),
+    };
+    let burn_program = ctx.accounts.token_program.to_account_info();
+    let burn_ctx = CpiContext::new(burn_program, burn_accounts);
+    token::burn(burn_ctx, lp_tokens_to_burn)?;
+
+    // Update crucible LP token supply (after burn to avoid borrow conflicts)
+    crucible.total_lp_token_supply = crucible
+        .total_lp_token_supply
+        .checked_sub(lp_tokens_to_burn)
+        .ok_or(CrucibleError::InvalidAmount)?;
+
     // Transfer tokens back to user (minus fees)
     let seeds = &[
         b"crucible",
@@ -569,10 +706,29 @@ pub fn get_oracle_price(
         let oracle = oracle_account
             .ok_or(CrucibleError::InvalidOraclePrice)?;
         
+        // SAFETY: Check if account exists and is initialized BEFORE accessing .key
+        // This prevents access violations when the account doesn't exist
+        require!(
+            !oracle.data_is_empty(),
+            CrucibleError::InvalidOraclePrice
+        );
+        
+        // SAFETY: Try to borrow data first to ensure account is accessible
+        // This prevents access violations when trying to access .key or .owner
+        let account_data_result = oracle.try_borrow_data();
+        if account_data_result.is_err() {
+            // Account doesn't exist or can't be accessed
+            return Err(CrucibleError::InvalidOraclePrice.into());
+        }
+        
+        // Now safe to access .key since we've validated the account exists
         require!(
             *oracle.key == oracle_pubkey,
             CrucibleError::InvalidOraclePrice
         );
+        
+        // SAFETY: Unwrap is safe here because we checked is_err() above
+        let account_data = account_data_result.unwrap();
         
         // SECURITY FIX: Validate oracle account owner is Pyth program
         // This prevents using fake oracle accounts
@@ -583,7 +739,6 @@ pub fn get_oracle_price(
         
         // Use Pyth SDK to validate account structure, then parse price data manually
         // The SDK deserialization validates the account is a valid PriceUpdateV2
-        let account_data = oracle.try_borrow_data()?;
         
         // Validate account structure using SDK (ensures it's a valid PriceUpdateV2)
         let _price_update = PriceUpdateV2::try_deserialize(&mut &account_data[..])
@@ -1166,6 +1321,12 @@ pub struct OpenLeveragedPosition<'info> {
     #[account(mut)]
     pub user_token_account: Box<Account<'info, TokenAccount>>,
 
+    #[account(mut)]
+    pub lp_token_mint: Account<'info, Mint>,
+
+    #[account(mut)]
+    pub user_lp_token_account: Box<Account<'info, TokenAccount>>,
+
     #[account(
         mut,
         seeds = [b"vault", crucible.key().as_ref()],
@@ -1313,6 +1474,11 @@ pub struct CloseLeveragedPosition<'info> {
     /// CHECK: User USDC account for repaying loan
     #[account(mut)]
     pub user_usdc_account: UncheckedAccount<'info>,
+    /// CHECK: LP token mint (validated to match crucible.lp_token_mint)
+    pub lp_token_mint: Account<'info, Mint>,
+    /// CHECK: User's LP token account (for burning LP tokens)
+    #[account(mut)]
+    pub user_lp_token_account: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }

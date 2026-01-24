@@ -19,11 +19,13 @@ export interface AnchorWallet {
  * Lending Pool account state
  */
 export interface LendingPoolState {
+  authority: PublicKey
   usdcMint: PublicKey
   totalLiquidity: number
   totalBorrowed: number
   borrowRate: number // 10 = 10% APY (scaled by 100)
   lenderRate: number // 5 = 5% APY (scaled by 100)
+  paused: boolean
   bump: number
 }
 
@@ -66,9 +68,18 @@ export function getLendingPoolProgram(
     programId = PublicKey.default
   }
   
+  // Remove accounts array from IDL to prevent eager account resolution
+  // This prevents "Cannot read properties of undefined (reading 'size')" errors
+  // when Anchor tries to eagerly resolve account schemas during Program construction
+  // We handle deserialization manually in getMarketState and getBorrowerAccount
+  const idlForProgram: any = { ...lendingPoolIdl }
+  if (idlForProgram.accounts) {
+    delete idlForProgram.accounts
+  }
+  
   // @ts-ignore - IDL metadata structure doesn't match Anchor's IdlMetadata type, but works at runtime  
   // @ts-expect-error - Type instantiation depth issue with Anchor 0.32 IDL types
-  const program: any = new Program(lendingPoolIdl as any, programId, provider)
+  const program: any = new Program(idlForProgram as any, programId, provider)
   
   return program
 }
@@ -141,19 +152,109 @@ export function getPoolVaultPDA(pool: PublicKey): [PublicKey, number] {
  * Fetch lending pool state from on-chain
  */
 export async function getMarketState(
-  program: Program<any>
+  program: Program<any>,
+  connection?: Connection
 ): Promise<LendingPoolState | null> {
   try {
     const [poolPDA] = getLendingPoolPDA()
-    const poolAccount = await (program.account as any).lendingPool.fetch(poolPDA)
+    
+    // Get connection - prefer passed connection, fallback to program.provider.connection
+    const conn = connection || program.provider?.connection
+    if (!conn) {
+      console.error('No connection available for getMarketState')
+      return null
+    }
+    
+    // Try using program.account if available, otherwise fetch directly
+    let poolAccount: any
+    if (program.account && (program.account as any).lendingPool) {
+      poolAccount = await (program.account as any).lendingPool.fetch(poolPDA)
+    } else {
+      // Fallback: fetch account data directly and deserialize manually
+      const accountInfo = await conn.getAccountInfo(poolPDA)
+      
+      if (!accountInfo) {
+        return null
+      }
+      
+      // Manual deserialization of LendingPool account
+      // Layout: 8 byte discriminator + struct fields
+      // Handle both old (73 bytes) and new (106 bytes) account structures
+      const data = accountInfo.data
+      let offset = 8 // Skip discriminator
+      
+      // Check account size to determine structure
+      // Old structure: 73 bytes total = 8 discriminator + 65 data
+      // New structure: 106 bytes total = 8 discriminator + 98 data
+      const isOldStructure = data.length === 73
+      
+      let authority: PublicKey | null = null
+      let paused: boolean = false
+      
+      if (!isOldStructure) {
+        // New structure: authority (32 bytes) comes first
+        authority = new PublicKey(data.slice(offset, offset + 32))
+        offset += 32
+      }
+      
+      // Read usdcMint (32 bytes)
+      const usdcMint = new PublicKey(data.slice(offset, offset + 32))
+      offset += 32
+      
+      // Read totalLiquidity (8 bytes, u64)
+      const totalLiquidity = data.readBigUInt64LE(offset)
+      offset += 8
+      
+      // Read totalBorrowed (8 bytes, u64)
+      const totalBorrowed = data.readBigUInt64LE(offset)
+      offset += 8
+      
+      // Read borrowRate (8 bytes, u64)
+      const borrowRate = data.readBigUInt64LE(offset)
+      offset += 8
+      
+      // Read lenderRate (8 bytes, u64)
+      const lenderRate = data.readBigUInt64LE(offset)
+      offset += 8
+      
+      if (!isOldStructure) {
+        // New structure: paused (1 byte) before bump
+        paused = data.readUInt8(offset) !== 0
+        offset += 1
+      }
+      
+      // Read bump (1 byte, u8)
+      const bump = data.readUInt8(offset)
+      
+      poolAccount = {
+        authority: authority || PublicKey.default, // Default to System Program if old structure
+        usdcMint,
+        totalLiquidity: { toNumber: () => Number(totalLiquidity) },
+        totalBorrowed: { toNumber: () => Number(totalBorrowed) },
+        borrowRate: { toNumber: () => Number(borrowRate) },
+        lenderRate: { toNumber: () => Number(lenderRate) },
+        paused,
+        bump,
+      }
+    }
     
     return {
+      authority: poolAccount.authority || PublicKey.default,
       usdcMint: poolAccount.usdcMint,
-      totalLiquidity: poolAccount.totalLiquidity.toNumber(),
-      totalBorrowed: poolAccount.totalBorrowed.toNumber(),
-      borrowRate: poolAccount.borrowRate.toNumber(),
-      lenderRate: poolAccount.lenderRate.toNumber(),
-      bump: poolAccount.bump,
+      totalLiquidity: typeof poolAccount.totalLiquidity === 'object' && poolAccount.totalLiquidity.toNumber 
+        ? poolAccount.totalLiquidity.toNumber() 
+        : Number(poolAccount.totalLiquidity || 0),
+      totalBorrowed: typeof poolAccount.totalBorrowed === 'object' && poolAccount.totalBorrowed.toNumber 
+        ? poolAccount.totalBorrowed.toNumber() 
+        : Number(poolAccount.totalBorrowed || 0),
+      borrowRate: typeof poolAccount.borrowRate === 'object' && poolAccount.borrowRate.toNumber 
+        ? poolAccount.borrowRate.toNumber() 
+        : Number(poolAccount.borrowRate || 0),
+      lenderRate: typeof poolAccount.lenderRate === 'object' && poolAccount.lenderRate.toNumber 
+        ? poolAccount.lenderRate.toNumber() 
+        : Number(poolAccount.lenderRate || 0),
+      paused: poolAccount.paused || false,
+      bump: poolAccount.bump || 0,
     }
   } catch (error) {
     console.error('Error fetching market state:', error)
@@ -166,14 +267,21 @@ export async function getMarketState(
  */
 export async function getBorrowerAccount(
   program: Program<any>,
-  borrower: PublicKey
+  borrower: PublicKey,
+  connection?: Connection
 ): Promise<BorrowerAccountState | null> {
   try {
     const [borrowerPDA] = getBorrowerAccountPDA(borrower)
     
+    // Get connection - prefer passed connection, fallback to program.provider.connection
+    const conn = connection || program.provider?.connection
+    if (!conn) {
+      console.error('No connection available for getBorrowerAccount')
+      return null
+    }
+    
     // Check if account exists before trying to fetch
-    const connection = program.provider.connection
-    const accountInfo = await connection.getAccountInfo(borrowerPDA)
+    const accountInfo = await conn.getAccountInfo(borrowerPDA)
     
     if (!accountInfo) {
       // Account doesn't exist - user hasn't borrowed yet
@@ -181,7 +289,38 @@ export async function getBorrowerAccount(
     }
     
     // Account exists, now fetch it
-    const borrowerAccount = await (program.account as any).borrowerAccount.fetch(borrowerPDA)
+    // Try using program.account if available, otherwise fetch directly
+    let borrowerAccount: any
+    if (program.account && (program.account as any).borrowerAccount) {
+      borrowerAccount = await (program.account as any).borrowerAccount.fetch(borrowerPDA)
+    } else {
+      // Fallback: fetch account data directly and deserialize manually
+      const accountInfo = await conn.getAccountInfo(borrowerPDA)
+      if (!accountInfo) {
+        return null
+      }
+      
+      // Manual deserialization of BorrowerAccount
+      const data = accountInfo.data
+      let offset = 8 // Skip discriminator
+      
+      // Read borrower (32 bytes)
+      const borrowerPubkey = new PublicKey(data.slice(offset, offset + 32))
+      offset += 32
+      
+      // Read amountBorrowed (8 bytes, u64)
+      const amountBorrowed = data.readBigUInt64LE(offset)
+      offset += 8
+      
+      // Read borrowTimestamp (8 bytes, u64)
+      const borrowTimestamp = data.readBigUInt64LE(offset)
+      
+      borrowerAccount = {
+        borrower: borrowerPubkey,
+        amountBorrowed: { toNumber: () => Number(amountBorrowed) },
+        borrowTimestamp: { toNumber: () => Number(borrowTimestamp) },
+      }
+    }
     
     // Check if account data is valid
     if (!borrowerAccount) {

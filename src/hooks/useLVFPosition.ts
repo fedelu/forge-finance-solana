@@ -167,7 +167,17 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             signAllTransactions: walletContext?.signAllTransactions || (async (txs: any[]) => txs),
           }
           const program = getCruciblesProgram(connection, anchorWallet)
-          const cruciblePDA = new PublicKey(crucibleAddress)
+          if (!crucibleAddress || typeof crucibleAddress !== 'string' || crucibleAddress.trim() === '') {
+            // Skip silently if no valid address - this is expected when crucible data isn't loaded yet
+            return
+          }
+          let cruciblePDA: PublicKey
+          try {
+            cruciblePDA = new PublicKey(crucibleAddress)
+          } catch (e) {
+            // Skip silently if address is invalid - this is expected when crucible data isn't loaded yet
+            return
+          }
           
           // Derive position PDA using the new function
           const [positionPDA] = deriveLeveragedPositionPDA(currentPublicKey, cruciblePDA)
@@ -362,21 +372,40 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         
         // Derive PDAs
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
-        const cruciblePDA = new PublicKey(crucibleAddress)
+        if (!crucibleAddress || typeof crucibleAddress !== 'string') {
+          throw new Error('Invalid crucible address provided')
+        }
+        let cruciblePDA: PublicKey
+        try {
+          cruciblePDA = new PublicKey(crucibleAddress)
+        } catch (e) {
+          throw new Error(`Invalid crucible address format: ${crucibleAddress}. Error: ${e}`)
+        }
         
-        // Fetch crucible account to get treasury and oracle (using direct fetcher)
+        // Fetch crucible account to get treasury, oracle, and LP token mint (using direct fetcher)
         let treasuryAccount: PublicKey
         let oracleAccount: PublicKey | null = null
+        let lpTokenMint: PublicKey
         try {
           const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
           if (!crucibleAccount) {
             throw new Error('Crucible account not found')
           }
           treasuryAccount = crucibleAccount.treasury
+          lpTokenMint = crucibleAccount.lpTokenMint
           if (crucibleAccount.oracle) {
             oracleAccount = crucibleAccount.oracle
           }
-        } catch (error) {
+        } catch (error: any) {
+          // Check for AccountDidNotDeserialize error (old format)
+          if (error.error?.errorCode?.code === 'AccountDidNotDeserialize' || 
+              error.error?.errorCode?.code === 3003 ||
+              error.error?.errorMessage?.includes('AccountDidNotDeserialize') ||
+              error.error?.errorMessage?.includes('Failed to deserialize') ||
+              error.message?.includes('AccountDidNotDeserialize') ||
+              error.message?.includes('Failed to deserialize')) {
+            throw new Error(`Crucible account exists but is in an old format that cannot be deserialized.\n\nThis crucible was initialized before the current program version.\n\nTo fix this, you need to re-initialize the crucible:\n1. Close any existing positions\n2. Run: ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nNote: This will create a new crucible with the updated format.`)
+          }
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
         
@@ -396,6 +425,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
         const userTokenAccount = await getAssociatedTokenAddress(baseMint, currentPublicKey)
         const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
+        const userLpTokenAccount = await getAssociatedTokenAddress(lpTokenMint, currentPublicKey)
         
         // Convert leverage factor (1.5 = 150, 2.0 = 200)
         const leverageFactorBps = Math.floor(leverageFactor * 100)
@@ -414,6 +444,8 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
             crucible: cruciblePDA,
             baseTokenMint: baseMint,
             userTokenAccount: userTokenAccount,
+            lpTokenMint: lpTokenMint,
+            userLpTokenAccount: userLpTokenAccount,
             crucibleVault: baseVaultPDA,
             position: positionPDA,
             positionId: positionPDA, // Same PDA
@@ -534,6 +566,15 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         return newPosition
       } catch (error: any) {
         console.error('Error opening position:', error)
+        // Check for AccountDidNotDeserialize error (crucible in old format)
+        if (error.error?.errorCode?.code === 'AccountDidNotDeserialize' || 
+            error.error?.errorCode?.code === 3003 ||
+            error.error?.errorMessage?.includes('AccountDidNotDeserialize') ||
+            error.error?.errorMessage?.includes('Failed to deserialize') ||
+            error.message?.includes('AccountDidNotDeserialize') ||
+            error.message?.includes('Failed to deserialize')) {
+          throw new Error(`Crucible account exists but is in an old format that cannot be deserialized.\n\nThis crucible was initialized before the current program version.\n\nTo fix this, you need to re-initialize the crucible:\n1. Close any existing positions\n2. Run: ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nNote: This will create a new crucible with the updated format.`)
+        }
         throw error
       } finally {
         setLoading(false)
@@ -767,19 +808,38 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         
         // Derive PDAs
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
-        const cruciblePDA = new PublicKey(crucibleAddress)
+        if (!crucibleAddress || typeof crucibleAddress !== 'string') {
+          throw new Error('Invalid crucible address provided')
+        }
+        let cruciblePDA: PublicKey
+        try {
+          cruciblePDA = new PublicKey(crucibleAddress)
+        } catch (e) {
+          throw new Error(`Invalid crucible address format: ${crucibleAddress}. Error: ${e}`)
+        }
         
-        // Fetch crucible account to get treasury and oracle (using direct fetcher)
+        // Fetch crucible account to get treasury, oracle, and LP token mint (using direct fetcher)
         let treasuryAccount: PublicKey
         let oracleAccount: PublicKey | null = null
+        let lpTokenMint: PublicKey
         try {
           const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
           if (!crucibleAccount) {
             throw new Error('Crucible account not found')
           }
           treasuryAccount = crucibleAccount.treasury
+          lpTokenMint = crucibleAccount.lpTokenMint
           oracleAccount = crucibleAccount.oracle || null
-        } catch (error) {
+        } catch (error: any) {
+          // Check for AccountDidNotDeserialize error (old format)
+          if (error.error?.errorCode?.code === 'AccountDidNotDeserialize' || 
+              error.error?.errorCode?.code === 3003 ||
+              error.error?.errorMessage?.includes('AccountDidNotDeserialize') ||
+              error.error?.errorMessage?.includes('Failed to deserialize') ||
+              error.message?.includes('AccountDidNotDeserialize') ||
+              error.message?.includes('Failed to deserialize')) {
+            throw new Error(`Crucible account exists but is in an old format that cannot be deserialized.\n\nThis crucible was initialized before the current program version.\n\nTo fix this, you need to re-initialize the crucible:\n1. Close any existing positions\n2. Run: ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nNote: This will create a new crucible with the updated format.`)
+          }
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
         
@@ -795,6 +855,7 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
         const userTokenAccount = await getAssociatedTokenAddress(baseMint, currentPublicKey)
         const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
+        const userLpTokenAccount = await getAssociatedTokenAddress(lpTokenMint, currentPublicKey)
         
         // Fetch position account to verify it exists
         try {
@@ -815,8 +876,11 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           .accounts({
             user: currentPublicKey,
             crucible: cruciblePDA,
+            baseMint: baseMint,
             position: positionPDA,
             userTokenAccount: userTokenAccount,
+            lpTokenMint: lpTokenMint,
+            userLpTokenAccount: userLpTokenAccount,
             crucibleVault: baseVaultPDA,
             crucibleAuthority: crucibleAuthorityPDA,
             oracle: oracleAccount || SystemProgram.programId, // Use system program if no oracle

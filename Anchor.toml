@@ -8,8 +8,9 @@ skip-lint = false
 [programs.devnet]
 forge_core = "CtR5tkwzpUmyxMNnihkPdSZzVk5fws1LumXXGyU4phJa"
 forge_crucibles = "B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry"
+forge_crucibles_inferno = "Ep2FZ1WZGbeajKoRs768cZ7fjP963xqvga6kHWJ5K9kv"
 lending = "BeJW4TrT31GWgW5wpLeYS4tFiCQquHd5bHcfYrPykErs"
-lending_pool = "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx"
+lending_pool = "AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL"
 lvf = "DNV9nTmTztTaufsdKQd3WW1vfaKHMB5uiGzWRXD3AgYd"
 
 [programs.testnet]

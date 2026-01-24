@@ -9,6 +9,7 @@ A comprehensive DeFi protocol built on Solana, featuring token wrapping (cTokens
 - Earn APY through exchange rate appreciation
 - Real-time balance tracking and portfolio management
 - Seamless wrap/unwrap operations
+- Arbitrage revenue split: 80% to crucible vault, 20% to treasury
 
 ### 💰 **Leveraged Positions (LVF)**
 - Create leveraged liquidity positions up to 2x

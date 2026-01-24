@@ -12,11 +12,13 @@ import { DEPLOYED_ACCOUNTS, SOLANA_TESTNET_CONFIG } from '../config/solana-testn
 export interface CrucibleAccountData {
   baseMint: PublicKey
   ctokenMint: PublicKey
+  lpTokenMint: PublicKey
   vault: PublicKey
   vaultBump: number
   bump: number
   totalBaseDeposited: bigint
   totalCtokenSupply: bigint
+  totalLpTokenSupply: bigint
   exchangeRate: bigint
   lastUpdateSlot: bigint
   feeRate: bigint
@@ -72,6 +74,7 @@ function readBool(buffer: Buffer, offset: number): boolean {
 /**
  * Deserialize Crucible account data from raw bytes
  * Layout: 8 byte discriminator + struct fields
+ * Supports both old format (without LP token fields) and new format (with LP token fields)
  */
 export function deserializeCrucible(data: Buffer): CrucibleAccountData {
   // Skip 8 byte Anchor discriminator
@@ -83,22 +86,57 @@ export function deserializeCrucible(data: Buffer): CrucibleAccountData {
   const ctokenMint = readPubkey(data, offset)
   offset += 32
   
-  const vault = readPubkey(data, offset)
+  // Detect format based on account size
+  // Old format (without LP token fields): 236 bytes total
+  // New format (with LP token fields): 276 bytes total (236 + 32 + 8)
+  // Account size = 8 (discriminator) + struct fields
+  const accountSize = data.length
+  const hasLpTokenFields = accountSize >= 276 // New format has at least 276 bytes
+  
+  let lpTokenMint: PublicKey
+  let totalLpTokenSupply: bigint = BigInt(0)
+  let vault: PublicKey
+  let vaultBump: number
+  let bump: number
+  let totalBaseDeposited: bigint
+  let totalCtokenSupply: bigint
+  let exchangeRate: bigint
+  
+  if (hasLpTokenFields) {
+    // New format: has lpTokenMint and totalLpTokenSupply
+    lpTokenMint = readPubkey(data, offset)
+    offset += 32
+  } else {
+    // Old format: no lpTokenMint, use ctokenMint as placeholder
+    // This will need to be updated when crucible is re-initialized with LP token mint
+    lpTokenMint = ctokenMint // Placeholder
+    totalLpTokenSupply = BigInt(0)
+  }
+  
+  // Continue reading common fields
+  vault = readPubkey(data, offset)
   offset += 32
   
-  const vaultBump = readU8(data, offset)
+  vaultBump = readU8(data, offset)
   offset += 1
   
-  const bump = readU8(data, offset)
+  bump = readU8(data, offset)
   offset += 1
   
-  const totalBaseDeposited = readU64(data, offset)
+  totalBaseDeposited = readU64(data, offset)
   offset += 8
   
-  const totalCtokenSupply = readU64(data, offset)
+  totalCtokenSupply = readU64(data, offset)
   offset += 8
   
-  const exchangeRate = readU64(data, offset)
+  if (hasLpTokenFields) {
+    // New format: read totalLpTokenSupply
+    totalLpTokenSupply = readU64(data, offset)
+    offset += 8
+  }
+  // Old format: totalLpTokenSupply already set to 0 above
+  
+  exchangeRate = readU64(data, offset)
   offset += 8
   
   const lastUpdateSlot = readU64(data, offset)
@@ -137,11 +175,13 @@ export function deserializeCrucible(data: Buffer): CrucibleAccountData {
   return {
     baseMint,
     ctokenMint,
+    lpTokenMint,
     vault,
     vaultBump,
     bump,
     totalBaseDeposited,
     totalCtokenSupply,
+    totalLpTokenSupply,
     exchangeRate,
     lastUpdateSlot,
     feeRate,

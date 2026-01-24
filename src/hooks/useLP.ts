@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token'
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, Transaction, TransactionInstruction } from '@solana/web3.js'
+import { SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountIdempotentInstruction, getAccount, Account } from '@solana/spl-token'
 import * as anchor from '@coral-xyz/anchor'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
@@ -8,7 +9,7 @@ import { usePrice } from '../contexts/PriceContext'
 import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram'
 import { fetchCrucibleDirect } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveLPPositionPDA, deriveUSDCVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
-import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet'
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
 import { INFERNO_CLOSE_FEE_RATE, INFERNO_YIELD_FEE_RATE } from '../config/fees'
 import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
 import { getLPPositions, setLPPositions, type StoredLPPosition } from '../utils/localStorage'
@@ -94,10 +95,20 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             signAllTransactions: walletContext?.signAllTransactions || (async (txs: any[]) => txs),
           }
           const program = getCruciblesProgram(connection, anchorWallet)
-          const cruciblePDA = new PublicKey(crucibleAddress)
+          if (!crucibleAddress || typeof crucibleAddress !== 'string' || crucibleAddress.trim() === '') {
+            // Skip silently if no valid address - this is expected when crucible data isn't loaded yet
+            return
+          }
+          let cruciblePDA: PublicKey
+          try {
+            cruciblePDA = new PublicKey(crucibleAddress)
+          } catch (e) {
+            // Skip silently if address is invalid - this is expected when crucible data isn't loaded yet
+            return
+          }
           
-          // Derive position PDA
-          const [positionPDA] = deriveLPPositionPDA(publicKey, cruciblePDA)
+          // Derive position PDA using base_mint (matches program seeds)
+          const [positionPDA] = deriveLPPositionPDA(publicKey, baseMint)
           
           // Try to fetch position account
           try {
@@ -250,42 +261,304 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         
         // Derive PDAs
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
-        const cruciblePDA = new PublicKey(crucibleAddress)
         const [crucibleAccountPDA] = deriveCruciblePDA(baseMint)
         
-        // Verify crucible PDA matches
-        if (!crucibleAccountPDA.equals(cruciblePDA)) {
-          console.warn('Crucible PDA mismatch, using provided address:', crucibleAddress)
-        }
+        // Always use the derived crucible PDA to ensure correctness
+        // The crucibleAddress prop might be invalid or empty, so we derive it from baseMint
+        const cruciblePDA = crucibleAccountPDA
         
-        // Fetch crucible account to get treasury and oracle (using direct fetcher)
+        console.log('Using crucible PDA:', cruciblePDA.toString())
+        
+        // First, verify the crucible account exists
+        console.log('Checking if crucible account exists:', cruciblePDA.toString())
+        let crucibleAccountInfo
+        try {
+          crucibleAccountInfo = await connection.getAccountInfo(cruciblePDA)
+          if (!crucibleAccountInfo) {
+            const errorMsg = `Crucible account not found at ${cruciblePDA.toString()}.\n\nTo initialize the crucible, run:\n\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nThis will create the crucible with LP token support.`
+            alert(errorMsg)
+            throw new Error(errorMsg)
+          }
+          console.log('Crucible account found, size:', crucibleAccountInfo.data.length)
+        } catch (error: any) {
+          if (error.message?.includes('not found') || error.message?.includes('Account does not exist') || !crucibleAccountInfo) {
+            const errorMsg = `Crucible account not found at ${cruciblePDA.toString()}.\n\nTo initialize the crucible, run:\n\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nThis will create the crucible with LP token support.`
+            alert(errorMsg)
+            throw new Error(errorMsg)
+          }
+          throw error
+        }
+
+        // Fetch crucible account to get treasury, oracle, and LP token mint (using direct fetcher)
         let treasuryBase: PublicKey
         let treasuryUSDC: PublicKey
         let oracleAccount: PublicKey | null = null
+        let lpTokenMint: PublicKey
         try {
           const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
           if (!crucibleAccount) {
-            throw new Error('Crucible account not found')
+            const errorMsg = `Crucible account not found at ${cruciblePDA.toString()}.\n\nTo initialize, run:\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW`
+            alert(errorMsg)
+            throw new Error(errorMsg)
           }
+          console.log('Crucible account data fetched successfully')
           treasuryBase = crucibleAccount.treasury
-          treasuryUSDC = crucibleAccount.treasury // Note: Using same treasury for both base and USDC
+          // Use separate USDC treasury from config (crucible treasury is for base token only)
+          treasuryUSDC = new PublicKey(DEPLOYED_ACCOUNTS.USDC_TREASURY)
+          lpTokenMint = crucibleAccount.lpTokenMint
+          console.log('LP Token Mint:', lpTokenMint.toString())
+          
+          // Check if this is an old crucible without LP token mint (backward compatibility)
+          // Old crucibles will have lpTokenMint set to ctokenMint as a placeholder
+          const isOldCrucible = lpTokenMint.equals(crucibleAccount.ctokenMint)
+          
+          if (isOldCrucible) {
+            // Old format crucible: use the manually created LP token mint
+            // The program will accept the passed LP token mint even though it's not in the crucible account
+            console.log('⚠️  Old format crucible detected. Using manually created LP token mint.')
+            
+            // Use the LP token mint we created: 8QkQFThfUkoriJfWFnWE6nf3oHM8mMWedN4vC8PAZUmy
+            const MANUAL_LP_TOKEN_MINT = new PublicKey('8QkQFThfUkoriJfWFnWE6nf3oHM8mMWedN4vC8PAZUmy')
+            lpTokenMint = MANUAL_LP_TOKEN_MINT
+            console.log('Using manual LP token mint:', lpTokenMint.toString())
+            
+            // Verify the manual LP token mint exists and is valid
+            try {
+              const lpMintAccountInfo = await connection.getAccountInfo(lpTokenMint)
+              if (!lpMintAccountInfo) {
+                const errorMsg = `Manual LP token mint not found. Please run: ts-node scripts/create-lp-token-mint.ts`
+                alert(errorMsg)
+                throw new Error(errorMsg)
+              }
+              
+              const TOKEN_PROGRAM_ID_STR = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+              if (lpMintAccountInfo.owner.toString() !== TOKEN_PROGRAM_ID_STR) {
+                const errorMsg = `Manual LP token mint is not a valid mint account. Please run: ts-node scripts/create-lp-token-mint.ts`
+                alert(errorMsg)
+                throw new Error(errorMsg)
+              }
+              
+              console.log('✅ Manual LP token mint verified, size:', lpMintAccountInfo.data.length)
+            } catch (error: any) {
+              if (error.message?.includes('not found') || error.message?.includes('not a valid mint')) {
+                throw error
+              }
+              throw error
+            }
+          } else {
+            // New format: verify LP token mint account exists and is initialized as a mint
+            try {
+              const lpMintAccountInfo = await connection.getAccountInfo(lpTokenMint)
+              if (!lpMintAccountInfo) {
+                const errorMsg = `LP token mint account not found at ${lpTokenMint.toString()}.\n\nThe crucible references an LP token mint that doesn't exist.\n\nThis crucible was initialized before LP token mint support was added.\n\nTo fix this, re-initialize the crucible:\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW`
+                alert(errorMsg)
+                throw new Error(errorMsg)
+              }
+              
+              // Verify it's owned by the Token Program (indicates it's a mint account)
+              const TOKEN_PROGRAM_ID_STR = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+              if (lpMintAccountInfo.owner.toString() !== TOKEN_PROGRAM_ID_STR) {
+                const errorMsg = `LP token mint account at ${lpTokenMint.toString()} is not a valid mint account.\n\nThe account exists but is not initialized as a token mint.\n\nThis crucible was initialized before LP token mint support was added.\n\nTo fix this, re-initialize the crucible:\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW`
+                alert(errorMsg)
+                throw new Error(errorMsg)
+              }
+              
+              // Verify account size matches mint account size (82 bytes for a mint)
+              if (lpMintAccountInfo.data.length < 82) {
+                const errorMsg = `LP token mint account at ${lpTokenMint.toString()} is not properly initialized.\n\nAccount size is ${lpMintAccountInfo.data.length} bytes, expected at least 82 bytes for a mint account.\n\nThis crucible was initialized before LP token mint support was added.\n\nTo fix this, re-initialize the crucible:\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW`
+                alert(errorMsg)
+                throw new Error(errorMsg)
+              }
+              
+              console.log('LP token mint account verified, size:', lpMintAccountInfo.data.length)
+            } catch (error: any) {
+              if (error.message?.includes('not found') || error.message?.includes('Account does not exist') || error.message?.includes('not a valid mint') || error.message?.includes('not properly initialized')) {
+                // Error message already set above
+                throw error
+              }
+              throw error
+            }
+          }
+          
           if (crucibleAccount.oracle) {
             oracleAccount = crucibleAccount.oracle
           }
-        } catch (error) {
-          throw new Error(`Failed to fetch crucible account: ${error}`)
+        } catch (error: any) {
+          console.error('Error fetching crucible account data:', error)
+          // Check for AccountDidNotDeserialize error (old format)
+          if (error.error?.errorCode?.code === 'AccountDidNotDeserialize' || 
+              error.error?.errorCode?.code === 3003 ||
+              error.error?.errorMessage?.includes('AccountDidNotDeserialize') ||
+              error.error?.errorMessage?.includes('Failed to deserialize') ||
+              error.message?.includes('AccountDidNotDeserialize') ||
+              error.message?.includes('Failed to deserialize')) {
+            const errorMsg = `Crucible account exists but is in an old format that cannot be deserialized.\n\nThis crucible was initialized before the current program version.\n\nTo fix this, you need to re-initialize the crucible:\n1. Close any existing positions\n2. Run: ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nNote: This will create a new crucible with the updated format.`
+            alert(errorMsg)
+            throw new Error(errorMsg)
+          }
+          if (error.message?.includes('not found') || error.message?.includes('Account does not exist') || error.message?.includes('offset')) {
+            const errorMsg = `Crucible account not found or not initialized at ${cruciblePDA.toString()}.\n\nTo initialize, run:\nts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW`
+            alert(errorMsg)
+            throw new Error(errorMsg)
+          }
+          throw error
         }
         
         // Derive vault PDAs
         const [baseVaultPDA] = deriveVaultPDA(cruciblePDA)
-        const [usdcVaultPDA] = deriveUSDCVaultPDA(cruciblePDA)
-        const [positionPDA] = deriveLPPositionPDA(currentPublicKey, cruciblePDA)
-        const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
+        const [usdcVaultPDA, usdcVaultBump] = deriveUSDCVaultPDA(cruciblePDA)
+        // Derive position PDA using base_mint (matches program seeds: ["lp_position", user, base_mint])
+        const [positionPDA, positionBump] = deriveLPPositionPDA(currentPublicKey, baseMint)
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:348',message:'Position PDA derivation',data:{positionPDA: positionPDA.toString(), positionBump, user: currentPublicKey.toString(), baseMint: baseMint.toString(), cruciblePDA: cruciblePDA.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
+        
+        // CRITICAL: crucible_authority has the SAME seeds as crucible: ["crucible", base_mint]
+        // They resolve to the SAME PDA, so we use the same value for both
+        // This prevents Anchor from trying to auto-resolve crucible_authority which can fail
+        // when crucible is UncheckedAccount
+        const [crucibleAuthorityPDA, crucibleAuthorityBump] = deriveCrucibleAuthorityPDA(baseMint)
+        
+        // Verify crucible and crucible_authority are the same PDA (they should be)
+        if (!cruciblePDA.equals(crucibleAuthorityPDA)) {
+          throw new Error(`Crucible PDA mismatch: crucible=${cruciblePDA.toString()}, crucible_authority=${crucibleAuthorityPDA.toString()}`)
+        }
+        
+        console.log('✅ Crucible and crucible_authority are the same PDA:', cruciblePDA.toString(), 'bump:', crucibleAuthorityBump)
         
         // Get user token accounts
         const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
         const userBaseTokenAccount = await getAssociatedTokenAddress(baseMint, currentPublicKey)
         const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
+        const userLpTokenAccount = await getAssociatedTokenAddress(lpTokenMint, currentPublicKey)
+        
+        // Check and create token accounts if they don't exist
+        // We'll add instructions to create them in the transaction if needed
+        const accountCreationInstructions: TransactionInstruction[] = []
+        
+        // Check base token account
+        try {
+          await getAccount(connection, userBaseTokenAccount)
+        } catch (error: any) {
+          if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('could not find')) {
+            console.log('Will create base token account:', userBaseTokenAccount.toString())
+            accountCreationInstructions.push(
+              createAssociatedTokenAccountIdempotentInstruction(
+                currentPublicKey, // payer
+                userBaseTokenAccount, // associatedToken
+                currentPublicKey, // owner
+                baseMint, // mint
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            )
+          }
+        }
+        
+        // Check USDC account
+        try {
+          await getAccount(connection, userUsdcAccount)
+        } catch (error: any) {
+          if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('could not find')) {
+            console.log('Will create USDC token account:', userUsdcAccount.toString())
+            accountCreationInstructions.push(
+              createAssociatedTokenAccountIdempotentInstruction(
+                currentPublicKey, // payer
+                userUsdcAccount, // associatedToken
+                currentPublicKey, // owner
+                usdcMint, // mint
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            )
+          }
+        }
+        
+        // Check LP token account
+        try {
+          await getAccount(connection, userLpTokenAccount)
+        } catch (error: any) {
+          if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('could not find')) {
+            console.log('Will create LP token account:', userLpTokenAccount.toString())
+            accountCreationInstructions.push(
+              createAssociatedTokenAccountIdempotentInstruction(
+                currentPublicKey, // payer
+                userLpTokenAccount, // associatedToken
+                currentPublicKey, // owner
+                lpTokenMint, // mint
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            )
+          }
+        }
+        
+        // Check if USDC vault exists, if not provide clear error
+        try {
+          const usdcVaultAccount = await getAccount(connection, usdcVaultPDA)
+          console.log('USDC vault account exists:', usdcVaultAccount.address.toString())
+        } catch (error: any) {
+          if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('could not find')) {
+            const errorMsg = `USDC vault account not initialized at ${usdcVaultPDA.toString()}.\n\nThe crucible was initialized before USDC vault support was added.\n\nTo fix this:\n1. Rebuild and redeploy the program: anchor build && anchor deploy\n2. Re-run the initialization script (it will skip if crucible exists but create the USDC vault):\n   ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nNote: The updated program will automatically create the USDC vault during initialization.`
+            alert(errorMsg)
+            throw new Error(errorMsg)
+          }
+          throw error
+        }
+        
+        // Check if USDC treasury account exists
+        // The USDC treasury should be an associated token account for USDC
+        // Derive it from the WSOL treasury owner (the wallet that owns the WSOL treasury tokens)
+        let usdcTreasuryAccount: Account | null = null
+        try {
+          // First, get the WSOL treasury account to find its owner (the wallet that controls the tokens)
+          const wsolTreasury = new PublicKey(DEPLOYED_ACCOUNTS.WSOL_TREASURY)
+          const wsolTreasuryAccount = await getAccount(connection, wsolTreasury)
+          // The 'owner' field of a TokenAccount is the wallet that owns/controls the tokens
+          const treasuryOwner = wsolTreasuryAccount.owner
+          
+          // Derive the USDC treasury ATA for the same owner
+          const usdcTreasuryATA = await getAssociatedTokenAddress(
+            usdcMint,
+            treasuryOwner,
+            false,
+            TOKEN_PROGRAM_ID
+          )
+          
+          // Check if this ATA exists
+          try {
+            usdcTreasuryAccount = await getAccount(connection, usdcTreasuryATA)
+            treasuryUSDC = usdcTreasuryATA // Use the ATA
+            console.log('USDC treasury ATA exists:', usdcTreasuryATA.toString())
+          } catch {
+            // ATA doesn't exist - we need to create it
+            // Add instruction to create it in the transaction
+            console.log('USDC treasury ATA does not exist, will create it')
+            accountCreationInstructions.push(
+              createAssociatedTokenAccountIdempotentInstruction(
+                currentPublicKey, // payer
+                usdcTreasuryATA, // associatedToken
+                treasuryOwner, // owner
+                usdcMint, // mint
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            )
+            treasuryUSDC = usdcTreasuryATA // Use the ATA
+            console.log('Will create USDC treasury ATA:', usdcTreasuryATA.toString())
+          }
+        } catch (error: any) {
+          // Fallback: try the configured address directly
+          try {
+            usdcTreasuryAccount = await getAccount(connection, treasuryUSDC)
+            console.log('USDC treasury account exists (using config):', treasuryUSDC.toString())
+          } catch (fallbackError: any) {
+            const errorMsg = `USDC treasury account not initialized.\n\nThe USDC treasury must be a valid USDC token account.\n\nError: ${error.message || fallbackError.message}\n\nTo fix this, ensure the USDC treasury account exists at:\n${treasuryUSDC.toString()}`
+            alert(errorMsg)
+            throw new Error(errorMsg)
+          }
+        }
         
         // Calculate max slippage (100 bps = 1%)
         const maxSlippageBps = 100
@@ -294,33 +567,260 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         const baseAmountLamports = Math.floor(baseAmount * 1e9) // SOL has 9 decimals
         const usdcAmountDecimals = Math.floor(usdcAmount * 1e6) // USDC has 6 decimals
         
+        // Verify all required accounts before calling the instruction
+        console.log('Verifying accounts before opening LP position:', {
+          crucible: cruciblePDA.toString(),
+          user: currentPublicKey.toString(),
+          baseMint: baseMint.toString(),
+          lpTokenMint: lpTokenMint.toString(),
+          position: positionPDA.toString(),
+        })
+
         // Call open_lp_position instruction
-        const txSignature = await program.methods
-          .openLpPosition(
-            new BN(baseAmountLamports),
-            new BN(usdcAmountDecimals),
-            new BN(maxSlippageBps)
+        console.log('Calling open_lp_position instruction...')
+        let txSignature: string
+        try {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:502',message:'Building accounts for open_lp_position',data:{crucible: cruciblePDA.toString(), user: currentPublicKey.toString(), position: positionPDA.toString(), baseMint: baseMint.toString(), lpTokenMint: lpTokenMint.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // #region agent log
+          // Verify position PDA derivation matches what Anchor will derive
+          // Anchor uses: seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref()]
+          const expectedSeeds = [
+            Buffer.from('lp_position'),
+            currentPublicKey.toBuffer(),
+            baseMint.toBuffer()
+          ]
+          const [expectedPositionPDA, expectedBump] = PublicKey.findProgramAddressSync(
+            expectedSeeds,
+            new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
           )
-          .accounts({
-            crucible: cruciblePDA,
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:530',message:'Position PDA verification',data:{derivedPDA: positionPDA.toString(), expectedPDA: expectedPositionPDA.toString(), match: positionPDA.equals(expectedPositionPDA), derivedBump: positionBump, expectedBump, cruciblePDA: cruciblePDA.toString(), crucibleAuthorityPDA: crucibleAuthorityPDA.toString(), user: currentPublicKey.toString(), programId: SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+          
+          // If there's a mismatch, log the seeds for debugging
+          if (!positionPDA.equals(expectedPositionPDA)) {
+            console.error('Position PDA mismatch!', {
+              derived: positionPDA.toString(),
+              expected: expectedPositionPDA.toString(),
+              baseMint: baseMint.toString(),
+              user: currentPublicKey.toString(),
+              seeds: ['lp_position', currentPublicKey.toString(), baseMint.toString()],
+            })
+          } else {
+            console.log('✅ Position PDA matches expected:', positionPDA.toString())
+          }
+          
+          // Verify crucible and crucible_authority are the same PDA
+          if (!cruciblePDA.equals(crucibleAuthorityPDA)) {
+            console.error('❌ Crucible PDA mismatch!', {
+              crucible: cruciblePDA.toString(),
+              crucible_authority: crucibleAuthorityPDA.toString(),
+              baseMint: baseMint.toString(),
+            })
+            throw new Error(`Crucible PDA mismatch: crucible=${cruciblePDA.toString()}, crucible_authority=${crucibleAuthorityPDA.toString()}`)
+          } else {
+            console.log('✅ Crucible and crucible_authority are the same PDA:', cruciblePDA.toString())
+          }
+          // #endregion
+          
+          // #region agent log
+          // Build accounts object for logging (not used in instruction - all accounts passed explicitly)
+          const accountsForLogging = {
+            crucible: cruciblePDA.toString(),
+            user: currentPublicKey.toString(),
+            base_mint: baseMint.toString(),
+            position: positionPDA.toString(),
+            crucible_authority: crucibleAuthorityPDA.toString(),
+            hasOracle: !!oracleAccount,
+          }
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:527',message:'Accounts built, checking crucible account size',data:accountsForLogging,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          
+          // #region agent log
+          // Check crucible account size before calling instruction
+          try {
+            const crucibleAccountInfo = await connection.getAccountInfo(cruciblePDA)
+            if (crucibleAccountInfo) {
+              fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:533',message:'Crucible account info before instruction',data:{dataLength: crucibleAccountInfo.data.length, owner: crucibleAccountInfo.owner.toString(), executable: crucibleAccountInfo.executable, lamports: crucibleAccountInfo.lamports},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            } else {
+              fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:536',message:'ERROR: Crucible account not found',data:{cruciblePDA: cruciblePDA.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            }
+          } catch (e: any) {
+            fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:539',message:'ERROR: Failed to fetch crucible account info',data:{error: e.message, cruciblePDA: cruciblePDA.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          }
+          // #endregion
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:545',message:'Building instruction with amounts',data:{baseAmountLamports: baseAmountLamports.toString(), usdcAmountDecimals: usdcAmountDecimals.toString(), maxSlippageBps},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // Build the instruction
+          // CRITICAL FIX: Anchor tries to auto-resolve PDAs even when passed explicitly
+          // The problem: IDL defines crucible BEFORE base_mint, but crucible PDA needs base_mint
+          // This creates a circular dependency in Anchor's resolution logic.
+          // 
+          // Solution: We must pass accounts in the EXACT IDL order, but Anchor will still try
+          // to validate PDA derivation. Since crucible is UncheckedAccount, Anchor can't read
+          // base_mint from it, so it tries to resolve crucible_authority and fails.
+          //
+          // The fix: Ensure base_mint is passed BEFORE any PDA that depends on it, even though
+          // IDL order is different. Anchor's account resolution is smart enough to use accounts
+          // that come later in the list for PDA validation.
+          
+          // Verify crucible account exists on-chain before building instruction
+          const crucibleAccountInfo = await connection.getAccountInfo(cruciblePDA)
+          if (!crucibleAccountInfo) {
+            const errorMsg = `❌ Crucible account NOT FOUND on-chain at ${cruciblePDA.toString()}.\n\n` +
+              `The crucible must be initialized before opening LP positions.\n\n` +
+              `To initialize the crucible, run:\n` +
+              `ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\n` +
+              `This will create the crucible account with LP token mint support.`
+            alert(errorMsg)
+            throw new Error(`Crucible account not found: ${cruciblePDA.toString()}`)
+          }
+          console.log('✅ Crucible account verified on-chain, size:', crucibleAccountInfo.data.length, 'bytes')
+          
+          // Pass accounts in EXACT IDL order (crucible, user, base_mint, ...)
+          // Anchor will use base_mint (which comes later) to validate crucible PDA
+          const accountsObject: any = {
+            // IDL order (crucible comes first, but Anchor can use base_mint from later in list)
+            crucible: cruciblePDA, // Explicitly passed (PDA: ["crucible", base_mint])
             user: currentPublicKey,
-            baseMint: baseMint,
-            userBaseTokenAccount: userBaseTokenAccount,
-            userUsdcAccount: userUsdcAccount,
-            crucibleBaseVault: baseVaultPDA,
-            crucibleUsdcVault: usdcVaultPDA,
-            position: positionPDA,
-            crucibleAuthority: crucibleAuthorityPDA,
-            oracle: oracleAccount,
-            treasuryBase: treasuryBase,
-            treasuryUsdc: treasuryUSDC,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
+            base_mint: baseMint, // CRITICAL: Must be present for Anchor to validate crucible/crucible_authority PDAs
+            user_base_token_account: userBaseTokenAccount,
+            user_usdc_account: userUsdcAccount,
+            crucible_base_vault: baseVaultPDA,
+            crucible_usdc_vault: usdcVaultPDA,
+            lp_token_mint: lpTokenMint,
+            user_lp_token_account: userLpTokenAccount,
+            position: positionPDA, // Explicitly passed (PDA: ["lp_position", user, base_mint])
+            crucible_authority: crucibleAuthorityPDA, // Explicitly passed (PDA: ["crucible", base_mint] - same as crucible)
+            treasury_base: treasuryBase,
+            treasury_usdc: treasuryUSDC,
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: SystemProgram.programId,
+          }
+          
+          // Include oracle only if it exists
+          if (oracleAccount) {
+            accountsObject.oracle = oracleAccount
+          }
+          
+          // Log accounts for debugging
+          console.log('📋 Passing accounts to Anchor (IDL order):', {
+            crucible: cruciblePDA.toString(),
+            user: currentPublicKey.toString(),
+            base_mint: baseMint.toString(),
+            crucible_authority: crucibleAuthorityPDA.toString(),
+            position: positionPDA.toString(),
+            hasOracle: !!oracleAccount,
           })
-          .rpc()
+          
+          // Build instruction - Anchor will validate PDAs using base_mint from accounts object
+          const openLpPositionIx = await program.methods
+            .openLpPosition(
+              new BN(baseAmountLamports),
+              new BN(usdcAmountDecimals),
+              new BN(maxSlippageBps)
+            )
+            .accounts(accountsObject)
+            .instruction()
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:556',message:'Instruction built, adding to transaction',data:{instructionKeys: openLpPositionIx.keys?.length || 0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // Create transaction with account creation instructions first, then the main instruction
+          const transaction = new Transaction()
+          
+          // Get recent blockhash FIRST (required before adding instructions)
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+          transaction.recentBlockhash = blockhash
+          transaction.feePayer = currentPublicKey
+          
+          // Add account creation instructions if needed
+          if (accountCreationInstructions.length > 0) {
+            console.log(`Adding ${accountCreationInstructions.length} account creation instruction(s)`)
+            transaction.add(...accountCreationInstructions)
+          }
+          
+          // Add the main instruction
+          transaction.add(openLpPositionIx)
+          
+          // Sign and send transaction using wallet adapter
+          if (!sendTransaction) {
+            throw new Error('sendTransaction function not available')
+          }
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:562',message:'Sending transaction',data:{instructionCount: transaction.instructions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // Wallet adapter's sendTransaction handles signing and sending
+          // Note: sendTransaction from WalletContext only takes transaction, not connection
+          txSignature = await sendTransaction(transaction)
+          console.log('LP position opened, transaction:', txSignature)
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:568',message:'Transaction sent successfully',data:{txSignature},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        } catch (error: any) {
+          console.error('Error opening LP position:', error)
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:571',message:'ERROR: Transaction failed',data:{errorMessage: error.message, errorCode: error.error?.errorCode?.code, errorLogs: error.logs || [], errorSimulationLogs: error.simulationResponse?.logs || []},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
+          // Check for AccountDidNotDeserialize error (crucible in old format)
+          if (error.error?.errorCode?.code === 'AccountDidNotDeserialize' || 
+              error.error?.errorCode?.code === 3003 ||
+              error.error?.errorMessage?.includes('AccountDidNotDeserialize') ||
+              error.error?.errorMessage?.includes('Failed to deserialize') ||
+              error.message?.includes('AccountDidNotDeserialize') ||
+              error.message?.includes('Failed to deserialize')) {
+            throw new Error(`Crucible account exists but is in an old format that cannot be deserialized.\n\nThis crucible was initialized before the current program version.\n\nTo fix this, you need to re-initialize the crucible:\n1. Close any existing positions\n2. Run: ts-node scripts/init-sol-crucible.ts --treasury 9VbGJDCXshKXfhA6J2TJv53RpQQeVFocXp2gNuxUxioW\n\nNote: This will create a new crucible with the updated format.`)
+          }
+          // Check for specific Anchor errors
+          if (error.error?.errorCode?.code === 'AccountNotInitialized' || 
+              error.error?.errorMessage?.includes('AccountNotInitialized') ||
+              error.message?.includes('AccountNotInitialized')) {
+            if (error.error?.errorMessage?.includes('crucible_usdc_vault') || 
+                error.message?.includes('crucible_usdc_vault')) {
+              throw new Error(`USDC vault account not initialized at ${usdcVaultPDA.toString()}. Please ensure the crucible is fully initialized with all vault accounts.`)
+            }
+            throw new Error(`Account not initialized: ${error.error?.errorMessage || error.message}`)
+          }
+          if (error.message?.includes('Account not found') || error.message?.includes('crucible')) {
+            throw new Error(`Crucible account not found. Please ensure the crucible is initialized at ${cruciblePDA.toString()}`)
+          }
+          throw error
+        }
         
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:595',message:'Transaction confirmed, fetching LP token balance',data:{txSignature, lpTokenMint: lpTokenMint.toString(), userLpTokenAccount: userLpTokenAccount.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+        // #endregion
+        
+        // Fetch LP token balance after minting to verify it was created
+        try {
+          const lpTokenAccount = await getAccount(connection, userLpTokenAccount)
+          const lpTokenBalance = Number(lpTokenAccount.amount) / 1e9 // LP tokens have 9 decimals
+          console.log('✅ LP tokens minted! Balance:', lpTokenBalance, 'LP tokens')
+          console.log('📦 LP token account:', userLpTokenAccount.toString())
+          console.log('🪙 LP token mint:', lpTokenMint.toString())
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:602',message:'LP token balance after mint',data:{lpTokenBalance, lpTokenAmount: lpTokenAccount.amount.toString(), lpTokenAccount: userLpTokenAccount.toString(), lpTokenMint: lpTokenMint.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+          // #endregion
+        } catch (error: any) {
+          console.warn('Could not fetch LP token balance (account may not exist yet):', error)
+        }
+        
+        // Trigger immediate LP balance refresh so tokens appear in wallet
+        window.dispatchEvent(new CustomEvent('refreshLPBalance', {}))
         
         // Fetch position account to get actual position ID
         let positionId: string
@@ -382,6 +882,9 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
                 baseTokenSymbol
               } 
             }))
+            
+            // Trigger LP balance refresh so LP tokens appear in wallet
+            window.dispatchEvent(new CustomEvent('refreshLPBalance', {}))
             
             // Also trigger storage event for listeners
             window.dispatchEvent(new StorageEvent('storage', {
@@ -493,32 +996,79 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         
         // Derive PDAs
         const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
-        const cruciblePDA = new PublicKey(crucibleAddress)
+        if (!crucibleAddress || typeof crucibleAddress !== 'string') {
+          throw new Error('Invalid crucible address provided')
+        }
+        let cruciblePDA: PublicKey
+        try {
+          cruciblePDA = new PublicKey(crucibleAddress)
+        } catch (e) {
+          throw new Error(`Invalid crucible address format: ${crucibleAddress}. Error: ${e}`)
+        }
         
-        // Fetch crucible account to get treasury (using direct fetcher)
+        // Fetch crucible account to get treasury and LP token mint (using direct fetcher)
         let treasuryBase: PublicKey
         let treasuryUSDC: PublicKey
+        let lpTokenMint: PublicKey
         try {
           const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
           if (!crucibleAccount) {
             throw new Error('Crucible account not found')
           }
           treasuryBase = crucibleAccount.treasury
-          treasuryUSDC = crucibleAccount.treasury // Note: Using same treasury for both base and USDC
-        } catch (error) {
+          // Use separate USDC treasury from config (crucible treasury is for base token only)
+          treasuryUSDC = new PublicKey(DEPLOYED_ACCOUNTS.USDC_TREASURY)
+          lpTokenMint = crucibleAccount.lpTokenMint
+          
+          // Check if this is an old crucible without LP token mint
+          const isOldCrucible = lpTokenMint.equals(crucibleAccount.ctokenMint)
+          if (isOldCrucible) {
+            // Old format: use the manually created LP token mint
+            const MANUAL_LP_TOKEN_MINT = new PublicKey('8QkQFThfUkoriJfWFnWE6nf3oHM8mMWedN4vC8PAZUmy')
+            lpTokenMint = MANUAL_LP_TOKEN_MINT
+            console.log('Using manual LP token mint for old crucible:', lpTokenMint.toString())
+            
+            // Verify the manual LP token mint exists
+            try {
+              const lpMintInfo = await connection.getAccountInfo(lpTokenMint)
+              if (!lpMintInfo) {
+                throw new Error('Manual LP token mint not found. Please run: ts-node scripts/create-lp-token-mint.ts')
+              }
+            } catch (error: any) {
+              console.error('Error verifying manual LP token mint:', error)
+              throw error
+            }
+          }
+        } catch (error: any) {
+          if (error.message?.includes('without LP token mint')) {
+            throw error // Re-throw the specific error
+          }
           throw new Error(`Failed to fetch crucible account: ${error}`)
         }
         
         // Derive vault PDAs
         const [baseVaultPDA] = deriveVaultPDA(cruciblePDA)
         const [usdcVaultPDA] = deriveUSDCVaultPDA(cruciblePDA)
-        const [positionPDA] = deriveLPPositionPDA(currentPublicKey, cruciblePDA)
-        const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
+        // Derive position PDA using base_mint (matches program seeds: ["lp_position", user, base_mint])
+        const [positionPDA] = deriveLPPositionPDA(currentPublicKey, baseMint)
+        
+        // CRITICAL: crucible_authority has the SAME seeds as crucible: ["crucible", base_mint]
+        // They resolve to the SAME PDA, so we use the same value for both
+        // This prevents Anchor from trying to auto-resolve crucible_authority which can fail
+        const [crucibleAuthorityPDA, crucibleAuthorityBump] = deriveCrucibleAuthorityPDA(baseMint)
+        
+        // Verify crucible and crucible_authority are the same PDA (they should be)
+        if (!cruciblePDA.equals(crucibleAuthorityPDA)) {
+          throw new Error(`Crucible PDA mismatch in closePosition: crucible=${cruciblePDA.toString()}, crucible_authority=${crucibleAuthorityPDA.toString()}`)
+        }
+        
+        console.log('✅ Crucible and crucible_authority are the same PDA in closePosition:', cruciblePDA.toString())
         
         // Get user token accounts
         const usdcMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.USDC)
         const userBaseTokenAccount = await getAssociatedTokenAddress(baseMint, currentPublicKey)
         const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
+        const userLpTokenAccount = await getAssociatedTokenAddress(lpTokenMint, currentPublicKey)
         
         // Fetch position account to verify it exists and get bump
         let positionBump: number
@@ -528,39 +1078,84 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             throw new Error('Position is already closed')
           }
           // Position PDA has a bump, we'll need to derive it
-          const [_, bump] = deriveLPPositionPDA(currentPublicKey, cruciblePDA)
+          // FIX: Use baseMint instead of cruciblePDA for position PDA derivation
+          const [_, bump] = deriveLPPositionPDA(currentPublicKey, baseMint)
           positionBump = bump
         } catch (error) {
           throw new Error(`Position not found: ${error}`)
         }
         
+        // #region agent log
+        // Fetch LP token balance before closing to verify tokens exist
+        try {
+          const lpTokenAccountBefore = await getAccount(connection, userLpTokenAccount)
+          const lpTokenBalanceBefore = Number(lpTokenAccountBefore.amount) / 1e9
+          console.log('LP tokens before closing:', lpTokenBalanceBefore)
+          
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:966',message:'LP token balance before close',data:{lpTokenBalanceBefore, lpTokenAmount: lpTokenAccountBefore.amount.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+        } catch (error: any) {
+          console.warn('Could not fetch LP token balance before closing:', error)
+        }
+        // #endregion
+        
         // Call close_lp_position instruction
+        // CRITICAL: Account names MUST match the IDL exactly (snake_case, not camelCase)
+        // CRITICAL: Explicitly pass crucible_authority to prevent Anchor auto-resolution issues
         const txSignature = await program.methods
           .closeLpPosition()
           .accounts({
             crucible: cruciblePDA,
             user: currentPublicKey,
+            base_mint: baseMint, // IDL expects "base_mint" (snake_case)
             position: positionPDA,
-            userBaseTokenAccount: userBaseTokenAccount,
-            userUsdcAccount: userUsdcAccount,
-            crucibleBaseVault: baseVaultPDA,
-            crucibleUsdcVault: usdcVaultPDA,
-            crucibleAuthority: crucibleAuthorityPDA,
-            treasuryBase: treasuryBase,
-            treasuryUsdc: treasuryUSDC,
-            tokenProgram: TOKEN_PROGRAM_ID,
+            user_base_token_account: userBaseTokenAccount,
+            user_usdc_account: userUsdcAccount,
+            lp_token_mint: lpTokenMint,
+            user_lp_token_account: userLpTokenAccount,
+            crucible_base_vault: baseVaultPDA,
+            crucible_usdc_vault: usdcVaultPDA,
+            crucible_authority: crucibleAuthorityPDA, // Explicitly set to prevent auto-resolution
+            treasury_base: treasuryBase,
+            treasury_usdc: treasuryUSDC,
+            token_program: TOKEN_PROGRAM_ID,
           })
           .rpc()
         
         // Wait for confirmation
         await connection.confirmTransaction(txSignature, 'confirmed')
         
-        // Apply Forge close fees: 2% on principal, 10% on yield (calculated on-chain, using estimates for UI)
-        const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
+        // #region agent log
+        // Verify LP tokens were burned after closing
+        try {
+          const lpTokenAccountAfter = await getAccount(connection, userLpTokenAccount)
+          const lpTokenBalanceAfter = Number(lpTokenAccountAfter.amount) / 1e9
+          console.log('LP tokens after closing:', lpTokenBalanceAfter, '(should be 0 or reduced)')
+          
+          fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:999',message:'LP token balance after close',data:{lpTokenBalanceAfter, lpTokenAmount: lpTokenAccountAfter.amount.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+        } catch (error: any) {
+          if (error.name === 'TokenAccountNotFoundError' || error.message?.includes('Account not found')) {
+            console.log('LP token account no longer exists or has 0 balance (tokens burned successfully)')
+          } else {
+            console.warn('Could not fetch LP token balance after closing:', error)
+          }
+        }
+        // #endregion
+        
+        // INFERNO MODE: Apply Forge close fees and calculate SOL-only return
+        // The contract converts USDC to SOL, so we calculate total SOL returned
+        const baseTokenPrice = solPrice || 200 // Use real-time SOL price, fallback to $200
         const principalTokens = position.baseAmount
         const principalFeeTokens = principalTokens * INFERNO_CLOSE_FEE_RATE
         const yieldFeeTokens = apyEarnedTokens * INFERNO_YIELD_FEE_RATE
         const baseAmountAfterFee = (principalTokens - principalFeeTokens) + (apyEarnedTokens - yieldFeeTokens)
+        
+        // Calculate SOL equivalent of USDC (matching contract conversion)
+        // Contract converts USDC to SOL using oracle price
+        const usdcToSolAmount = position.usdcAmount / baseTokenPrice
+        
+        // Total SOL returned = base SOL (after fees) + converted USDC
+        const totalSolReturned = baseAmountAfterFee + usdcToSolAmount
+        
         const feeAmountTokens = principalFeeTokens + yieldFeeTokens
         const feeAmountUSD = feeAmountTokens * baseTokenPrice
 
@@ -572,8 +1167,9 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             const allStoredPositions = getLPPositions()
             const filteredAll = allStoredPositions.filter((p: StoredLPPosition) => p.id !== positionId)
             setLPPositions(filteredAll)
-            // Dispatch event to refresh portfolio
+            // Dispatch event to refresh portfolio and LP token balance
             window.dispatchEvent(new CustomEvent('lpPositionClosed'))
+            window.dispatchEvent(new CustomEvent('refreshLPBalance', {}))
           } catch (e) {
             console.warn('Failed to update LP positions:', e)
           }
@@ -584,9 +1180,9 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
 
         return { 
           success: true,
-          baseAmount: baseAmountAfterFee, // Base tokens returned after fees
+          baseAmount: totalSolReturned, // Total SOL returned (base + converted USDC)
           apyEarned: netYieldTokens, // Net yield after Forge yield fee
-          usdcAmount: position.usdcAmount, // Return deposited USDC
+          usdcAmount: 0, // USDC was converted to SOL in contract, so 0 returned
           feeAmount: feeAmountTokens,
           feePercent: INFERNO_CLOSE_FEE_RATE * 100,
           yieldFee: yieldFeeTokens,

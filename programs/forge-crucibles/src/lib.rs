@@ -19,8 +19,8 @@ declare_id!("B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry");
 // Lending pool program ID - deployed to devnet
 // Program ID: 3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx
 pub const LENDING_POOL_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
-    36, 187, 177, 247, 140, 207, 227, 3, 85, 107, 254, 166, 126, 79, 146, 5,
-    97, 194, 82, 247, 36, 129, 246, 57, 135, 70, 58, 128, 100, 238, 138, 159
+    137, 222, 203, 196, 146, 24, 161, 22, 41, 201, 75, 126, 144, 122, 64, 116,
+    179, 147, 109, 91, 72, 21, 38, 67, 41, 67, 7, 116, 219, 160, 219, 45
 ]);
 
 #[program]
@@ -45,6 +45,7 @@ pub mod forge_crucibles {
         // Get bumps
         let crucible_bump = ctx.bumps.crucible;
         let vault_bump = ctx.bumps.vault;
+        let usdc_vault_bump = ctx.bumps.usdc_vault;
         
         // Deserialize base_mint to get decimals
         let base_mint_data = ctx.accounts.base_mint.try_borrow_data()?;
@@ -144,15 +145,83 @@ pub mod forge_crucibles {
         }
         drop(vault_data);
 
+        // Create USDC vault token account (PDA) for LP positions
+        // USDC mint address for devnet: Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr
+        // Note: We'll need to pass USDC mint as a parameter or derive it
+        // For now, we'll create the vault but it needs to be initialized with the correct USDC mint
+        // The USDC mint should be passed as an account or we need to hardcode it
+        // Let's add it as an account parameter
+        
+        let usdc_vault_seeds = &[
+            b"usdc_vault",
+            crucible_key.as_ref(),
+            &[usdc_vault_bump],
+        ];
+        let usdc_vault_signer = &[&usdc_vault_seeds[..]];
+        
+        // Create USDC vault account (PDA) via system program
+        let create_usdc_vault_ix = anchor_lang::solana_program::system_instruction::create_account(
+            &ctx.accounts.authority.key(),
+            &ctx.accounts.usdc_vault.key(),
+            vault_lamports, // Same rent as base vault
+            165, // Token account size
+            &ctx.accounts.token_program.key(),
+        );
+        anchor_lang::solana_program::program::invoke_signed(
+            &create_usdc_vault_ix,
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.usdc_vault.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            usdc_vault_signer,
+        )?;
+        
+        // Initialize USDC vault as token account
+        let init_usdc_vault_ix = anchor_spl::token::spl_token::instruction::initialize_account(
+            &ctx.accounts.token_program.key(),
+            &ctx.accounts.usdc_vault.key(),
+            &ctx.accounts.usdc_mint.key(),
+            &crucible_key, // Owner is crucible PDA
+        )?;
+        anchor_lang::solana_program::program::invoke(
+            &init_usdc_vault_ix,
+            &[
+                ctx.accounts.usdc_vault.to_account_info(),
+                ctx.accounts.usdc_mint.to_account_info(),
+                ctx.accounts.crucible.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+            ],
+        )?;
+        
+        // Initialize LP token mint (for LP positions - cToken/USDC pairs)
+        let lp_mint_key = ctx.accounts.lp_token_mint.key();
+        let init_lp_mint_ix = anchor_spl::token::spl_token::instruction::initialize_mint(
+            &ctx.accounts.token_program.key(),
+            &lp_mint_key,
+            &crucible_key,  // Mint authority is the crucible PDA
+            Some(&crucible_key), // Freeze authority is also crucible PDA
+            9, // LP tokens use 9 decimals (same as base token)
+        )?;
+        anchor_lang::solana_program::program::invoke(
+            &init_lp_mint_ix,
+            &[
+                ctx.accounts.lp_token_mint.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+            ],
+        )?;
+
         // Initialize crucible state
         let crucible = &mut ctx.accounts.crucible;
         crucible.base_mint = base_mint_key;
         crucible.ctoken_mint = ctx.accounts.ctoken_mint.key();
+        crucible.lp_token_mint = lp_mint_key;
         crucible.vault = ctx.accounts.vault.key();
         crucible.vault_bump = vault_bump;
         crucible.bump = crucible_bump;
         crucible.total_base_deposited = 0;
         crucible.total_ctoken_supply = 0;
+        crucible.total_lp_token_supply = 0;
         crucible.exchange_rate = 1_000_000; // Initial exchange rate: 1.0 (scaled by 1M)
         crucible.last_update_slot = clock.slot;
         crucible.fee_rate = fee_rate;
@@ -174,6 +243,7 @@ pub mod forge_crucibles {
             crucible: crucible.key(),
             base_mint: crucible.base_mint,
             ctoken_mint: crucible.ctoken_mint,
+            lp_token_mint: crucible.lp_token_mint,
             vault: crucible.vault,
             treasury: crucible.treasury,
             oracle: crucible.oracle,
@@ -266,6 +336,83 @@ pub mod forge_crucibles {
     ) -> Result<()> {
         metadata::create_ctoken_metadata(ctx, name, symbol, uri, seller_fee_basis_points, is_mutable)
     }
+
+    /// Initialize USDC vault for existing crucibles
+    /// This allows crucibles initialized before USDC vault support to add the vault
+    pub fn initialize_usdc_vault(
+        ctx: Context<InitializeUsdcVault>,
+    ) -> Result<()> {
+        let crucible_key = ctx.accounts.crucible.key();
+        let base_mint_key = ctx.accounts.base_mint.key();
+        
+        // Validate crucible PDA matches expected derivation
+        let (expected_crucible_pda, expected_bump) = Pubkey::find_program_address(
+            &[b"crucible", base_mint_key.as_ref()],
+            ctx.program_id,
+        );
+        require!(
+            crucible_key == expected_crucible_pda,
+            CrucibleError::InvalidConfig
+        );
+        
+        // Get crucible bump for signing (from context)
+        let crucible_bump = ctx.bumps.crucible;
+        // Note: We don't actually need to sign with crucible authority for this operation
+        // The USDC vault is created by the authority, not the crucible PDA
+        // But we keep the seeds for potential future use
+        
+        // Get USDC vault bump
+        let usdc_vault_bump = ctx.bumps.usdc_vault;
+        let usdc_vault_seeds = &[
+            b"usdc_vault",
+            crucible_key.as_ref(),
+            &[usdc_vault_bump],
+        ];
+        let usdc_vault_signer = &[&usdc_vault_seeds[..]];
+        
+        // Get rent for token account
+        let rent = ctx.accounts.rent.to_account_info();
+        let rent_data = Rent::from_account_info(&rent)?;
+        let vault_lamports = rent_data.minimum_balance(165); // Token account size
+        
+        // Create USDC vault account (PDA) via system program
+        let create_usdc_vault_ix = anchor_lang::solana_program::system_instruction::create_account(
+            &ctx.accounts.authority.key(),
+            &ctx.accounts.usdc_vault.key(),
+            vault_lamports,
+            165, // Token account size
+            &ctx.accounts.token_program.key(),
+        );
+        anchor_lang::solana_program::program::invoke_signed(
+            &create_usdc_vault_ix,
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.usdc_vault.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            usdc_vault_signer,
+        )?;
+        
+        // Initialize USDC vault as token account
+        let init_usdc_vault_ix = anchor_spl::token::spl_token::instruction::initialize_account(
+            &ctx.accounts.token_program.key(),
+            &ctx.accounts.usdc_vault.key(),
+            &ctx.accounts.usdc_mint.key(),
+            &crucible_key, // Owner is crucible PDA
+        )?;
+        anchor_lang::solana_program::program::invoke(
+            &init_usdc_vault_ix,
+            &[
+                ctx.accounts.usdc_vault.to_account_info(),
+                ctx.accounts.usdc_mint.to_account_info(),
+                ctx.accounts.crucible.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+            ],
+        )?;
+        
+        msg!("USDC vault initialized for crucible: {}", crucible_key);
+        Ok(())
+    }
 }
 
 // Re-export account structs for use in client code
@@ -294,6 +441,10 @@ pub struct InitializeCrucible<'info> {
     #[account(mut)]
     pub ctoken_mint: Signer<'info>,
 
+    /// CHECK: LP token mint to be initialized (for LP positions)
+    #[account(mut)]
+    pub lp_token_mint: Signer<'info>,
+
     /// CHECK: Vault token account - initialized via CPI
     #[account(
         mut,
@@ -301,6 +452,17 @@ pub struct InitializeCrucible<'info> {
         bump
     )]
     pub vault: UncheckedAccount<'info>,
+
+    /// CHECK: USDC vault token account - initialized via CPI for LP positions
+    #[account(
+        mut,
+        seeds = [b"usdc_vault", crucible.key().as_ref()],
+        bump
+    )]
+    pub usdc_vault: UncheckedAccount<'info>,
+
+    /// CHECK: USDC mint - needed to initialize USDC vault
+    pub usdc_mint: UncheckedAccount<'info>,
 
     /// CHECK: Protocol treasury token account for fee collection
     #[account(mut)]
@@ -314,11 +476,46 @@ pub struct InitializeCrucible<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+/// Initialize USDC vault for existing crucibles
+#[derive(Accounts)]
+pub struct InitializeUsdcVault<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    /// CHECK: Crucible account - using UncheckedAccount to handle old account formats
+    /// The PDA constraint validates it's the correct crucible
+    #[account(
+        mut,
+        seeds = [b"crucible", base_mint.key().as_ref()],
+        bump,
+    )]
+    pub crucible: UncheckedAccount<'info>,
+    
+    /// CHECK: Base mint for crucible PDA derivation
+    pub base_mint: UncheckedAccount<'info>,
+
+    /// CHECK: USDC vault token account - will be created
+    #[account(
+        mut,
+        seeds = [b"usdc_vault", crucible.key().as_ref()],
+        bump
+    )]
+    pub usdc_vault: UncheckedAccount<'info>,
+
+    /// CHECK: USDC mint
+    pub usdc_mint: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
 #[event]
 pub struct CrucibleInitialized {
     pub crucible: Pubkey,
     pub base_mint: Pubkey,
     pub ctoken_mint: Pubkey,
+    pub lp_token_mint: Pubkey,
     pub vault: Pubkey,
     pub treasury: Pubkey,
     pub oracle: Option<Pubkey>,

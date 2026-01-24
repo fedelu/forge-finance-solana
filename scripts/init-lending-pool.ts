@@ -11,7 +11,7 @@
  */
 
 import * as anchor from '@coral-xyz/anchor'
-import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
+import { Connection, Keypair, PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import fs from 'fs'
 import path from 'path'
@@ -28,8 +28,8 @@ const lendingPoolIdl = JSON.parse(
 )
 
 // Configuration
-const LENDING_POOL_PROGRAM_ID = new PublicKey('3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx') // Deployed to devnet
-const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU') // Devnet USDC
+const LENDING_POOL_PROGRAM_ID = new PublicKey('AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL') // Deployed to devnet
+const USDC_MINT = new PublicKey('Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr') // Devnet USDC (USDC dev)
 const NETWORK = 'devnet'
 const RPC_URL = 'https://api.devnet.solana.com'
 
@@ -70,13 +70,50 @@ async function main() {
   console.log('📋 Pool PDA:', poolPDA.toString())
   console.log('📋 Pool Vault PDA:', poolVaultPDA.toString())
   
-  // Check if pool already exists
+  // Check if pool already exists and verify structure
   try {
-    const poolAccount = await program.account.lendingPool.fetch(poolPDA)
-    console.log('✅ Pool already initialized:', poolAccount)
-    return
+    const accountInfo = await connection.getAccountInfo(poolPDA)
+    if (accountInfo) {
+      // Check account size to determine if it's old or new structure
+      const isOldStructure = accountInfo.data.length === 73
+      const isNewStructure = accountInfo.data.length === 106
+      
+      if (isOldStructure) {
+        console.log('⚠️  Pool exists with OLD structure (73 bytes). It needs to be re-initialized.')
+        console.log('⚠️  The old pool account will be closed and a new one created.')
+        console.log('⚠️  Any existing deposits/borrows in the old pool will remain in the old account.')
+        console.log('⚠️  Proceeding with re-initialization...')
+        // Note: We can't close the old account automatically, but we can try to initialize
+        // The program will fail if the account exists, so we need to handle this differently
+        // For now, we'll try to initialize and let the user know they need to close the old account first
+        throw new Error('Old pool account exists. Please close it first or use a different program instance.')
+      } else if (isNewStructure) {
+        const poolAccount = await program.account.lendingPool.fetch(poolPDA)
+        console.log('✅ Pool already initialized with NEW structure:', {
+          authority: poolAccount.authority?.toString(),
+          usdcMint: poolAccount.usdcMint.toString(),
+          totalLiquidity: poolAccount.totalLiquidity.toString(),
+          totalBorrowed: poolAccount.totalBorrowed.toString(),
+          borrowRate: poolAccount.borrowRate.toString(),
+          lenderRate: poolAccount.lenderRate.toString(),
+          paused: poolAccount.paused,
+        })
+        return
+      } else {
+        console.log('⚠️  Pool account exists but has unexpected size:', accountInfo.data.length)
+        console.log('⚠️  Attempting to fetch anyway...')
+        const poolAccount = await program.account.lendingPool.fetch(poolPDA)
+        console.log('✅ Pool account fetched:', poolAccount)
+        return
+      }
+    }
   } catch (error: any) {
-    console.log('ℹ️  Pool does not exist, initializing...')
+    if (error.message?.includes('Account does not exist') || error.message?.includes('could not find account')) {
+      console.log('ℹ️  Pool does not exist, initializing...')
+    } else {
+      console.log('ℹ️  Error checking pool, attempting initialization...')
+      console.log('   Error:', error.message)
+    }
   }
   
   // Initialize pool (initial liquidity = 0, can be funded separately)
@@ -88,7 +125,10 @@ async function main() {
     .accounts({
       pool: poolPDA,
       usdcMint: USDC_MINT,
+      poolVault: poolVaultPDA,
       authority: walletKeypair.publicKey,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      rent: SYSVAR_RENT_PUBKEY,
       systemProgram: SystemProgram.programId,
     })
     .rpc()

@@ -1,7 +1,179 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
 
-declare_id!("3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx");
+declare_id!("AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL");
+
+// Backward compatibility: old pool layout (no authority/paused).
+const OLD_POOL_ACCOUNT_LEN: usize = 8 + 32 + 8 + 8 + 8 + 8 + 1; // discriminator + fields
+const NEW_POOL_ACCOUNT_LEN: usize = 8 + LendingPool::LEN;
+
+#[derive(Clone)]
+struct LendingPoolOld {
+    usdc_mint: Pubkey,
+    total_liquidity: u64,
+    total_borrowed: u64,
+    borrow_rate: u64,
+    lender_rate: u64,
+    bump: u8,
+}
+
+#[derive(Clone)]
+enum LendingPoolVersion {
+    Old(LendingPoolOld),
+    New(LendingPool),
+}
+
+impl LendingPoolVersion {
+    fn bump(&self) -> u8 {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.bump,
+            LendingPoolVersion::New(pool) => pool.bump,
+        }
+    }
+
+    fn usdc_mint(&self) -> Pubkey {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.usdc_mint,
+            LendingPoolVersion::New(pool) => pool.usdc_mint,
+        }
+    }
+
+    fn total_liquidity(&self) -> u64 {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.total_liquidity,
+            LendingPoolVersion::New(pool) => pool.total_liquidity,
+        }
+    }
+
+    fn total_borrowed(&self) -> u64 {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.total_borrowed,
+            LendingPoolVersion::New(pool) => pool.total_borrowed,
+        }
+    }
+
+    fn borrow_rate(&self) -> u64 {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.borrow_rate,
+            LendingPoolVersion::New(pool) => pool.borrow_rate,
+        }
+    }
+
+    fn lender_rate(&self) -> u64 {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.lender_rate,
+            LendingPoolVersion::New(pool) => pool.lender_rate,
+        }
+    }
+
+    fn paused(&self) -> bool {
+        match self {
+            LendingPoolVersion::Old(_) => false,
+            LendingPoolVersion::New(pool) => pool.paused,
+        }
+    }
+
+    fn authority(&self) -> Option<Pubkey> {
+        match self {
+            LendingPoolVersion::Old(_) => None,
+            LendingPoolVersion::New(pool) => Some(pool.authority),
+        }
+    }
+
+    fn set_total_liquidity(&mut self, value: u64) {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.total_liquidity = value,
+            LendingPoolVersion::New(pool) => pool.total_liquidity = value,
+        }
+    }
+
+    fn set_total_borrowed(&mut self, value: u64) {
+        match self {
+            LendingPoolVersion::Old(pool) => pool.total_borrowed = value,
+            LendingPoolVersion::New(pool) => pool.total_borrowed = value,
+        }
+    }
+}
+
+fn deserialize_pool(data: &[u8]) -> Result<LendingPoolVersion> {
+    require!(data.len() >= 8, LendingPoolError::InvalidConfig);
+
+    if data.len() == NEW_POOL_ACCOUNT_LEN {
+        let pool = LendingPool::try_deserialize(&mut &data[8..])
+            .map_err(|_| LendingPoolError::InvalidConfig)?;
+        return Ok(LendingPoolVersion::New(pool));
+    }
+
+    if data.len() == OLD_POOL_ACCOUNT_LEN {
+        let mut offset = 8;
+        let usdc_mint = Pubkey::try_from(&data[offset..offset + 32])
+            .map_err(|_| LendingPoolError::InvalidConfig)?;
+        offset += 32;
+
+        let total_liquidity = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+
+        let total_borrowed = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+
+        let borrow_rate = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+
+        let lender_rate = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+
+        let bump = data[offset];
+
+        return Ok(LendingPoolVersion::Old(LendingPoolOld {
+            usdc_mint,
+            total_liquidity,
+            total_borrowed,
+            borrow_rate,
+            lender_rate,
+            bump,
+        }));
+    }
+
+    Err(LendingPoolError::InvalidConfig.into())
+}
+
+fn serialize_pool(data: &mut [u8], pool: &LendingPoolVersion) -> Result<()> {
+    match pool {
+        LendingPoolVersion::New(pool) => {
+            let mut slice = &mut data[8..];
+            pool.serialize(&mut slice)?;
+        }
+        LendingPoolVersion::Old(pool) => {
+            require!(data.len() == OLD_POOL_ACCOUNT_LEN, LendingPoolError::InvalidConfig);
+            let mut offset = 8;
+            data[offset..offset + 32].copy_from_slice(pool.usdc_mint.as_ref());
+            offset += 32;
+
+            data[offset..offset + 8].copy_from_slice(&pool.total_liquidity.to_le_bytes());
+            offset += 8;
+
+            data[offset..offset + 8].copy_from_slice(&pool.total_borrowed.to_le_bytes());
+            offset += 8;
+
+            data[offset..offset + 8].copy_from_slice(&pool.borrow_rate.to_le_bytes());
+            offset += 8;
+
+            data[offset..offset + 8].copy_from_slice(&pool.lender_rate.to_le_bytes());
+            offset += 8;
+
+            data[offset] = pool.bump;
+        }
+    }
+    Ok(())
+}
 
 #[program]
 pub mod lending_pool_usdc {
@@ -43,6 +215,36 @@ pub mod lending_pool_usdc {
         pool.lender_rate = LENDER_RATE;
         pool.paused = false;
         pool.bump = ctx.bumps.pool;
+        
+        // Create the pool vault token account if it doesn't exist
+        // The vault is a PDA, so we use init_if_needed to create it
+        // Validate that the vault is owned by the token program (if it exists)
+        if !ctx.accounts.pool_vault.data_is_empty() {
+            require!(
+                *ctx.accounts.pool_vault.owner == ctx.accounts.token_program.key(),
+                LendingPoolError::InvalidConfig
+            );
+        }
+        
+        // Initialize the token account for the vault PDA if it's empty
+        if ctx.accounts.pool_vault.data_is_empty() {
+            let pool_key = pool.key();
+            let vault_bump = ctx.bumps.pool_vault;
+            let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[vault_bump]];
+            let vault_signer = &[vault_seeds];
+            
+            // Initialize the token account for the vault PDA
+            let cpi_accounts = anchor_spl::token::InitializeAccount {
+                account: ctx.accounts.pool_vault.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
+                authority: pool.to_account_info(),
+                rent: ctx.accounts.rent.to_account_info(),
+            };
+            let cpi_program = ctx.accounts.token_program.to_account_info();
+            let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, vault_signer);
+            anchor_spl::token::initialize_account(cpi_ctx)?;
+        }
+        
         Ok(())
     }
 
@@ -55,7 +257,10 @@ pub mod lending_pool_usdc {
         const MAX_DEPOSIT_AMOUNT: u64 = 1_000_000_000_000_000; // 1 billion USDC with 6 decimals
         require!(amount <= MAX_DEPOSIT_AMOUNT, LendingPoolError::InvalidAmount);
         
-        let pool = &mut ctx.accounts.pool;
+        // Manually deserialize pool account to handle old and new formats
+        let pool_data = ctx.accounts.pool.try_borrow_data()?;
+        let mut pool = deserialize_pool(&pool_data)?;
+        drop(pool_data);
         
         // SECURITY FIX: Explicitly validate pool is a PDA with correct seeds
         let (expected_pool_pda, expected_bump) = Pubkey::find_program_address(
@@ -63,16 +268,22 @@ pub mod lending_pool_usdc {
             ctx.program_id,
         );
         require!(
-            pool.key() == expected_pool_pda,
+            ctx.accounts.pool.key() == expected_pool_pda,
             LendingPoolError::InvalidConfig
         );
         require!(
-            pool.bump == expected_bump,
+            pool.bump() == expected_bump,
             LendingPoolError::InvalidConfig
         );
         
         // SECURITY FIX: Check if pool is paused
-        require!(!pool.paused, LendingPoolError::PoolPaused);
+        require!(!pool.paused(), LendingPoolError::PoolPaused);
+        
+        // Validate pool vault mint matches pool's USDC mint
+        require!(
+            ctx.accounts.pool_vault.mint == pool.usdc_mint(),
+            LendingPoolError::InvalidConfig
+        );
         
         // Transfer USDC from user to pool vault
         let cpi_accounts = Transfer {
@@ -85,14 +296,19 @@ pub mod lending_pool_usdc {
         token::transfer(cpi_ctx, amount)?;
 
         // Update pool state
-        pool.total_liquidity = pool.total_liquidity
+        let new_total_liquidity = pool.total_liquidity()
             .checked_add(amount)
             .ok_or(ProgramError::ArithmeticOverflow)?;
+        pool.set_total_liquidity(new_total_liquidity);
+
+        // Serialize pool back to account data
+        let mut pool_data = ctx.accounts.pool.try_borrow_mut_data()?;
+        serialize_pool(&mut pool_data, &pool)?;
 
         emit!(USDCDeposited {
             lender: ctx.accounts.user.key(),
             amount,
-            total_liquidity: pool.total_liquidity,
+            total_liquidity: pool.total_liquidity(),
         });
 
         Ok(())
@@ -100,7 +316,10 @@ pub mod lending_pool_usdc {
 
     /// Borrow USDC from the lending pool
     pub fn borrow_usdc(ctx: Context<BorrowUSDC>, amount: u64) -> Result<()> {
-        let pool = &mut ctx.accounts.pool;
+        // Manually deserialize pool account to handle old and new formats
+        let pool_data = ctx.accounts.pool.try_borrow_data()?;
+        let mut pool = deserialize_pool(&pool_data)?;
+        drop(pool_data);
         
         // SECURITY FIX: Explicitly validate pool is a PDA with correct seeds
         let (expected_pool_pda, expected_bump) = Pubkey::find_program_address(
@@ -108,16 +327,16 @@ pub mod lending_pool_usdc {
             ctx.program_id,
         );
         require!(
-            pool.key() == expected_pool_pda,
+            ctx.accounts.pool.key() == expected_pool_pda,
             LendingPoolError::InvalidConfig
         );
         require!(
-            pool.bump == expected_bump,
+            pool.bump() == expected_bump,
             LendingPoolError::InvalidConfig
         );
         
         // SECURITY FIX: Check if pool is paused
-        require!(!pool.paused, LendingPoolError::PoolPaused);
+        require!(!pool.paused(), LendingPoolError::PoolPaused);
         
         // SECURITY FIX: Explicit zero amount validation
         require!(amount > 0, LendingPoolError::InvalidAmount);
@@ -128,8 +347,8 @@ pub mod lending_pool_usdc {
 
         // SECURITY FIX (MEDIUM-001): Enforce minimum liquidity reserve to prevent complete pool drainage
         const MIN_LIQUIDITY_RESERVE: u64 = 1_000_000; // 1 USDC minimum reserve (1 USDC = 1_000_000 lamports for 6 decimals)
-        let available = pool.total_liquidity
-            .checked_sub(pool.total_borrowed)
+        let available = pool.total_liquidity()
+            .checked_sub(pool.total_borrowed())
             .ok_or(LendingPoolError::InsufficientLiquidity)?;
         // SECURITY FIX (MEDIUM-003): Use explicit error handling instead of unwrap_or(0)
         let borrowable = available
@@ -140,24 +359,31 @@ pub mod lending_pool_usdc {
             LendingPoolError::InsufficientLiquidity
         );
         
+        // Validate pool vault mint matches pool's USDC mint
+        require!(
+            ctx.accounts.pool_vault.mint == pool.usdc_mint(),
+            LendingPoolError::InvalidConfig
+        );
+        
         // Transfer USDC from pool vault to borrower
         // SECURITY FIX: Pool is a PDA and signs transfers
-        let seeds: &[&[u8]] = &[b"pool", &[pool.bump]];
+        let seeds: &[&[u8]] = &[b"pool", &[pool.bump()]];
         let signer = &[seeds];
 
         let cpi_accounts = Transfer {
             from: ctx.accounts.pool_vault.to_account_info(),
             to: ctx.accounts.borrower_usdc_account.to_account_info(),
-            authority: pool.to_account_info(),
+            authority: ctx.accounts.pool.to_account_info(),
         };
         let cpi_program = ctx.accounts.token_program.to_account_info();
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
         token::transfer(cpi_ctx, amount)?;
 
         // Update pool state
-        pool.total_borrowed = pool.total_borrowed
+        let new_total_borrowed = pool.total_borrowed()
             .checked_add(amount)
             .ok_or(ProgramError::ArithmeticOverflow)?;
+        pool.set_total_borrowed(new_total_borrowed);
 
         // Record borrower debt
         // SECURITY FIX: init_if_needed handles account creation, but we need to validate
@@ -214,10 +440,14 @@ pub mod lending_pool_usdc {
             .checked_add(amount)
             .ok_or(ProgramError::ArithmeticOverflow)?;
 
+        // Serialize pool back to account data
+        let mut pool_data = ctx.accounts.pool.try_borrow_mut_data()?;
+        serialize_pool(&mut pool_data, &pool)?;
+
         emit!(USDCBorrowed {
             borrower: ctx.accounts.borrower.key(),
             amount,
-            total_borrowed: pool.total_borrowed,
+            total_borrowed: pool.total_borrowed(),
         });
 
         Ok(())
@@ -225,7 +455,10 @@ pub mod lending_pool_usdc {
 
     /// Repay borrowed USDC
     pub fn repay_usdc(ctx: Context<RepayUSDC>, amount: u64) -> Result<()> {
-        let pool = &mut ctx.accounts.pool;
+        // Manually deserialize pool account to handle old and new formats
+        let pool_data = ctx.accounts.pool.try_borrow_data()?;
+        let mut pool = deserialize_pool(&pool_data)?;
+        drop(pool_data);
         
         // SECURITY FIX: Explicitly validate pool is a PDA with correct seeds
         let (expected_pool_pda, expected_bump) = Pubkey::find_program_address(
@@ -233,16 +466,16 @@ pub mod lending_pool_usdc {
             ctx.program_id,
         );
         require!(
-            pool.key() == expected_pool_pda,
+            ctx.accounts.pool.key() == expected_pool_pda,
             LendingPoolError::InvalidConfig
         );
         require!(
-            pool.bump == expected_bump,
+            pool.bump() == expected_bump,
             LendingPoolError::InvalidConfig
         );
         
         // SECURITY FIX: Check if pool is paused
-        require!(!pool.paused, LendingPoolError::PoolPaused);
+        require!(!pool.paused(), LendingPoolError::PoolPaused);
         
         // SECURITY FIX: Explicit zero amount validation
         require!(amount > 0, LendingPoolError::InvalidAmount);
@@ -282,7 +515,7 @@ pub mod lending_pool_usdc {
         
         // SECURITY FIX: Proper interest calculation with optimized precision
         // Multiply numerators first, then divide to maximize precision
-        let borrow_rate = pool.borrow_rate; // Fetch from pool state (10 = 10% APY, scaled by 100)
+        let borrow_rate = pool.borrow_rate(); // Fetch from pool state (10 = 10% APY, scaled by 100)
         let principal_u128 = borrower_account.amount_borrowed as u128;
         let borrow_rate_u128 = borrow_rate as u128;
         let seconds_elapsed_u128 = seconds_elapsed as u128;
@@ -311,6 +544,12 @@ pub mod lending_pool_usdc {
         require!(
             amount <= total_owed_u64,
             LendingPoolError::RepayAmountExceedsDebt
+        );
+
+        // Validate pool vault mint matches pool's USDC mint
+        require!(
+            ctx.accounts.pool_vault.mint == pool.usdc_mint(),
+            LendingPoolError::InvalidConfig
         );
 
         // Transfer USDC from borrower to pool vault
@@ -364,7 +603,7 @@ pub mod lending_pool_usdc {
         
         // SECURITY FIX: Validate amounts are sufficient before subtraction to detect accounting errors
         require!(
-            pool.total_borrowed >= principal_repaid,
+            pool.total_borrowed() >= principal_repaid,
             LendingPoolError::InvalidAmount
         );
         require!(
@@ -372,9 +611,14 @@ pub mod lending_pool_usdc {
             LendingPoolError::InvalidAmount
         );
         
-        pool.total_borrowed = pool.total_borrowed
+        let new_total_borrowed = pool.total_borrowed()
             .checked_sub(principal_repaid)
             .ok_or(LendingPoolError::InvalidAmount)?;
+        pool.set_total_borrowed(new_total_borrowed);
+        
+        // Serialize pool back to account data
+        let mut pool_data = ctx.accounts.pool.try_borrow_mut_data()?;
+        serialize_pool(&mut pool_data, &pool)?;
         borrower_account.amount_borrowed = borrower_account.amount_borrowed
             .checked_sub(principal_repaid)
             .ok_or(LendingPoolError::InvalidAmount)?;
@@ -393,11 +637,65 @@ pub mod lending_pool_usdc {
         Ok(())
     }
 
+    /// Initialize the pool vault (for existing pools that don't have a vault)
+    pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
+        // Manually deserialize pool account to handle old and new formats
+        let pool_data = ctx.accounts.pool.try_borrow_data()?;
+        let pool = deserialize_pool(&pool_data)?;
+        drop(pool_data);
+        
+        // Validate pool authority (new format only)
+        if let Some(authority) = pool.authority() {
+            require_keys_eq!(
+                authority,
+                ctx.accounts.authority.key(),
+                LendingPoolError::Unauthorized
+            );
+        }
+
+        // Validate USDC mint matches pool's mint (old and new)
+        require!(
+            ctx.accounts.usdc_mint.key() == pool.usdc_mint(),
+            LendingPoolError::InvalidConfig
+        );
+        
+        // Check if vault already exists and is initialized
+        if !ctx.accounts.pool_vault.data_is_empty() {
+            // Validate it's a token account
+            require!(
+                *ctx.accounts.pool_vault.owner == ctx.accounts.token_program.key(),
+                LendingPoolError::InvalidConfig
+            );
+            return Ok(()); // Vault already exists
+        }
+        
+        // Initialize the token account for the vault PDA
+        let pool_key = ctx.accounts.pool.key();
+        let vault_bump = ctx.bumps.pool_vault;
+        let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[vault_bump]];
+        let vault_signer = &[vault_seeds];
+        
+        let cpi_accounts = anchor_spl::token::InitializeAccount {
+            account: ctx.accounts.pool_vault.to_account_info(),
+            mint: ctx.accounts.usdc_mint.to_account_info(),
+            authority: ctx.accounts.pool.to_account_info(),
+            rent: ctx.accounts.rent.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, vault_signer);
+        anchor_spl::token::initialize_account(cpi_ctx)?;
+        
+        Ok(())
+    }
+
     /// Get available liquidity (view function simulation)
     pub fn get_available_liquidity(ctx: Context<GetAvailableLiquidity>) -> Result<u64> {
-        let pool = &ctx.accounts.pool;
-        let available = pool.total_liquidity
-            .checked_sub(pool.total_borrowed)
+        // Manually deserialize pool account to handle old and new formats
+        let pool_data = ctx.accounts.pool.try_borrow_data()?;
+        let pool = deserialize_pool(&pool_data)?;
+        
+        let available = pool.total_liquidity()
+            .checked_sub(pool.total_borrowed())
             .ok_or(LendingPoolError::InsufficientLiquidity)?;
         Ok(available)
     }
@@ -407,22 +705,36 @@ pub mod lending_pool_usdc {
         ctx: Context<SetPoolStatus>,
         paused: bool,
     ) -> Result<()> {
-        let pool = &mut ctx.accounts.pool;
+        // Manually deserialize pool account to handle old and new formats
+        let pool_data = ctx.accounts.pool.try_borrow_data()?;
+        let pool = deserialize_pool(&pool_data)?;
+        drop(pool_data);
+        
+        // Old format doesn't support paused/authority updates
+        let mut new_pool = match pool {
+            LendingPoolVersion::New(pool) => pool,
+            LendingPoolVersion::Old(_) => return Err(LendingPoolError::InvalidConfig.into()),
+        };
         
         // SECURITY FIX: Explicitly verify authority matches pool authority
         require_keys_eq!(
-            pool.authority,
+            new_pool.authority,
             ctx.accounts.authority.key(),
             LendingPoolError::Unauthorized
         );
         
         // SECURITY FIX: Prevent redundant state changes
         require!(
-            pool.paused != paused,
+            new_pool.paused != paused,
             LendingPoolError::InvalidConfig
         );
         
-        pool.paused = paused;
+        new_pool.paused = paused;
+        
+        // Serialize pool back to account data
+        let mut pool_data = ctx.accounts.pool.try_borrow_mut_data()?;
+        let mut pool_slice = &mut pool_data[8..]; // Skip discriminator
+        new_pool.serialize(&mut pool_slice)?;
         
         msg!("Pool status set to: {}", if paused { "paused" } else { "active" });
         Ok(())
@@ -442,16 +754,30 @@ pub struct Initialize<'info> {
 
     pub usdc_mint: Account<'info, Mint>,
 
+    /// CHECK: Pool vault PDA - will be initialized in the instruction
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + anchor_spl::token::TokenAccount::LEN,
+        seeds = [b"vault", pool.key().as_ref()],
+        bump,
+    )]
+    pub pool_vault: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct DepositUSDC<'info> {
+    /// CHECK: Pool account - using UncheckedAccount to handle old account formats
+    /// We manually deserialize it in the instruction to handle backward compatibility
     #[account(mut)]
-    pub pool: Account<'info, LendingPool>,
+    pub pool: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -463,7 +789,6 @@ pub struct DepositUSDC<'info> {
         mut,
         seeds = [b"vault", pool.key().as_ref()],
         bump,
-        constraint = pool_vault.mint == pool.usdc_mint @ LendingPoolError::InvalidConfig
     )]
     pub pool_vault: Account<'info, TokenAccount>,
 
@@ -472,8 +797,9 @@ pub struct DepositUSDC<'info> {
 
 #[derive(Accounts)]
 pub struct BorrowUSDC<'info> {
+    /// CHECK: Pool account - using UncheckedAccount to handle old account formats
     #[account(mut)]
-    pub pool: Account<'info, LendingPool>,
+    pub pool: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub borrower: Signer<'info>,
@@ -500,8 +826,9 @@ pub struct BorrowUSDC<'info> {
 
 #[derive(Accounts)]
 pub struct RepayUSDC<'info> {
+    /// CHECK: Pool account - using UncheckedAccount to handle old account formats
     #[account(mut)]
-    pub pool: Account<'info, LendingPool>,
+    pub pool: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub borrower: Signer<'info>,
@@ -520,7 +847,6 @@ pub struct RepayUSDC<'info> {
         mut,
         seeds = [b"vault", pool.key().as_ref()],
         bump,
-        constraint = pool_vault.mint == pool.usdc_mint @ LendingPoolError::InvalidConfig
     )]
     pub pool_vault: Account<'info, TokenAccount>,
 
@@ -528,14 +854,41 @@ pub struct RepayUSDC<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeVault<'info> {
+    /// CHECK: Pool account - using UncheckedAccount to handle old account formats
+    pub pool: UncheckedAccount<'info>,
+    
+    pub usdc_mint: Account<'info, Mint>,
+    
+    /// CHECK: Pool vault PDA - will be initialized in the instruction
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + anchor_spl::token::TokenAccount::LEN,
+        seeds = [b"vault", pool.key().as_ref()],
+        bump,
+    )]
+    pub pool_vault: UncheckedAccount<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct GetAvailableLiquidity<'info> {
-    pub pool: Account<'info, LendingPool>,
+    /// CHECK: Pool account - using UncheckedAccount to handle old account formats
+    pub pool: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetPoolStatus<'info> {
-    #[account(mut, has_one = authority)]
-    pub pool: Account<'info, LendingPool>,
+    /// CHECK: Pool account - using UncheckedAccount to handle old account formats
+    #[account(mut)]
+    pub pool: UncheckedAccount<'info>,
     pub authority: Signer<'info>,
 }
 

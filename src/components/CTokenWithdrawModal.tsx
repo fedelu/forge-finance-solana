@@ -84,26 +84,33 @@ export default function CTokenWithdrawModal({
       if (positionType === 'lp') {
         const result = await closeLPPosition(positionId)
         if (result && result.success) {
-          // Update wallet balances
-          // When closing LP position: return base tokens (with APY) + USDC
-          addToBalance(baseTokenSymbol, result.baseAmount) // Includes APY earnings
-          addToBalance('USDC', result.usdcAmount) // Return deposited USDC
+          // INFERNO MODE: Update wallet balances
+          // When closing LP position: USDC is converted to SOL, user gets SOL only (like cSOL unwrap)
+          addToBalance(baseTokenSymbol, result.baseAmount) // Total SOL returned (base + converted USDC)
+          // Note: USDC was converted to SOL in the contract, so no USDC is returned
           
-          // Remove LP tokens
+          // Remove LP tokens from balance
           const crucible = getCrucible(crucibleAddress)
           const lpTokenSymbol = crucible ? `${crucible.ptokenSymbol}/USDC LP` : `${baseTokenSymbol}/USDC LP`
-          // Exchange rate from prop (passed from CrucibleManager)
-          const cTokenAmount = result.baseAmount * exchangeRate
-          const lpTokenAmount = Math.sqrt(cTokenAmount * result.usdcAmount)
-          subtractFromBalance(lpTokenSymbol, lpTokenAmount)
+          // Calculate LP token amount that was burned
+          // We need to estimate this from the position data
+          const position = lpPositions.find(p => p.id === positionId)
+          if (position) {
+            // Use position data to calculate LP tokens
+            const baseTokenPrice = solPrice || 200
+            const baseValue = position.baseAmount * baseTokenPrice
+            const usdcValue = position.usdcAmount
+            const lpTokenAmount = Math.sqrt(baseValue * usdcValue) // Constant product formula
+            subtractFromBalance(lpTokenSymbol, lpTokenAmount)
+          }
           
           const lpSummary = [
             '🔥 Forge Position Update',
             '',
             `${displayPairSymbol}/USDC position closed.`,
             '',
-            `• Base Tokens Returned: ${formatNumberWithCommas(result.baseAmount, 4)} ${baseTokenSymbol}`,
-            `• USDC Returned: ${formatNumberWithCommas(result.usdcAmount, 2)} USDC`,
+            `• SOL Returned: ${formatNumberWithCommas(result.baseAmount, 4)} ${baseTokenSymbol}`,
+            `  (Includes converted USDC - all value returned as SOL)`,
           ]
 
           if (result.apyEarned && result.apyEarned > 0) {

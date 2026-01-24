@@ -18,7 +18,7 @@ import { buildMintCtokenInstruction } from '../utils/anchorProgram'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 import { SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
-import { formatUSD, formatUSDC, formatSOL } from '../utils/math'
+import { formatNumberWithCommas, formatUSD, formatUSDC, formatSOL } from '../utils/math'
 
 interface CTokenDepositModalProps {
   isOpen: boolean
@@ -104,6 +104,8 @@ export default function CTokenDepositModal({
 const parsedAmount = amount ? parseFloat(amount) : 0
 const infernoOpenFee = mode === 'lp' ? parsedAmount * INFERNO_OPEN_FEE_RATE : 0
 const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - infernoOpenFee) : parsedAmount
+const wrapFeeAmount = mode === 'wrap' ? parsedAmount * WRAP_FEE_RATE : 0
+const netWrapAmount = mode === 'wrap' ? Math.max(0, parsedAmount - wrapFeeAmount) : 0
 
   // Calculate USDC needed for LP positions
   const calculateUSDCNeeded = (baseAmount: number, leverageValue: number): { totalUSDC: number, depositUSDC: number, borrowUSDC: number } => {
@@ -595,6 +597,21 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
       : (safeCurrentAPY * leverage) - (10 * (leverage - 1)) // Leveraged: base * leverage - borrow cost
     : safeCurrentAPY
 
+  const crucible = getCrucible(crucibleAddress)
+  const allowInferno = crucibleAddress !== 'sol-crucible'
+  const exchangeRate = crucible?.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0
+  const baseValueUsdForLp = baseAmountForPosition * baseTokenPrice
+  const estimatedCTokens = netWrapAmount > 0 ? netWrapAmount / exchangeRate : 0
+  const estimatedLpTokens = mode === 'lp' && parsedAmount > 0
+    ? Math.sqrt(baseValueUsdForLp * usdcDetails.totalUSDC) * 1000
+    : 0
+
+  React.useEffect(() => {
+    if (!allowInferno && mode === 'lp') {
+      setMode('wrap')
+    }
+  }, [allowInferno, mode])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in px-4">
       <div className="panel rounded-3xl w-full max-w-2xl relative animate-scale-in max-h-[90vh] overflow-y-auto p-6">
@@ -631,38 +648,40 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
         </div>
 
         {/* Mode Toggle - Compact */}
-        <div className="mb-4">
-          <div className="grid grid-cols-2 gap-2 p-1 panel-muted rounded-2xl border border-forge-gray-700/50">
-            <button
-              onClick={() => {
-                setMode('wrap')
-              }}
-              className={`px-5 py-3 text-sm rounded-xl font-heading uppercase tracking-[0.18em] transition-all duration-300 relative overflow-hidden ${
-                mode === 'wrap'
-                  ? 'bg-gradient-to-r from-forge-primary to-forge-primary-light text-white shadow-lg shadow-forge-primary/30'
-                  : 'text-forge-gray-400 hover:text-white hover:bg-forge-gray-700/50'
-              }`}
-            >
-              <div className="relative flex items-center justify-center gap-2">
-                <FireIcon className="w-4 h-4" />
-                <span className="text-base">Wrap</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setMode('lp')}
-              className={`px-5 py-3 text-sm rounded-xl font-heading uppercase tracking-[0.18em] transition-all duration-300 relative overflow-hidden ${
-                mode === 'lp'
-                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30'
-                  : 'text-forge-gray-400 hover:text-white hover:bg-forge-gray-700/50'
-              }`}
-            >
-              <div className="relative flex items-center justify-center gap-2">
-                <BoltIcon className="w-4 h-4" />
-                <span className="text-base">Inferno</span>
-              </div>
-            </button>
+        {allowInferno && (
+          <div className="mb-4">
+            <div className="grid grid-cols-2 gap-2 p-1 panel-muted rounded-2xl border border-forge-gray-700/50">
+              <button
+                onClick={() => {
+                  setMode('wrap')
+                }}
+                className={`px-5 py-3 text-sm rounded-xl font-heading uppercase tracking-[0.18em] transition-all duration-300 relative overflow-hidden ${
+                  mode === 'wrap'
+                    ? 'bg-gradient-to-r from-forge-primary to-forge-primary-light text-white shadow-lg shadow-forge-primary/30'
+                    : 'text-forge-gray-400 hover:text-white hover:bg-forge-gray-700/50'
+                }`}
+              >
+                <div className="relative flex items-center justify-center gap-2">
+                  <FireIcon className="w-4 h-4" />
+                  <span className="text-base">Wrap</span>
+                </div>
+              </button>
+              <button
+                onClick={() => setMode('lp')}
+                className={`px-5 py-3 text-sm rounded-xl font-heading uppercase tracking-[0.18em] transition-all duration-300 relative overflow-hidden ${
+                  mode === 'lp'
+                    ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30'
+                    : 'text-forge-gray-400 hover:text-white hover:bg-forge-gray-700/50'
+                }`}
+              >
+                <div className="relative flex items-center justify-center gap-2">
+                  <BoltIcon className="w-4 h-4" />
+                  <span className="text-base">Inferno</span>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Leverage Toggle (Leveraged Mode Only) */}
         {mode === 'lp' && (
@@ -772,6 +791,69 @@ const baseAmountForPosition = mode === 'lp' ? Math.max(0, parsedAmount - inferno
                   </span>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Position Summary */}
+        {amount && parseFloat(amount) > 0 && (
+          <div className="mb-4 p-4 panel-muted backdrop-blur-sm rounded-2xl border border-forge-gray-700/60">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs uppercase tracking-[0.18em] text-forge-gray-300 font-heading">Summary</span>
+              <span className="text-xs text-forge-gray-500">Estimates</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-forge-gray-400">Mode</span>
+                <span className="text-white font-semibold">{mode === 'wrap' ? 'Wrap' : 'Inferno'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-forge-gray-400">Effective APY</span>
+                <span className="text-forge-accent font-semibold">{effectiveAPY.toFixed(2)}%</span>
+              </div>
+              {mode === 'wrap' ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Wrap fee</span>
+                    <span className="text-white font-semibold">{formatSOL(wrapFeeAmount)} {baseTokenSymbol}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Net deposit</span>
+                    <span className="text-white font-semibold">{formatSOL(netWrapAmount)} {baseTokenSymbol}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Est. {ctokenSymbol}</span>
+                    <span className="text-white font-semibold">{formatNumberWithCommas(estimatedCTokens, 4)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Exchange rate</span>
+                    <span className="text-white font-semibold">{exchangeRate.toFixed(6)}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Forge open fee</span>
+                    <span className="text-white font-semibold">{formatSOL(infernoOpenFee)} {baseTokenSymbol}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Net base</span>
+                    <span className="text-white font-semibold">{formatSOL(baseAmountForPosition)} {baseTokenSymbol}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">USDC deposit</span>
+                    <span className="text-white font-semibold">{formatUSDC(usdcDetails.depositUSDC)} USDC</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">USDC borrowed</span>
+                    <span className="text-white font-semibold">{formatUSDC(usdcDetails.borrowUSDC)} USDC</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-forge-gray-400">Est. LP tokens</span>
+                    <span className="text-white font-semibold">{formatNumberWithCommas(estimatedLpTokens, 4)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

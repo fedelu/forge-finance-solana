@@ -7,6 +7,7 @@ import { useCrucible } from '../hooks/useCrucible'
 import { useCToken } from '../hooks/useCToken'
 import { useBalance } from '../contexts/BalanceContext'
 import { useLVFPosition } from '../hooks/useLVFPosition'
+import { useInfernoLP } from '../hooks/useInfernoLP'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useWallet } from '../contexts/WalletContext'
 import { usePrice } from '../contexts/PriceContext'
@@ -33,7 +34,7 @@ export default function ClosePositionModal({
   hasCTokenPosition,
   hasLeveragedPosition: _hasLeveragedPosition,
 }: ClosePositionModalProps) {
-  const [activeTab, setActiveTab] = useState<'ctoken' | 'lp'>('ctoken')
+  const [activeTab, setActiveTab] = useState<'ctoken' | 'lp' | 'inferno'>('ctoken')
   const [ctokenAmount, setCTokenAmount] = useState('')
   const [lpTokenAmount, setLpTokenAmount] = useState('')
   const [loading, setLoading] = useState(false)
@@ -55,6 +56,7 @@ export default function ClosePositionModal({
   const { solPrice } = usePrice()
   const { getCrucible, calculateUnwrapPreview } = useCrucible()
   const crucible = getCrucible(crucibleAddress)
+  const isSolCrucible = crucibleAddress === 'sol-crucible'
   const ctokenMint = crucible?.ptokenMint || DEPLOYED_ACCOUNTS.CSOL_MINT
   const { withdraw: withdrawCToken, loading: withdrawLoading } = useCToken(crucibleAddress, ctokenMint)
   const { addToBalance, subtractFromBalance, balances } = useBalance()
@@ -67,22 +69,32 @@ export default function ClosePositionModal({
     crucibleAddress,
     baseTokenSymbol,
   })
+
+  const { positions: infernoPositions, closePosition: closeInfernoPosition, refetch: refetchInferno } = useInfernoLP({
+    crucibleAddress,
+    baseTokenSymbol,
+    baseAPY: crucible?.apr || 0,
+  })
   
   // Store refetch function in ref to avoid dependency issues
   const refetchLVFRef = React.useRef(refetchLVF)
+  const refetchInfernoRef = React.useRef(refetchInferno)
   
   React.useEffect(() => {
     refetchLVFRef.current = refetchLVF
-  }, [refetchLVF])
+    refetchInfernoRef.current = refetchInferno
+  }, [refetchLVF, refetchInferno])
 
   // Refetch positions when modal opens to ensure we have latest data
   React.useEffect(() => {
     if (isOpen && crucibleAddress) {
       // Refetch positions when modal opens
       refetchLVFRef.current()
+      refetchInfernoRef.current()
       // Single delayed refetch to catch any async updates
       const timeoutId = setTimeout(() => {
         refetchLVFRef.current()
+        refetchInfernoRef.current()
       }, 200)
       return () => clearTimeout(timeoutId)
     }
@@ -107,11 +119,15 @@ export default function ClosePositionModal({
     
     window.addEventListener('lvfPositionOpened', handlePositionOpened as EventListener)
     window.addEventListener('lvfPositionClosed', handlePositionClosed as EventListener)
+    window.addEventListener('infernoLpPositionOpened', handlePositionOpened as EventListener)
+    window.addEventListener('infernoLpPositionClosed', handlePositionClosed as EventListener)
     return () => {
       window.removeEventListener('lvfPositionOpened', handlePositionOpened as EventListener)
       window.removeEventListener('lvfPositionClosed', handlePositionClosed as EventListener)
+      window.removeEventListener('infernoLpPositionOpened', handlePositionOpened as EventListener)
+      window.removeEventListener('infernoLpPositionClosed', handlePositionClosed as EventListener)
     }
-  }, [crucibleAddress, baseTokenSymbol, refetchLVF])
+  }, [crucibleAddress, baseTokenSymbol, refetchLVF, refetchInferno])
 
   const baseTokenPrice = solPrice // Use real-time SOL price from CoinGecko
   
@@ -177,6 +193,15 @@ export default function ClosePositionModal({
     
     return false
   }, [leveragedPositions])
+
+  const hasInfernoPosition = useMemo(() => {
+    if (infernoPositions.length === 0) return false
+    return infernoPositions.some((p) => p.isOpen !== false)
+  }, [infernoPositions])
+
+  const availableInfernoPositions = useMemo(() => {
+    return infernoPositions.filter((p) => p.isOpen !== false)
+  }, [infernoPositions])
 
   // Get available cToken balance from both crucible and balance context
   const availableCTokens = useMemo(() => {
@@ -560,16 +585,39 @@ export default function ClosePositionModal({
     }
   }
 
+  const handleInfernoClose = async (positionId: string) => {
+    try {
+      setLoading(true)
+      setError(null)
+      await closeInfernoPosition(positionId)
+      window.dispatchEvent(new CustomEvent('infernoLpPositionClosed', {
+        detail: { crucibleAddress, baseTokenSymbol },
+      }))
+      onClose()
+    } catch (err: any) {
+      console.error('Error closing Inferno LP position:', err)
+      setError(err.message || 'Failed to close Inferno LP position')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (!isOpen) return null
 
   // Determine default tab based on available positions
   React.useEffect(() => {
-    if (hasCTokenPosition && !hasLeveragedPosition) {
+    if (isSolCrucible) {
+      setActiveTab('ctoken')
+      return
+    }
+    if (hasCTokenPosition && !hasLeveragedPosition && !hasInfernoPosition) {
       setActiveTab('ctoken')
     } else if (hasLeveragedPosition && !hasCTokenPosition) {
       setActiveTab('lp')
+    } else if (hasInfernoPosition && !hasCTokenPosition && !hasLeveragedPosition) {
+      setActiveTab('inferno')
     }
-  }, [hasCTokenPosition, hasLeveragedPosition])
+  }, [hasCTokenPosition, hasLeveragedPosition, hasInfernoPosition, isSolCrucible])
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -605,17 +653,32 @@ export default function ClosePositionModal({
           >
             Unwrap cTOKENS
           </button>
-          <button
-            onClick={() => setActiveTab('lp')}
-            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-              activeTab === 'lp'
-                ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
-                : 'text-forge-gray-400 hover:text-forge-gray-300'
-            }`}
-            disabled={!hasLeveragedPosition}
-          >
-            Unwrap LP tokens
-          </button>
+          {!isSolCrucible && (
+            <button
+              onClick={() => setActiveTab('lp')}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                activeTab === 'lp'
+                  ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
+                  : 'text-forge-gray-400 hover:text-forge-gray-300'
+              }`}
+              disabled={!hasLeveragedPosition}
+            >
+              Unwrap LP tokens
+            </button>
+          )}
+          {!isSolCrucible && (
+            <button
+              onClick={() => setActiveTab('inferno')}
+              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                activeTab === 'inferno'
+                  ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
+                  : 'text-forge-gray-400 hover:text-forge-gray-300'
+              }`}
+              disabled={!hasInfernoPosition}
+            >
+              Close Inferno LP
+            </button>
+          )}
         </div>
 
         {/* Content */}
@@ -687,7 +750,7 @@ export default function ClosePositionModal({
           )}
 
           {/* LP Token Unwrap Tab (Leveraged Position) */}
-          {activeTab === 'lp' && hasLeveragedPosition && availableLeveragedPosition && (
+          {!isSolCrucible && activeTab === 'lp' && hasLeveragedPosition && availableLeveragedPosition && (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-forge-gray-300 mb-2">
@@ -804,8 +867,37 @@ export default function ClosePositionModal({
             </div>
           )}
 
+          {!isSolCrucible && activeTab === 'inferno' && hasInfernoPosition && (
+            <div className="space-y-4">
+              <div className="text-sm text-forge-gray-400">
+                Closing an Inferno LP position repays borrowing and swaps remaining USDC to {baseTokenSymbol}.
+              </div>
+              <div className="space-y-2">
+                {availableInfernoPositions.map((position) => (
+                  <div key={position.id} className="panel-muted rounded-xl p-4 border border-red-500/20">
+                    <div className="flex justify-between text-sm text-forge-gray-300">
+                      <span>{position.baseAmount.toFixed(3)} {baseTokenSymbol}</span>
+                      <span>{position.usdcAmount.toFixed(2)} USDC</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-forge-gray-400 mt-1">
+                      <span>Leverage: {position.leverageFactor}x</span>
+                      <span>Borrowed: {position.borrowedUSDC.toFixed(2)} USDC</span>
+                    </div>
+                    <button
+                      onClick={() => handleInfernoClose(position.id)}
+                      disabled={loading}
+                      className="mt-3 w-full py-2 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg text-sm font-medium hover:from-red-600 hover:to-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? 'Closing...' : 'Close Inferno Position'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* No positions message */}
-          {!hasCTokenPosition && !hasLeveragedPosition && (
+          {!hasCTokenPosition && (!hasLeveragedPosition || isSolCrucible) && (!hasInfernoPosition || isSolCrucible) && (
             <div className="text-center py-8 text-forge-gray-400">
               No positions available to close
             </div>

@@ -26,13 +26,14 @@ import { useWallet } from '../contexts/WalletContext';
 import { usePrice } from '../contexts/PriceContext';
 import { fetchCTokenBalance, fetchAllUserPositions, type AllUserPositions } from '../utils/positionFetcher';
 import { fetchCrucibleDirect, calculateTVL, getExchangeRateDecimal as getExchangeRateFromCrucible, createDevnetConnection, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate, calculateYieldPercentage } from '../utils/crucibleFetcher';
+import { getInfernoLPPositions } from '../utils/localStorage';
 
 export interface CrucibleData {
   id: string;
   name: string;
   symbol: string;
   baseToken: 'SOL';
-  ptokenSymbol: 'cSOL';
+  ptokenSymbol: string;
   tvl: number;
   apr: number;
   status: 'active' | 'paused' | 'maintenance';
@@ -104,6 +105,29 @@ const initialCrucibles: CrucibleData[] = [
     apyEarnedByUsers: solMetrics.crucibleHoldersShare * 365, // Annual crucible holders yield
     totalDeposited: 0,
     totalWithdrawn: 0
+  },
+  {
+    id: 'inferno-lp-crucible',
+    name: 'Inferno LP',
+    symbol: 'ifSOL/USDC',
+    baseToken: 'SOL',
+    ptokenSymbol: 'ifSOL',
+    tvl: 0,
+    apr: solMetrics.apyCompounded, // LP APY equals base APY
+    status: 'active',
+    userDeposit: 0,
+    userShares: 0,
+    icon: '/solana-sol-logo.png',
+    ptokenMint: DEPLOYED_ACCOUNTS.INFERNO_LP_MINT || undefined,
+    exchangeRate: BigInt(1_000_000),
+    totalWrapped: BigInt(0),
+    userPtokenBalance: BigInt(0),
+    estimatedBaseValue: BigInt(0),
+    currentAPY: solMetrics.apyCompounded * 100,
+    totalFeesCollected: 0,
+    apyEarnedByUsers: 0,
+    totalDeposited: 0,
+    totalWithdrawn: 0
   }
 ];
 
@@ -157,16 +181,24 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     const conn = connection || createDevnetConnection()
     
     try {
+      // Derive the correct crucible PDA (always use derived address, not hardcoded)
+      const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
+      const [cruciblePDA] = deriveCruciblePDA(baseMint)
+      
       // Use direct fetcher - bypasses Anchor IDL issues entirely
-      const crucibleAccount = await fetchCrucibleDirect(conn)
+      const crucibleAccount = await fetchCrucibleDirect(conn, cruciblePDA.toString())
       
       if (!crucibleAccount) {
+        // Crucible doesn't exist - return early but don't throw error
+        // This allows the UI to show that the crucible needs to be initialized
+        console.warn('Crucible not found at:', cruciblePDA.toString())
+        setLoading(false)
         return
       }
       
-      // Fetch vault balance and cToken supply to calculate REAL exchange rate
-      const vaultBalance = await fetchVaultBalance(conn, DEPLOYED_ACCOUNTS.SOL_VAULT)
-      const ctokenSupply = await fetchCTokenSupply(conn, DEPLOYED_ACCOUNTS.CSOL_MINT)
+      // Fetch vault balance and cToken supply using addresses from crucible account
+      const vaultBalance = await fetchVaultBalance(conn, crucibleAccount.vault.toString())
+      const ctokenSupply = await fetchCTokenSupply(conn, crucibleAccount.ctokenMint.toString())
       
       // Calculate REAL exchange rate from vault balance / ctoken supply
       // This is the actual yield-generating rate, not the stored initial rate
@@ -197,8 +229,10 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       // Use volatility farming metrics which calculate APY from fee generation rate
       const effectiveApr = safeApyCompounded // Use fee-based APY, not exchange rate-based
       
+      // Use 'sol-crucible' as ID for backward compatibility with userBalances and other code
+      // The actual PDA is used for on-chain operations
       const crucibleData: CrucibleData = {
-        id: 'sol-crucible',
+        id: 'sol-crucible', // Keep consistent ID for backward compatibility
         name: 'Solana',
         symbol: 'SOL',
         baseToken: 'SOL',
@@ -233,7 +267,9 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
       // Fetch user's cToken balance from on-chain if wallet connected
       if (publicKey && conn) {
         try {
-          const cruciblePDA = new PublicKey(DEPLOYED_ACCOUNTS.SOL_CRUCIBLE)
+          // Derive the correct crucible PDA (same as used above)
+          const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
+          const [cruciblePDA] = deriveCruciblePDA(baseMint)
           const cTokenBalance = await fetchCTokenBalance(conn, publicKey, cruciblePDA)
           
           if (cTokenBalance && cTokenBalance.balance > BigInt(0)) {
@@ -325,10 +361,22 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
 
   // Get updated crucibles - use on-chain data if available, otherwise use mock
   const getUpdatedCrucibles = (): CrucibleData[] => {
-    // Use on-chain data if available, otherwise fall back to mock
-    const crucibleToUse = onChainCrucibleData || initialCrucibles[0]
-    
-    return [crucibleToUse].map(crucible => {
+    const baseCrucible = onChainCrucibleData || initialCrucibles[0]
+    const infernoCrucible = initialCrucibles.find(c => c.id === 'inferno-lp-crucible')!
+    const infernoTVL = (() => {
+      if (typeof window === 'undefined') return 0
+      try {
+        const positions = getInfernoLPPositions()
+        return positions
+          .filter(p => p.isOpen)
+          .reduce((sum, p) => sum + (p.baseAmount * solPrice + p.usdcAmount), 0)
+      } catch {
+        return 0
+      }
+    })()
+    const infernoWithTVL = { ...infernoCrucible, tvl: infernoTVL }
+
+    return [baseCrucible, infernoWithTVL].map(crucible => {
       const userBalance = userBalances[crucible.id] || {
         ptokenBalance: BigInt(0),
         baseDeposited: 0,

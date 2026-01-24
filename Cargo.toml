@@ -2,6 +2,7 @@
 members = [
     "programs/forge-core",
     "programs/forge-crucibles",
+    "programs/forge-crucibles-inferno",
     "programs/lending",
     "programs/lending-pool",
     "programs/lvf",
