@@ -400,7 +400,9 @@ export default function CTokenPortfolio() {
                   // collateralUSDC already includes both if it was calculated correctly above
                   const totalCollateralValue = position.collateralUSDC || (position.baseAmount * basePrice)
                   const tokenCollateralValue = position.baseAmount * basePrice // Just the token value
-                  const depositUSDC = 'depositUSDC' in position ? (position.depositUSDC || 0) : 0
+                  const depositUSDC = 'depositUSDC' in position && typeof position.depositUSDC === 'number'
+                    ? position.depositUSDC
+                    : 0
                   
                   // For display: show total collateral (token + deposited USDC)
                   const collateralValueUSD = totalCollateralValue
@@ -408,9 +410,9 @@ export default function CTokenPortfolio() {
                   const borrowedUSDC = position.borrowedUSDC || 0
                   const leverage = position.leverage || ('leverageFactor' in position ? position.leverageFactor : 1.0)
                   const isInferno = (position as any).isInferno === true
-                  const healthFactor = 'health' in position && position.health 
-                    ? position.health 
-                    : borrowedUSDC > 0 
+                  const healthFactor = 'health' in position && typeof position.health === 'number'
+                    ? position.health
+                    : borrowedUSDC > 0
                       ? totalCollateralValue / (borrowedUSDC * 1.3) // Use total collateral for health factor
                       : 999
                   // Matches contract: leveraged_apy = base_apy * leverage - borrow_cost

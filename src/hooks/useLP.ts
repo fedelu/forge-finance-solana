@@ -107,6 +107,8 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             return
           }
           
+          const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
+
           // Derive position PDA using base_mint (matches program seeds)
           const [positionPDA] = deriveLPPositionPDA(publicKey, baseMint)
           

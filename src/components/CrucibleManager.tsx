@@ -2,7 +2,8 @@ import React, { useState } from 'react'
 import { 
   ArrowUpIcon, 
   ArrowDownIcon,
-  FireIcon
+  FireIcon,
+  BoltIcon
 } from '@heroicons/react/24/outline'
 import { useWallet } from '../contexts/WalletContext'
 import { usePrice } from '../contexts/PriceContext'

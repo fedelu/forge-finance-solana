@@ -74,12 +74,16 @@ function validateLPPosition(position: any): position is StoredLPPosition {
 }
 
 function validateInfernoLPPosition(position: any): position is StoredInfernoLPPosition {
+  if (!validateLPPosition(position)) {
+    return false;
+  }
+
+  const infernoPosition = position as StoredInfernoLPPosition;
   return (
-    validateLPPosition(position) &&
-    typeof position.borrowedUSDC === 'number' &&
-    typeof position.leverageFactor === 'number' &&
-    position.borrowedUSDC >= 0 &&
-    position.leverageFactor >= 1
+    typeof infernoPosition.borrowedUSDC === 'number' &&
+    typeof infernoPosition.leverageFactor === 'number' &&
+    infernoPosition.borrowedUSDC >= 0 &&
+    infernoPosition.leverageFactor >= 1
   );
 }
 
