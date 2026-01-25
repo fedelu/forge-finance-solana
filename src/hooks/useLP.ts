@@ -1082,12 +1082,30 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           throw new Error('Position not found or already closed')
         }
 
+        if (!walletContext?.connection || !crucibleAddress) {
+          throw new Error('Wallet or crucible information missing')
+        }
+
+        const connection = walletContext.connection
+        
+        // Derive PDAs
+        const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
+        if (!crucibleAddress || typeof crucibleAddress !== 'string') {
+          throw new Error('Invalid crucible address provided')
+        }
+        let cruciblePDA: PublicKey
+        try {
+          cruciblePDA = new PublicKey(crucibleAddress)
+        } catch (e) {
+          throw new Error(`Invalid crucible address format: ${crucibleAddress}. Error: ${e}`)
+        }
+
         // Calculate REAL APY earnings from exchange rate growth
         // Fetch current crucible exchange rate for real yield calculation
         let currentExchangeRate = 1.0
         let apyEarnedTokens = 0
         try {
-          const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+          const { getAccurateExchangeRate, fetchCrucibleDirect } = await import('../utils/crucibleFetcher')
           const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
           if (crucibleAccount) {
             currentExchangeRate = getAccurateExchangeRate(crucibleAccount)
@@ -1106,12 +1124,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         
         const baseAmountAtCurrentRate = position.baseAmount * currentExchangeRate
         
-        if (!walletContext?.connection || !crucibleAddress) {
-          throw new Error('Wallet or crucible information missing')
-        }
-
-        const connection = walletContext.connection
-        
         // Get Anchor program instance
         const anchorWallet: AnchorWallet = {
           publicKey: currentPublicKey,
@@ -1119,18 +1131,6 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           signAllTransactions: walletContext?.signAllTransactions || (async (txs: any[]) => txs),
         }
         const program = getCruciblesProgram(connection, anchorWallet)
-        
-        // Derive PDAs
-        const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL) // WSOL
-        if (!crucibleAddress || typeof crucibleAddress !== 'string') {
-          throw new Error('Invalid crucible address provided')
-        }
-        let cruciblePDA: PublicKey
-        try {
-          cruciblePDA = new PublicKey(crucibleAddress)
-        } catch (e) {
-          throw new Error(`Invalid crucible address format: ${crucibleAddress}. Error: ${e}`)
-        }
         
         // Fetch crucible account to get treasury and LP token mint (using direct fetcher)
         let treasuryBase: PublicKey
