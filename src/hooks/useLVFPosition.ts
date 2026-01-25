@@ -714,48 +714,9 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Entry exchange rate is stored in position when opened
         const entryExchangeRate = position.entryExchangeRate || 1.0
         
-        // Fetch actual current exchange rate from on-chain
-        let currentExchangeRate = entryExchangeRate
-        try {
-          const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
-          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
-          if (crucibleAccount) {
-            currentExchangeRate = getAccurateExchangeRate(crucibleAccount)
-          }
-        } catch (e) {
-          console.warn('Failed to fetch current exchange rate:', e)
-        }
-        
-        // Calculate REAL APY percentage from exchange rate growth
-        // APY = ((current_rate - entry_rate) / entry_rate) * 100
-        const apyPercentage = entryExchangeRate > 0 
-          ? ((currentExchangeRate - entryExchangeRate) / entryExchangeRate) * 100 
-          : 0
-        
-        // Calculate exchange rate growth (based on actual on-chain fees accrued)
-        const exchangeRateGrowth = currentExchangeRate - entryExchangeRate
-        
-        // Calculate proportional amounts for partial close
+        // Calculate proportional amounts for partial close (will update exchange rate later)
         const collateralToClose = amountToClose
-        const collateralValueAtCurrentRate = collateralToClose * currentExchangeRate
-        // Real yield = collateral × leverage × rate_growth / entry_rate
-        const apyEarnedTokens = entryExchangeRate > 0 
-          ? collateralToClose * position.leverageFactor * (exchangeRateGrowth / entryExchangeRate)
-          : 0
         
-        // Total collateral value including APY earnings (for the portion being closed)
-        const totalCollateralValueUSD = collateralValueAtCurrentRate * baseTokenPriceForClose
-        
-        // Apply Forge close fees: 2% on principal, 10% on yield (matches contract)
-        const principalFeeTokens = collateralToClose * INFERNO_CLOSE_FEE_RATE
-        const yieldFeeTokens = apyEarnedTokens * INFERNO_YIELD_FEE_RATE
-        const netYieldTokens = Math.max(0, apyEarnedTokens - yieldFeeTokens)
-        const baseAmountAfterFee = (collateralToClose - principalFeeTokens) + netYieldTokens
-        const totalFeeTokens = principalFeeTokens + yieldFeeTokens
-        // Split fee: 80% to vault (stays in vault for yield), 20% to treasury (transferred)
-        const vaultFeeShare = totalFeeTokens * 0.8
-        const protocolFeeShare = totalFeeTokens * 0.2
-
         // Calculate borrowing interest (proportional for partial close)
         // Fetch real borrow rate from on-chain lending-pool
         let borrowingInterest = 0
@@ -864,6 +825,47 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         } catch (e) {
           throw new Error(`Invalid crucible address format: ${crucibleAddress}. Error: ${e}`)
         }
+        
+        // Fetch actual current exchange rate from on-chain (now that connection and cruciblePDA are available)
+        let currentExchangeRate = entryExchangeRate
+        try {
+          const { getAccurateExchangeRate, fetchCrucibleDirect } = await import('../utils/crucibleFetcher')
+          const crucibleAccountForRate = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (crucibleAccountForRate) {
+            currentExchangeRate = getAccurateExchangeRate(crucibleAccountForRate)
+          }
+        } catch (e) {
+          console.warn('Failed to fetch current exchange rate:', e)
+        }
+        
+        // Calculate REAL APY percentage from exchange rate growth
+        // APY = ((current_rate - entry_rate) / entry_rate) * 100
+        const apyPercentage = entryExchangeRate > 0 
+          ? ((currentExchangeRate - entryExchangeRate) / entryExchangeRate) * 100 
+          : 0
+        
+        // Calculate exchange rate growth (based on actual on-chain fees accrued)
+        const exchangeRateGrowth = currentExchangeRate - entryExchangeRate
+        
+        // Calculate values using current exchange rate
+        const collateralValueAtCurrentRate = collateralToClose * currentExchangeRate
+        // Real yield = collateral × leverage × rate_growth / entry_rate
+        const apyEarnedTokens = entryExchangeRate > 0 
+          ? collateralToClose * position.leverageFactor * (exchangeRateGrowth / entryExchangeRate)
+          : 0
+        
+        // Total collateral value including APY earnings (for the portion being closed)
+        const totalCollateralValueUSD = collateralValueAtCurrentRate * baseTokenPriceForClose
+        
+        // Apply Forge close fees: 2% on principal, 10% on yield (matches contract)
+        const principalFeeTokens = collateralToClose * INFERNO_CLOSE_FEE_RATE
+        const yieldFeeTokens = apyEarnedTokens * INFERNO_YIELD_FEE_RATE
+        const netYieldTokens = Math.max(0, apyEarnedTokens - yieldFeeTokens)
+        const baseAmountAfterFee = (collateralToClose - principalFeeTokens) + netYieldTokens
+        const totalFeeTokens = principalFeeTokens + yieldFeeTokens
+        // Split fee: 80% to vault (stays in vault for yield), 20% to treasury (transferred)
+        const vaultFeeShare = totalFeeTokens * 0.8
+        const protocolFeeShare = totalFeeTokens * 0.2
         
         // Fetch crucible account to get treasury, oracle, and LP token mint (using direct fetcher)
         let treasuryAccount: PublicKey
