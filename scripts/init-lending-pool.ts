@@ -27,8 +27,8 @@ const lendingPoolIdl = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../target/idl/lending_pool_usdc.json'), 'utf-8')
 )
 
-// Configuration
-const LENDING_POOL_PROGRAM_ID = new PublicKey('AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL') // Deployed to devnet
+// Configuration - Updated Jan 25, 2026
+const LENDING_POOL_PROGRAM_ID = new PublicKey('7hwTzKPSKdio6TZdi4SY7wEuGpFha15ebsaiTPp2y3G2') // Deployed to devnet
 const USDC_MINT = new PublicKey('Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr') // Devnet USDC (USDC dev)
 const NETWORK = 'devnet'
 const RPC_URL = 'https://api.devnet.solana.com'

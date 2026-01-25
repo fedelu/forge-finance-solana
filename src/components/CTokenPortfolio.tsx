@@ -109,10 +109,10 @@ export default function CTokenPortfolio() {
     // Initial fetch
     solInfernoLP.refetch()
     
-    // Set up interval to refetch every 5 seconds
+    // Set up interval to refetch every 60 seconds (increased to reduce rate limit issues)
     const interval = setInterval(() => {
       solInfernoLP.refetch()
-    }, 5000)
+    }, 60000)
     
     return () => clearInterval(interval)
   }, [solInfernoLP.refetch])
@@ -135,6 +135,7 @@ export default function CTokenPortfolio() {
         usdcAmount: inferno.usdcAmount,
         isInferno: true,
         lpAPY: inferno.crucible.baseAPY,
+        lpTokenAmount: inferno.lpTokenAmount || 0, // Include LP token amount
       }))
     
     const combined = [...infernoWithDetails]
@@ -349,7 +350,7 @@ export default function CTokenPortfolio() {
               <tr className="border-b border-forge-gray-700">
                 <th className="text-left py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">Pair</th>
                 <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">
-                  Collateral (cToken)
+                  {allCTokenUSDCPositions.some(p => (p as any).isInferno) ? 'LP Tokens' : 'Collateral (cToken)'}
                 </th>
                 <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">
                   Borrowed (USDC)
@@ -358,8 +359,8 @@ export default function CTokenPortfolio() {
                 <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">
                   Health Factor
                 </th>
-                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">APY</th>
                 <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">Total Value</th>
+                <th className="text-right py-2 px-2.5 text-forge-gray-400 text-[10px] font-heading uppercase tracking-[0.18em] whitespace-nowrap">APY</th>
               </tr>
             </thead>
             <tbody>
@@ -368,34 +369,58 @@ export default function CTokenPortfolio() {
                 return openPositions.length > 0 ? (
                   openPositions.map((position) => {
                   const crucible = positions.find(p => p.baseTokenSymbol === position.baseToken)
+                  const infernoCrucible = getCrucible('inferno-lp-crucible')
                   const basePrice = solPrice // Use real-time SOL price
+                  const isInferno = (position as any).isInferno === true
                   
-                  // Total collateral includes both token collateral value AND deposited USDC
-                  // collateralUSDC already includes both if it was calculated correctly above
-                  const totalCollateralValue = position.collateralUSDC || (position.baseAmount * basePrice)
-                  const tokenCollateralValue = position.baseAmount * basePrice // Just the token value
-                  const depositUSDC = 'depositUSDC' in position && typeof position.depositUSDC === 'number'
-                    ? position.depositUSDC
-                    : 0
+                  // For Inferno positions, use LP token data
+                  let displayValue = 0
+                  let displayLabel = ''
+                  let lpTokenAmount = 0
+                  let lpTokenPrice = 0
                   
-                  // For display: show total collateral (token + deposited USDC)
-                  const collateralValueUSD = totalCollateralValue
+                  if (isInferno) {
+                    // Get LP token amount and price for Inferno
+                    lpTokenAmount = (position as any).lpTokenAmount || 0
+                    lpTokenPrice = infernoCrucible?.lpTokenPrice || 0
+                    displayValue = lpTokenAmount * lpTokenPrice
+                    displayLabel = `${lpTokenAmount.toFixed(4)} LP Tokens`
+                  } else {
+                    // For regular LP/leveraged positions, use collateral
+                    const totalCollateralValue = position.collateralUSDC || (position.baseAmount * basePrice)
+                    displayValue = totalCollateralValue
+                    displayLabel = `${formatSOL(position.baseAmount)} ${position.baseToken}`
+                    const depositUSDC = 'depositUSDC' in position && typeof position.depositUSDC === 'number'
+                      ? position.depositUSDC
+                      : 0
+                    if (depositUSDC > 0) {
+                      displayLabel += ` + ${formatUSDC(depositUSDC)} USDC`
+                    }
+                  }
                   
                   const borrowedUSDC = position.borrowedUSDC || 0
                   const leverage = position.leverage || ('leverageFactor' in position ? position.leverageFactor : 1.0)
-                  const isInferno = (position as any).isInferno === true
                   const healthFactor = 'health' in position && typeof position.health === 'number'
                     ? position.health
                     : borrowedUSDC > 0
-                      ? totalCollateralValue / (borrowedUSDC * 1.3) // Use total collateral for health factor
+                      ? displayValue / (borrowedUSDC * 1.3)
                       : 999
-                  // Matches contract: leveraged_apy = base_apy * leverage - borrow_cost
-                  const lpAPY = 'lpAPY' in position && position.lpAPY 
-                    ? position.lpAPY 
-                    : leverage > 1 
-                      ? (crucible?.baseAPY || 0) * leverage - (10 * (leverage - 1))
-                      : (crucible?.baseAPY || 0)
-                  const totalValue = totalCollateralValue + borrowedUSDC // Total position value = collateral + borrowed
+                  
+                  // For Inferno, use crucible's baseAPY (same as cToken table)
+                  // For others, use leveraged APY calculation
+                  const lpAPY = isInferno
+                    ? (infernoCrucible?.apr || 0) * 100 // Use crucible's APR (same as cToken)
+                    : ('lpAPY' in position && position.lpAPY 
+                      ? position.lpAPY 
+                      : leverage > 1 
+                        ? (crucible?.baseAPY || 0) * leverage - (10 * (leverage - 1))
+                        : (crucible?.baseAPY || 0))
+                  
+                  // For Inferno, total value is LP token value (no borrowed USDC for 1x)
+                  // For others, total value = collateral + borrowed
+                  const totalValue = isInferno
+                    ? displayValue // LP token value
+                    : displayValue + borrowedUSDC
                   
                   return (
                     <tr key={position.id} className="border-b border-forge-gray-800 hover:bg-forge-gray-800/30 transition-colors">
@@ -418,15 +443,25 @@ export default function CTokenPortfolio() {
                         </div>
                       </td>
                       <td className="text-right py-2.5 px-3">
-                        <div className="text-white text-sm font-heading">
-                          ${formatUSD(collateralValueUSD)} USD
-                        </div>
-                        <div className="text-forge-gray-500 text-[11px] font-satoshi mt-1">
-                          {formatSOL(position.baseAmount)} {position.baseToken}
-                          {depositUSDC > 0 && (
-                            <span className="ml-2 text-green-400 font-heading">+ {formatUSDC(depositUSDC)} USDC</span>
-                          )}
-                        </div>
+                        {isInferno ? (
+                          <>
+                            <div className="text-white text-sm font-heading">
+                              ${formatUSD(displayValue)} USD
+                            </div>
+                            <div className="text-forge-gray-500 text-[11px] font-satoshi mt-1">
+                              {displayLabel}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-white text-sm font-heading">
+                              ${formatUSD(displayValue)} USD
+                            </div>
+                            <div className="text-forge-gray-500 text-[11px] font-satoshi mt-1">
+                              {displayLabel}
+                            </div>
+                          </>
+                        )}
                       </td>
                       <td className="text-right py-2.5 px-3">
                         <span className={`text-sm font-heading ${borrowedUSDC > 0 ? 'text-orange-400' : 'text-forge-gray-500'}`}>
@@ -454,10 +489,10 @@ export default function CTokenPortfolio() {
                         </span>
                       </td>
                       <td className="text-right py-2.5 px-3">
-                        <span className="text-green-400 text-sm font-heading">{lpAPY.toFixed(2)}%</span>
+                        <span className="text-white text-sm font-heading">${formatUSD(totalValue)}</span>
                       </td>
                       <td className="text-right py-2.5 px-3">
-                        <span className="text-white text-sm font-heading">${formatUSD(totalValue)}</span>
+                        <span className="text-green-400 text-sm font-heading">{lpAPY.toFixed(2)}%</span>
                       </td>
                     </tr>
                   )

@@ -4,7 +4,7 @@ import { useBalance } from '../contexts/BalanceContext';
 import { useWallet } from '../contexts/WalletContext';
 import { usePrice } from '../contexts/PriceContext';
 import { useCrucible } from '../hooks/useCrucible'
-import { getLeveragedPositions, getLPPositions } from '../utils/localStorage';
+import { getLeveragedPositions, getLPPositions, getInfernoLPPositions } from '../utils/localStorage';
 import { formatNumberWithCommas, getCTokenPrice, RATE_SCALE, formatUSD, formatUSDC, formatSOL } from '../utils/math';
 import CTokenPortfolio from './CTokenPortfolio';
 
@@ -17,6 +17,45 @@ export const AnalyticsDashboard: React.FC = () => {
   const { crucibles, userBalances } = useCrucible();
 
   const recentTransactions = getRecentTransactions(5);
+
+  // Count all opened positions (cToken wraps, LP, Leveraged, Inferno LP)
+  const getAllPositionsOpened = () => {
+    let count = 0
+    
+    // Count cToken positions (wraps) - positions with ptokenBalance > 0
+    crucibles.forEach(crucible => {
+      const userBalance = userBalances[crucible.id]
+      if (userBalance && userBalance.ptokenBalance > BigInt(0)) {
+        count++
+      }
+    })
+    
+    // Count LP positions
+    try {
+      const lpPositions = getLPPositions().filter(p => p.isOpen)
+      count += lpPositions.length
+    } catch (e) {
+      // Ignore errors
+    }
+    
+    // Count Leveraged positions
+    try {
+      const leveragedPositions = getLeveragedPositions().filter(p => p.isOpen)
+      count += leveragedPositions.length
+    } catch (e) {
+      // Ignore errors
+    }
+    
+    // Count Inferno LP positions
+    try {
+      const infernoPositions = getInfernoLPPositions().filter(p => p.isOpen)
+      count += infernoPositions.length
+    } catch (e) {
+      // Ignore errors
+    }
+    
+    return count
+  }
 
   // Calculate annual APY earnings based on cToken holdings and leveraged positions
   const getTotalAPYEarnings = () => {
@@ -149,12 +188,72 @@ export const AnalyticsDashboard: React.FC = () => {
 
   const getWeightedAPY = () => {
     const depositValue = getTotalDepositedValue();
-    const apyEarnings = getTotalAPYEarnings();
-    if (depositValue <= 0 || apyEarnings <= 0) {
+    if (depositValue <= 0) {
       return 0;
     }
-    // Weighted APY based on annual APY earnings relative to total portfolio value
-    return (apyEarnings / depositValue) * 100;
+    
+    const priceForToken = (token: string) => {
+      if (token.toUpperCase() === 'SOL') return solPrice;
+      if (token.toUpperCase() === 'USDC') return 1;
+      return 0;
+    };
+    
+    let totalWeightedAPY = 0;
+    
+    // Weighted APY from cToken positions (wraps)
+    crucibles.forEach(crucible => {
+      const userBalance = userBalances[crucible.id];
+      if (userBalance && userBalance.ptokenBalance > BigInt(0)) {
+        const ctokenBalance = Number(userBalance.ptokenBalance) / 1e9;
+        const exchangeRate = crucible.exchangeRate ? Number(crucible.exchangeRate) / 1e6 : 1.0;
+        const basePrice = priceForToken(crucible.baseToken);
+        const positionValue = ctokenBalance * exchangeRate * basePrice;
+        const positionAPY = crucible.apr || 0;
+        totalWeightedAPY += (positionValue * positionAPY);
+      }
+    });
+    
+    // Weighted APY from LP positions
+    try {
+      const lpPositions = getLPPositions().filter(p => p.isOpen);
+      lpPositions.forEach(pos => {
+        const basePrice = priceForToken(pos.baseToken);
+        const positionValue = pos.baseAmount * basePrice + (pos.usdcAmount || 0);
+        const positionAPY = pos.lpAPY || 0;
+        totalWeightedAPY += (positionValue * positionAPY);
+      });
+    } catch (e) {
+      // ignore localStorage issues
+    }
+    
+    // Weighted APY from Leveraged positions
+    try {
+      const leveragedPositions = getLeveragedPositions().filter(p => p.isOpen);
+      leveragedPositions.forEach(pos => {
+        const basePrice = priceForToken(pos.token);
+        const positionValue = pos.collateral * basePrice + (pos.depositUSDC || 0);
+        const positionAPY = pos.effectiveAPY || 0;
+        totalWeightedAPY += (positionValue * positionAPY);
+      });
+    } catch (e) {
+      // ignore localStorage issues
+    }
+    
+    // Weighted APY from Inferno LP positions
+    try {
+      const infernoPositions = getInfernoLPPositions().filter(p => p.isOpen);
+      infernoPositions.forEach(pos => {
+        const basePrice = priceForToken(pos.baseToken || 'SOL');
+        const positionValue = pos.baseAmount * basePrice + pos.usdcAmount;
+        const positionAPY = pos.lpAPY || 0;
+        totalWeightedAPY += (positionValue * positionAPY);
+      });
+    } catch (e) {
+      // ignore localStorage issues
+    }
+    
+    // Calculate weighted average: totalWeightedAPY / totalValue
+    return depositValue > 0 ? totalWeightedAPY / depositValue : 0;
   };
 
   const getTotalDepositedValue = () => {
@@ -207,7 +306,20 @@ export const AnalyticsDashboard: React.FC = () => {
       // ignore localStorage issues
     }
 
-    return wrapValue + lpValue + leveragedValue;
+    // Inferno LP positions value
+    let infernoLPValue = 0;
+    try {
+      const infernoPositions = getInfernoLPPositions().filter(p => p.isOpen);
+      infernoLPValue = infernoPositions.reduce((sum, pos) => {
+        const basePrice = priceForToken(pos.baseToken || 'SOL');
+        const baseValue = pos.baseAmount * basePrice;
+        return sum + baseValue + pos.usdcAmount;
+      }, 0);
+    } catch (e) {
+      // ignore localStorage issues
+    }
+
+    return wrapValue + lpValue + leveragedValue + infernoLPValue;
   };
 
   return (
@@ -215,7 +327,6 @@ export const AnalyticsDashboard: React.FC = () => {
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 justify-items-stretch">
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-forge-primary/20 transition-all duration-500 hover:border-forge-primary/50 hover:-translate-y-1 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative flex items-center justify-center text-center">
             <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">APY Earnings</p>
@@ -225,7 +336,6 @@ export const AnalyticsDashboard: React.FC = () => {
         </div>
 
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-forge-success/20 transition-all duration-500 hover:border-forge-success/50 hover:-translate-y-1 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-forge-success/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative flex items-center justify-center text-center">
             <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">Total Deposited</p>
@@ -235,7 +345,6 @@ export const AnalyticsDashboard: React.FC = () => {
         </div>
 
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-forge-primary/20 transition-all duration-500 hover:border-forge-primary/50 hover:-translate-y-1 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-forge-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative flex items-center justify-center text-center">
             <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">Weighted APY</p>
@@ -245,7 +354,6 @@ export const AnalyticsDashboard: React.FC = () => {
         </div>
 
         <div className="group relative panel rounded-2xl p-3 hover:shadow-2xl hover:shadow-orange-500/20 transition-all duration-500 hover:border-orange-500/50 hover:-translate-y-1 overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="relative flex items-center justify-center text-center">
             <div className="flex-1 min-w-0 text-center">
               <p className="text-forge-gray-400 text-[10px] font-medium uppercase tracking-wide mb-0.5">Borrowed</p>

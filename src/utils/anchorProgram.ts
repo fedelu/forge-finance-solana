@@ -17,8 +17,15 @@ export interface AnchorWallet {
 // From IDL: [122, 91, 163, 86, 17, 255, 5, 147]
 const MINT_CTOKEN_DISCRIMINATOR = Buffer.from([122, 91, 163, 86, 17, 255, 5, 147])
 
+// mint_ctoken_legacy discriminator - for old format crucible accounts
+// From IDL: [205, 5, 44, 34, 106, 17, 54, 75]
+const MINT_CTOKEN_LEGACY_DISCRIMINATOR = Buffer.from([205, 5, 44, 34, 106, 17, 54, 75])
+
 // From IDL burn_ctoken discriminator: [39, 133, 56, 80, 220, 86, 252, 148]
 const BURN_CTOKEN_DISCRIMINATOR = Buffer.from([39, 133, 56, 80, 220, 86, 252, 148])
+
+// burn_ctoken_legacy discriminator: sha256("global:burn_ctoken_legacy")[0:8]
+const BURN_CTOKEN_LEGACY_DISCRIMINATOR = Buffer.from([192, 180, 120, 215, 169, 92, 179, 158])
 
 /**
  * Build mint_ctoken instruction manually (bypasses Anchor IDL parsing)
@@ -74,6 +81,60 @@ export function buildMintCtokenInstruction(
 }
 
 /**
+ * Build mint_ctoken_legacy instruction manually
+ * This supports old crucible accounts that don't have lp_token_mint field
+ */
+export function buildMintCtokenLegacyInstruction(
+  programId: PublicKey,
+  accounts: {
+    user: PublicKey
+    crucible: PublicKey
+    baseMint: PublicKey
+    ctokenMint: PublicKey
+    userTokenAccount: PublicKey
+    userCtokenAccount: PublicKey
+    vault: PublicKey
+    crucibleAuthority: PublicKey
+    treasury: PublicKey
+    tokenProgram: PublicKey
+    associatedTokenProgram: PublicKey
+    systemProgram: PublicKey
+    rent: PublicKey
+  },
+  amount: BN
+): TransactionInstruction {
+  // Serialize amount as u64 (8 bytes, little-endian)
+  const amountBuffer = Buffer.alloc(8)
+  amount.toArrayLike(Buffer, 'le', 8).copy(amountBuffer)
+  
+  // Instruction data = discriminator + amount
+  const data = Buffer.concat([MINT_CTOKEN_LEGACY_DISCRIMINATOR, amountBuffer])
+  
+  // Account metas in order (matching IDL - same as MintCToken but with UncheckedAccount for crucible)
+  const keys = [
+    { pubkey: accounts.user, isSigner: true, isWritable: true },
+    { pubkey: accounts.crucible, isSigner: false, isWritable: true },
+    { pubkey: accounts.baseMint, isSigner: false, isWritable: false },
+    { pubkey: accounts.ctokenMint, isSigner: false, isWritable: true },
+    { pubkey: accounts.userTokenAccount, isSigner: false, isWritable: true },
+    { pubkey: accounts.userCtokenAccount, isSigner: false, isWritable: true },
+    { pubkey: accounts.vault, isSigner: false, isWritable: true },
+    { pubkey: accounts.crucibleAuthority, isSigner: false, isWritable: false },
+    { pubkey: accounts.treasury, isSigner: false, isWritable: true },
+    { pubkey: accounts.tokenProgram, isSigner: false, isWritable: false },
+    { pubkey: accounts.associatedTokenProgram, isSigner: false, isWritable: false },
+    { pubkey: accounts.systemProgram, isSigner: false, isWritable: false },
+    { pubkey: accounts.rent, isSigner: false, isWritable: false },
+  ]
+  
+  return new TransactionInstruction({
+    keys,
+    programId,
+    data,
+  })
+}
+
+/**
  * Build burn_ctoken instruction manually (bypasses Anchor IDL parsing)
  */
 export function buildBurnCtokenInstruction(
@@ -101,6 +162,56 @@ export function buildBurnCtokenInstruction(
   const data = Buffer.concat([BURN_CTOKEN_DISCRIMINATOR, amountBuffer])
   
   // Account metas in order (matching IDL)
+  const keys = [
+    { pubkey: accounts.user, isSigner: true, isWritable: true },
+    { pubkey: accounts.crucible, isSigner: false, isWritable: true },
+    { pubkey: accounts.baseMint, isSigner: false, isWritable: false },
+    { pubkey: accounts.ctokenMint, isSigner: false, isWritable: true },
+    { pubkey: accounts.userCtokenAccount, isSigner: false, isWritable: true },
+    { pubkey: accounts.vault, isSigner: false, isWritable: true },
+    { pubkey: accounts.userTokenAccount, isSigner: false, isWritable: true },
+    { pubkey: accounts.crucibleAuthority, isSigner: false, isWritable: false },
+    { pubkey: accounts.treasury, isSigner: false, isWritable: true },
+    { pubkey: accounts.tokenProgram, isSigner: false, isWritable: false },
+    { pubkey: accounts.systemProgram, isSigner: false, isWritable: false },
+  ]
+  
+  return new TransactionInstruction({
+    keys,
+    programId,
+    data,
+  })
+}
+
+/**
+ * Build burn_ctoken_legacy instruction manually
+ * This supports old crucible accounts that don't have lp_token_mint field
+ */
+export function buildBurnCtokenLegacyInstruction(
+  programId: PublicKey,
+  accounts: {
+    user: PublicKey
+    crucible: PublicKey
+    baseMint: PublicKey
+    ctokenMint: PublicKey
+    userCtokenAccount: PublicKey
+    vault: PublicKey
+    userTokenAccount: PublicKey
+    crucibleAuthority: PublicKey
+    treasury: PublicKey
+    tokenProgram: PublicKey
+    systemProgram: PublicKey
+  },
+  ctokenAmount: BN
+): TransactionInstruction {
+  // Serialize amount as u64 (8 bytes, little-endian)
+  const amountBuffer = Buffer.alloc(8)
+  ctokenAmount.toArrayLike(Buffer, 'le', 8).copy(amountBuffer)
+  
+  // Instruction data = discriminator + amount
+  const data = Buffer.concat([BURN_CTOKEN_LEGACY_DISCRIMINATOR, amountBuffer])
+  
+  // Account metas in order (same as BurnCTokenLegacy struct)
   const keys = [
     { pubkey: accounts.user, isSigner: true, isWritable: true },
     { pubkey: accounts.crucible, isSigner: false, isWritable: true },

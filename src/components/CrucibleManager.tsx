@@ -3,6 +3,7 @@ import { useWallet } from '../contexts/WalletContext'
 import { usePrice } from '../contexts/PriceContext'
 import { useCrucible, CrucibleData } from '../hooks/useCrucible'
 import { useBalance } from '../contexts/BalanceContext'
+import { useLending } from '../hooks/useLending'
 import CTokenDepositModal from './CTokenDepositModal'
 import CTokenWithdrawModal from './CTokenWithdrawModal'
 import ClosePositionModal from './ClosePositionModal'
@@ -32,6 +33,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
   const { solPrice, infernoLpPrice } = usePrice()
   const { connected } = useWallet()
   const { crucibles, loading, error } = useCrucible()
+  const { markets } = useLending()
   const [activeMode, setActiveMode] = useState<'wrap' | 'lp' | 'leveraged'>('wrap')
   const [selectedCrucible, setSelectedCrucible] = useState<string | null>(null)
   const [showCTokenDepositModal, setShowCTokenDepositModal] = useState(false)
@@ -75,7 +77,12 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
             <div className="text-center">
               <p className="text-forge-gray-300 text-[11px] font-satoshi font-medium mb-1">Total TVL</p>
               <p className="text-lg font-heading font-semibold text-white group-hover:text-forge-primary transition-colors duration-300">
-                ${formatUSD(crucibles.reduce((sum, c) => sum + c.tvl, 0))}
+                ${formatUSD(
+                  crucibles.reduce((sum, c) => sum + c.tvl, 0) +
+                  (markets.length > 0 && markets[0].tvl 
+                    ? parseFloat(markets[0].tvl.replace(/,/g, '')) || 0 
+                    : 0)
+                )}
               </p>
             </div>
           </div>
@@ -164,7 +171,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     </div>
                     <div>
                       <h3 className="text-xl font-heading text-white group-hover:text-forge-primary transition-colors duration-300 mb-1">
-                        {isSolCrucible ? 'Mint cTOKEN' : crucible.name}
+                        {isSolCrucible ? 'Mint cTOKEN' : isInferno ? 'Mint LP token' : crucible.name}
                       </h3>
                       <p className="text-forge-gray-300 text-xs font-medium">
                         {isInferno ? `${crucible.ptokenSymbol}/USDC` : `${crucible.baseToken} → ${crucible.ptokenSymbol}`}
@@ -256,21 +263,23 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                       {(() => {
                         const isInferno = crucible.id === 'inferno-lp-crucible'
 
+                        if (isInferno) {
+                          // Use calculated LP token price from vault balances
+                          const lpPrice = crucible.lpTokenPrice || 0
+                          if (lpPrice > 0) {
+                            return `$${formatUSD(lpPrice)}`
+                          }
+                          // Fallback if no price calculated yet
+                          return '$0.00'
+                        }
+
+                        // Check for deposits for cToken crucible
                         const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                         const initialExchangeRate = RATE_SCALE
                         const exchangeRate = hasDeposits 
                           ? (crucible.exchangeRate || initialExchangeRate)
                           : initialExchangeRate
                         const exchangeRateDecimal = Number(exchangeRate) / Number(RATE_SCALE)
-
-                        if (isInferno) {
-                          const fallbackLpPrice = solPrice * (1 + exchangeRateDecimal)
-                          const oracleLpPrice = infernoLpPrice && infernoLpPrice > 0
-                            ? infernoLpPrice * exchangeRateDecimal
-                            : null
-                          const cruciblePrice = oracleLpPrice ?? fallbackLpPrice
-                          return `$${formatUSD(cruciblePrice)}`
-                        }
 
                         // Default: SOL price * exchange rate
                         const cruciblePrice = solPrice * exchangeRateDecimal
@@ -300,11 +309,7 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                         setShowCTokenDepositModal(true)
                       }
                     }}
-                    className={`w-full font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-forge-lg group relative overflow-hidden border ${
-                      isInferno
-                        ? 'bg-gradient-to-r from-red-500/20 to-orange-500/20 hover:from-red-500/30 hover:to-orange-500/30 text-red-400 border-red-500/30 hover:border-red-500/50'
-                        : 'bg-gradient-to-r from-forge-primary via-forge-primary-light to-forge-primary hover:from-forge-primary-dark hover:via-forge-primary hover:to-forge-primary-light text-white border-forge-primary/20'
-                    }`}
+                    className="w-full font-heading py-3 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-forge-lg group relative overflow-hidden border bg-gradient-to-r from-forge-primary via-forge-primary-light to-forge-primary hover:from-forge-primary-dark hover:via-forge-primary hover:to-forge-primary-light text-white border-forge-primary/20"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-pulse-glow"></div>
                     <div className="relative flex items-center justify-center">
@@ -333,7 +338,10 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
                     currentExchangeRate={(() => {
                       // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
                       const initialExchangeRate = 1.0
-                      const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
+                      const isInfernoLocal = crucible.id === 'inferno-lp-crucible'
+                      const hasDeposits = isInfernoLocal 
+                        ? (crucible.tvl || 0) > 0
+                        : (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                       const exchangeRate = hasDeposits 
                         ? Number(crucible.exchangeRate || RATE_SCALE) / Number(RATE_SCALE)
                         : initialExchangeRate
@@ -347,12 +355,6 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
 
                 {!isSolCrucible && (
                   <CrucibleLeveragedPositions
-                    crucible={crucible}
-                  />
-                )}
-
-                {isInferno && (
-                  <CrucibleInfernoPositions
                     crucible={crucible}
                   />
                 )}
@@ -398,7 +400,10 @@ export default function CrucibleManager({ className = '', onDeposit, onWithdraw,
               exchangeRate={(() => {
                 // Initial exchange rate is 1.0 (grows as fees accumulate in vault)
                 const initialExchangeRate = 1.0
-                const hasDeposits = (crucible.totalWrapped || BigInt(0)) > BigInt(0)
+                const isInfernoLocal = crucible.id === 'inferno-lp-crucible'
+                const hasDeposits = isInfernoLocal 
+                  ? (crucible.tvl || 0) > 0
+                  : (crucible.totalWrapped || BigInt(0)) > BigInt(0)
                 const exchangeRate = hasDeposits 
                   ? Number(crucible.exchangeRate || RATE_SCALE) / Number(RATE_SCALE)
                   : initialExchangeRate
@@ -660,45 +665,6 @@ function CrucibleLeveragedPositions({
               // Position will be removed from list after close
             }}
           />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CrucibleInfernoPositions({
-  crucible,
-}: {
-  crucible: Crucible
-}) {
-  const { positions } = useInfernoLP({
-    crucibleAddress: crucible.id,
-    baseTokenSymbol: crucible.baseToken,
-    baseAPY: crucible.apr,
-  })
-
-  if (positions.length === 0) return null
-
-  return (
-    <div className="mt-4 pt-4 border-t border-red-500/20">
-      <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-base font-heading text-white">My Inferno LP Positions</h3>
-        <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[11px] font-bold rounded-full">
-          {positions.length}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {positions.map((position) => (
-          <div key={position.id} className="panel-muted rounded-xl p-3 border border-red-500/20">
-            <div className="flex justify-between text-sm text-forge-gray-300">
-              <span>{position.baseAmount.toFixed(3)} {crucible.baseToken}</span>
-              <span>{position.usdcAmount.toFixed(2)} USDC</span>
-            </div>
-            <div className="flex justify-between text-xs text-forge-gray-400 mt-1">
-              <span>Leverage: {position.leverageFactor}x</span>
-              <span>Borrowed: {position.borrowedUSDC.toFixed(2)} USDC</span>
-            </div>
-          </div>
         ))}
       </div>
     </div>

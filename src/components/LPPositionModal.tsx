@@ -187,7 +187,7 @@ export default function LPPositionModal({
             </div>
           </div>
           <p className="text-forge-gray-400 text-sm leading-relaxed">
-            Deposit equal value of {baseTokenSymbol} and USDC to create an LP position. Earn 3x the base APY from trading & volatility yield.
+            Deposit equal value of {baseTokenSymbol} and USDC to create an LP position. Earn yield from trading fees that accumulate in the vault.
           </p>
         </div>
 
@@ -289,7 +289,10 @@ export default function LPPositionModal({
                   <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <span>LP positions earn <strong>3x the base APY</strong> from trading fees that accumulate in the vault and grow the exchange rate</span>
+                  <div className="space-y-1">
+                    <span className="block">LP positions earn <strong>real yield</strong> from trading fees that accumulate in the vault.</span>
+                    <span className="block text-green-300/70">Yield is tracked via the crucible exchange rate, which grows as fees are collected. Your yield = position value × exchange rate growth.</span>
+                  </div>
                 </div>
               </div>
             </div>

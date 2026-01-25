@@ -14,13 +14,14 @@ use lp::*;
 use metadata::*;
 use state::*;
 
-declare_id!("5b3uiJPBasMfRGZwMdHdZroY2UKzVrVHVbDj1b6KMDXy");
+// Using legacy program ID to enable upgrading old deployment
+declare_id!("B9qek9NaR3xmBro8pdxixaA2SHzDUExB5KaBt9Kb4fry");
 
-// Lending pool program ID - deployed to devnet
-// Program ID: 3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx
+// Lending pool program ID - deployed to devnet (Jan 25, 2026)
+// Program ID: 7hwTzKPSKdio6TZdi4SY7wEuGpFha15ebsaiTPp2y3G2
 pub const LENDING_POOL_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
-    137, 222, 203, 196, 146, 24, 161, 22, 41, 201, 75, 126, 144, 122, 64, 116,
-    179, 147, 109, 91, 72, 21, 38, 67, 41, 67, 7, 116, 219, 160, 219, 45
+    99, 162, 240, 35, 237, 200, 110, 145, 33, 117, 136, 121, 38, 152, 12, 130,
+    188, 246, 212, 123, 9, 79, 26, 42, 207, 80, 248, 200, 166, 46, 33, 95
 ]);
 
 #[program]
@@ -265,6 +266,18 @@ pub mod forge_crucibles {
         ctoken::burn_ctoken(ctx, ctokens_amount)
     }
 
+    /// Burn cToken (legacy) - supports old crucible account format
+    /// Use this to close cToken positions created before LP token feature
+    pub fn burn_ctoken_legacy(ctx: Context<BurnCTokenLegacy>, ctokens_amount: u64) -> Result<()> {
+        ctoken::burn_ctoken_legacy(ctx, ctokens_amount)
+    }
+
+    /// Mint cToken (legacy) - supports old crucible account format
+    /// Use this for crucibles created before LP token feature
+    pub fn mint_ctoken_legacy(ctx: Context<MintCTokenLegacy>, amount: u64) -> Result<()> {
+        ctoken::mint_ctoken_legacy(ctx, amount)
+    }
+
     /// Deposit arbitrage profits directly to crucible vault
     /// 80% goes to vault (increases yield), 20% goes to treasury (protocol revenue)
     pub fn deposit_arbitrage_profit(
@@ -307,21 +320,25 @@ pub mod forge_crucibles {
     }
 
     /// Open a standard LP position (base token + USDC, equal value)
+    /// position_nonce allows multiple positions per user per base_mint
     pub fn open_lp_position(
         ctx: Context<OpenLPPosition>,
         base_amount: u64,
         usdc_amount: u64,
         max_slippage_bps: u64,
+        position_nonce: u64,
     ) -> Result<u64> {
-        lp::open_lp_position(ctx, base_amount, usdc_amount, max_slippage_bps)
+        lp::open_lp_position(ctx, base_amount, usdc_amount, max_slippage_bps, position_nonce)
     }
 
     /// Close a standard LP position
+    /// position_nonce must match the nonce used when opening the position
     pub fn close_lp_position(
         ctx: Context<CloseLPPosition>,
         max_slippage_bps: u64,
+        position_nonce: u64,
     ) -> Result<()> {
-        lp::close_lp_position(ctx, max_slippage_bps)
+        lp::close_lp_position(ctx, max_slippage_bps, position_nonce)
     }
 
     /// Create Metaplex Token Metadata for a cToken mint

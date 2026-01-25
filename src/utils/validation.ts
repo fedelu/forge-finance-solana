@@ -260,6 +260,18 @@ export function validateLPPosition(
     return positionSizeValidation
   }
 
+  // Validate equal value (1% tolerance) - LP positions require equal value of base token and USDC
+  // This matches the on-chain slippage validation in lp.rs
+  if (!(allowZeroUsdc && usdcAmount === 0)) {
+    const tolerance = Math.max(baseValueUSD, usdcAmount) * 0.01 // 1% tolerance
+    if (Math.abs(baseValueUSD - usdcAmount) > tolerance) {
+      return {
+        valid: false,
+        error: `Amounts must be equal value (within 1% tolerance). Base value: $${baseValueUSD.toFixed(2)}, USDC: $${usdcAmount.toFixed(2)}`,
+      }
+    }
+  }
+
   // Validate slippage if provided
   if (maxSlippageBps !== undefined) {
     const slippageValidation = validateSlippage(maxSlippageBps)

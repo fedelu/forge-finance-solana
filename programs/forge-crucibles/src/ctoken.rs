@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo, Burn};
 use anchor_spl::associated_token::AssociatedToken;
-use crate::state::{Crucible, CrucibleError};
+use crate::state::{Crucible, LegacyCrucible, CrucibleError};
 
 // Fee and scaling constants
 const PRICE_SCALE_FACTOR: u64 = 1_000_000; // Scale for price/exchange rate precision (1.0 = 1_000_000)
@@ -158,6 +158,23 @@ pub fn mint_ctoken(ctx: Context<MintCToken>, amount: u64) -> Result<()> {
         .checked_add(vault_fee_share)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     crucible.last_update_slot = clock.slot;
+    
+    // Update stored exchange rate for frontend yield tracking
+    // New supply = current supply + minted amount
+    let new_ctoken_supply = ctx.accounts.ctoken_mint.supply
+        .checked_add(ctokens_to_mint)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    if new_ctoken_supply > 0 {
+        let new_tracked_balance = (crucible.total_base_deposited as u128)
+            .checked_add(crucible.total_fees_accrued as u128)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        let new_exchange_rate = new_tracked_balance
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(new_ctoken_supply as u128))
+            .and_then(|rate| if rate > u64::MAX as u128 { None } else { Some(rate as u64) })
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        crucible.exchange_rate = new_exchange_rate;
+    }
     
     emit!(CTokenMinted {
         crucible: crucible.key(),
@@ -333,6 +350,26 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
         .ok_or(ProgramError::ArithmeticOverflow)?;
     crucible.last_update_slot = clock.slot;
     
+    // Update stored exchange rate for frontend yield tracking
+    // New supply = current supply - burned amount
+    let new_ctoken_supply = ctx.accounts.ctoken_mint.supply
+        .checked_sub(ctokens_amount)
+        .ok_or(CrucibleError::InvalidAmount)?;
+    if new_ctoken_supply > 0 {
+        let new_tracked_balance = (crucible.total_base_deposited as u128)
+            .checked_add(crucible.total_fees_accrued as u128)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        let new_exchange_rate = new_tracked_balance
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(new_ctoken_supply as u128))
+            .and_then(|rate| if rate > u64::MAX as u128 { None } else { Some(rate as u64) })
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        crucible.exchange_rate = new_exchange_rate;
+    } else {
+        // Reset to initial rate when supply is zero
+        crucible.exchange_rate = PRICE_SCALE_FACTOR;
+    }
+    
     emit!(CTokenBurned {
         crucible: crucible.key(),
         user: ctx.accounts.user.key(),
@@ -340,6 +377,395 @@ pub fn burn_ctoken(ctx: Context<BurnCToken>, ctokens_amount: u64) -> Result<()> 
         base_returned: base_to_return,
         exchange_rate,
         unwrap_fee,
+        vault_fee_share,
+        protocol_fee_share,
+    });
+    
+    Ok(())
+}
+
+/// Burn cToken (legacy) - supports old crucible account format without lp_token_mint field
+/// Use this instruction to close cToken positions created before the LP token feature was added
+pub fn burn_ctoken_legacy(ctx: Context<BurnCTokenLegacy>, ctokens_amount: u64) -> Result<()> {
+    // Manually deserialize the legacy crucible account
+    let crucible_info = &ctx.accounts.crucible;
+    let data = crucible_info.try_borrow_data()?;
+    
+    // Skip 8-byte discriminator
+    let legacy_crucible: LegacyCrucible = LegacyCrucible::try_from_slice(&data[8..])?;
+    
+    // Check if crucible is paused
+    require!(!legacy_crucible.paused, CrucibleError::ProtocolPaused);
+    
+    // Validate base_mint matches
+    require!(
+        legacy_crucible.base_mint == ctx.accounts.base_mint.key(),
+        CrucibleError::InvalidBaseMint
+    );
+    
+    let clock = Clock::get()?;
+    
+    // Calculate current exchange rate using legacy crucible data
+    let ctoken_supply = ctx.accounts.ctoken_mint.supply;
+    let vault_amount = ctx.accounts.vault.amount;
+    
+    // Allow vault_amount >= expected_vault_balance (fees accrue and increase yield)
+    require!(
+        vault_amount >= legacy_crucible.expected_vault_balance,
+        CrucibleError::VaultBalanceMismatch
+    );
+    
+    let exchange_rate = if ctoken_supply == 0 {
+        PRICE_SCALE_FACTOR
+    } else {
+        let tracked_balance = (legacy_crucible.total_base_deposited as u128)
+            .checked_add(legacy_crucible.total_fees_accrued as u128)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        
+        (tracked_balance)
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(ctoken_supply as u128))
+            .and_then(|rate| {
+                if rate > u64::MAX as u128 {
+                    None
+                } else {
+                    Some(rate as u64)
+                }
+            })
+            .ok_or(ProgramError::ArithmeticOverflow)?
+    };
+    
+    // Calculate base tokens to return (includes accrued yield)
+    let base_to_return_before_fee = ctokens_amount
+        .checked_mul(exchange_rate)
+        .and_then(|scaled| scaled.checked_div(PRICE_SCALE_FACTOR))
+        .ok_or(ProgramError::InvalidArgument)?;
+    
+    require!(
+        base_to_return_before_fee <= ctx.accounts.vault.amount,
+        CrucibleError::InsufficientLiquidity
+    );
+    
+    const UNWRAP_FEE_BPS_SPECIAL: u64 = 75; // 0.75% unwrap fee
+    let unwrap_fee = base_to_return_before_fee
+        .checked_mul(UNWRAP_FEE_BPS_SPECIAL)
+        .and_then(|v| v.checked_div(10_000u64))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let vault_fee_share = unwrap_fee
+        .checked_mul(VAULT_FEE_SHARE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let protocol_fee_share = unwrap_fee
+        .checked_sub(vault_fee_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Net amount to return to user (after fee)
+    let base_to_return = base_to_return_before_fee
+        .checked_sub(unwrap_fee)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    require!(
+        ctx.accounts.token_program.key() == anchor_spl::token::ID,
+        CrucibleError::InvalidProgram
+    );
+    
+    // Burn user's cTokens (user signs, no PDA needed)
+    let cpi_accounts = Burn {
+        mint: ctx.accounts.ctoken_mint.to_account_info(),
+        from: ctx.accounts.user_ctoken_account.to_account_info(),
+        authority: ctx.accounts.user.to_account_info(),
+    };
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+    token::burn(cpi_ctx, ctokens_amount)?;
+    
+    // Transfer net base tokens from vault to user using crucible PDA as signer
+    let seeds = &[
+        b"crucible",
+        legacy_crucible.base_mint.as_ref(),
+        &[legacy_crucible.bump],
+    ];
+    let signer = &[&seeds[..]];
+    
+    let cpi_accounts = token::Transfer {
+        from: ctx.accounts.vault.to_account_info(),
+        to: ctx.accounts.user_token_account.to_account_info(),
+        authority: ctx.accounts.crucible_authority.to_account_info(),
+    };
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+    token::transfer(cpi_ctx, base_to_return)?;
+    
+    // Transfer protocol fee share to treasury (vault fee share stays in vault)
+    if protocol_fee_share > 0 {
+        // Validate treasury account matches crucible.treasury
+        require!(
+            ctx.accounts.treasury.key() == legacy_crucible.treasury,
+            CrucibleError::InvalidTreasury
+        );
+        
+        let cpi_accounts = token::Transfer {
+            from: ctx.accounts.vault.to_account_info(),
+            to: ctx.accounts.treasury.to_account_info(),
+            authority: ctx.accounts.crucible_authority.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::transfer(cpi_ctx, protocol_fee_share)?;
+    }
+    
+    // Update crucible state - we need to write back to the account
+    // Since we're using UncheckedAccount, we need to manually serialize
+    drop(data); // Release borrow before mutating
+    let mut data = crucible_info.try_borrow_mut_data()?;
+    
+    // Calculate new values
+    let tracked_balance = (legacy_crucible.total_base_deposited as u128)
+        .checked_add(legacy_crucible.total_fees_accrued as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    require!(tracked_balance > 0, CrucibleError::InvalidAmount);
+    
+    let principal_portion = (base_to_return_before_fee as u128)
+        .checked_mul(legacy_crucible.total_base_deposited as u128)
+        .and_then(|v| v.checked_div(tracked_balance))
+        .ok_or(CrucibleError::InvalidAmount)?;
+    
+    let principal_portion_u64 = if principal_portion > u64::MAX as u128 {
+        legacy_crucible.total_base_deposited
+    } else {
+        principal_portion as u64
+    };
+    
+    let total_deducted = base_to_return
+        .checked_add(protocol_fee_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Create updated legacy crucible
+    let updated_crucible = LegacyCrucible {
+        base_mint: legacy_crucible.base_mint,
+        ctoken_mint: legacy_crucible.ctoken_mint,
+        vault: legacy_crucible.vault,
+        vault_bump: legacy_crucible.vault_bump,
+        bump: legacy_crucible.bump,
+        total_base_deposited: legacy_crucible.total_base_deposited
+            .checked_sub(principal_portion_u64)
+            .ok_or(CrucibleError::InvalidAmount)?,
+        total_ctoken_supply: legacy_crucible.total_ctoken_supply,
+        exchange_rate: legacy_crucible.exchange_rate,
+        last_update_slot: clock.slot,
+        fee_rate: legacy_crucible.fee_rate,
+        paused: legacy_crucible.paused,
+        total_leveraged_positions: legacy_crucible.total_leveraged_positions,
+        total_lp_positions: legacy_crucible.total_lp_positions,
+        expected_vault_balance: legacy_crucible.expected_vault_balance
+            .checked_sub(total_deducted)
+            .ok_or(CrucibleError::InvalidAmount)?,
+        oracle: legacy_crucible.oracle,
+        treasury: legacy_crucible.treasury,
+        total_fees_accrued: legacy_crucible.total_fees_accrued
+            .checked_add(vault_fee_share)
+            .ok_or(ProgramError::ArithmeticOverflow)?,
+    };
+    
+    // Serialize back (skip discriminator - first 8 bytes)
+    let serialized = updated_crucible.try_to_vec()?;
+    data[8..8 + serialized.len()].copy_from_slice(&serialized);
+    
+    emit!(CTokenBurned {
+        crucible: crucible_info.key(),
+        user: ctx.accounts.user.key(),
+        ctokens_burned: ctokens_amount,
+        base_returned: base_to_return,
+        exchange_rate,
+        unwrap_fee,
+        vault_fee_share,
+        protocol_fee_share,
+    });
+    
+    Ok(())
+}
+
+/// Mint cToken (legacy) - supports old crucible account format without lp_token_mint field
+/// Use this instruction for crucibles created before the LP token feature was added
+pub fn mint_ctoken_legacy(ctx: Context<MintCTokenLegacy>, amount: u64) -> Result<()> {
+    // Manually deserialize the legacy crucible account
+    let crucible_info = &ctx.accounts.crucible;
+    let data = crucible_info.try_borrow_data()?;
+    
+    // Skip 8-byte discriminator
+    let legacy_crucible: LegacyCrucible = LegacyCrucible::try_from_slice(&data[8..])?;
+    
+    // Check if crucible is paused
+    require!(!legacy_crucible.paused, CrucibleError::ProtocolPaused);
+    
+    // Validate base_mint matches
+    require!(
+        legacy_crucible.base_mint == ctx.accounts.base_mint.key(),
+        CrucibleError::InvalidBaseMint
+    );
+    
+    require!(
+        amount >= MIN_DEPOSIT_AMOUNT && amount <= MAX_DEPOSIT_AMOUNT,
+        CrucibleError::InvalidAmount
+    );
+    
+    let clock = Clock::get()?;
+    
+    // Calculate exchange rate using legacy crucible data
+    let ctoken_supply = ctx.accounts.ctoken_mint.supply;
+    
+    let exchange_rate = if ctoken_supply == 0 {
+        PRICE_SCALE_FACTOR
+    } else {
+        let tracked_balance = (legacy_crucible.total_base_deposited as u128)
+            .checked_add(legacy_crucible.total_fees_accrued as u128)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        
+        (tracked_balance)
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(ctoken_supply as u128))
+            .and_then(|rate| {
+                if rate > u64::MAX as u128 {
+                    None
+                } else {
+                    Some(rate as u64)
+                }
+            })
+            .ok_or(ProgramError::ArithmeticOverflow)?
+    };
+    
+    // Calculate fees
+    let wrap_fee = amount
+        .checked_mul(WRAP_FEE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    let vault_fee_share = wrap_fee
+        .checked_mul(VAULT_FEE_SHARE_BPS)
+        .and_then(|v| v.checked_div(10_000u64))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    let protocol_fee_share = wrap_fee
+        .checked_sub(vault_fee_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Net deposit after fee
+    let net_deposit = amount
+        .checked_sub(wrap_fee)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    // Validate exchange_rate
+    require!(
+        exchange_rate > 0 && exchange_rate >= PRICE_SCALE_FACTOR / 1_000_000,
+        CrucibleError::InvalidAmount
+    );
+    
+    // Calculate cTokens to mint
+    let ctokens_to_mint = net_deposit
+        .checked_mul(1_000_000u64)
+        .and_then(|scaled| scaled.checked_div(exchange_rate))
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    require!(ctokens_to_mint > 0, CrucibleError::InvalidAmount);
+    
+    drop(data); // Release borrow before mutable operations
+    
+    // Transfer tokens from user to vault
+    let deposit_to_vault = net_deposit
+        .checked_add(vault_fee_share)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    token::transfer(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            token::Transfer {
+                from: ctx.accounts.user_token_account.to_account_info(),
+                to: ctx.accounts.vault.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        ),
+        deposit_to_vault,
+    )?;
+    
+    // Transfer protocol fee to treasury
+    if protocol_fee_share > 0 {
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.user_token_account.to_account_info(),
+                    to: ctx.accounts.treasury.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            protocol_fee_share,
+        )?;
+    }
+    
+    // Mint cTokens to user
+    let base_mint_key = ctx.accounts.base_mint.key();
+    let seeds: &[&[u8]] = &[
+        b"crucible",
+        base_mint_key.as_ref(),
+        &[legacy_crucible.bump],
+    ];
+    let signer = &[&seeds[..]];
+    
+    token::mint_to(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            MintTo {
+                mint: ctx.accounts.ctoken_mint.to_account_info(),
+                to: ctx.accounts.user_ctoken_account.to_account_info(),
+                authority: ctx.accounts.crucible_authority.to_account_info(),
+            },
+            signer,
+        ),
+        ctokens_to_mint,
+    )?;
+    
+    // Update crucible state
+    let mut data = crucible_info.try_borrow_mut_data()?;
+    let updated_crucible = LegacyCrucible {
+        base_mint: legacy_crucible.base_mint,
+        ctoken_mint: legacy_crucible.ctoken_mint,
+        vault: legacy_crucible.vault,
+        vault_bump: legacy_crucible.vault_bump,
+        bump: legacy_crucible.bump,
+        total_base_deposited: legacy_crucible.total_base_deposited
+            .checked_add(net_deposit)
+            .ok_or(ProgramError::ArithmeticOverflow)?,
+        total_ctoken_supply: legacy_crucible.total_ctoken_supply
+            .checked_add(ctokens_to_mint)
+            .ok_or(ProgramError::ArithmeticOverflow)?,
+        exchange_rate: exchange_rate,
+        last_update_slot: clock.slot,
+        fee_rate: legacy_crucible.fee_rate,
+        paused: legacy_crucible.paused,
+        total_leveraged_positions: legacy_crucible.total_leveraged_positions,
+        total_lp_positions: legacy_crucible.total_lp_positions,
+        expected_vault_balance: legacy_crucible.expected_vault_balance
+            .checked_add(deposit_to_vault)
+            .ok_or(ProgramError::ArithmeticOverflow)?,
+        oracle: legacy_crucible.oracle,
+        treasury: legacy_crucible.treasury,
+        total_fees_accrued: legacy_crucible.total_fees_accrued
+            .checked_add(vault_fee_share)
+            .ok_or(ProgramError::ArithmeticOverflow)?,
+    };
+    
+    // Serialize back (skip discriminator - first 8 bytes)
+    let serialized = updated_crucible.try_to_vec()?;
+    data[8..8 + serialized.len()].copy_from_slice(&serialized);
+    
+    emit!(CTokenMinted {
+        crucible: crucible_info.key(),
+        user: ctx.accounts.user.key(),
+        amount: net_deposit,
+        ctokens_minted: ctokens_to_mint,
+        exchange_rate,
+        wrap_fee,
         vault_fee_share,
         protocol_fee_share,
     });
@@ -476,6 +902,23 @@ pub fn deposit_arbitrage_profit(
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
     crucible.last_update_slot = clock.slot;
+    
+    // Update stored exchange rate for frontend yield tracking
+    // Account for any reward cTokens minted
+    let new_ctoken_supply = ctx.accounts.ctoken_mint.supply
+        .checked_add(reward_ctokens)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    if new_ctoken_supply > 0 {
+        let new_tracked_balance = (crucible.total_base_deposited as u128)
+            .checked_add(crucible.total_fees_accrued as u128)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        let new_exchange_rate = new_tracked_balance
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(new_ctoken_supply as u128))
+            .and_then(|rate| if rate > u64::MAX as u128 { None } else { Some(rate as u64) })
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        crucible.exchange_rate = new_exchange_rate;
+    }
     
     emit!(ArbitrageProfitDeposited {
         crucible: crucible.key(),
@@ -650,6 +1093,83 @@ pub struct BurnCToken<'info> {
     
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+}
+
+/// Legacy burn accounts - uses UncheckedAccount for crucible to support old format
+#[derive(Accounts)]
+pub struct BurnCTokenLegacy<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// CHECK: Crucible account - manually deserialized to support legacy format
+    #[account(mut)]
+    pub crucible: UncheckedAccount<'info>,
+    
+    pub base_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub ctoken_mint: Account<'info, Mint>,
+    
+    #[account(mut)]
+    pub user_ctoken_account: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: Vault PDA - validated via seeds
+    #[account(mut)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    
+    #[account(mut)]
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: PDA authority for the crucible
+    pub crucible_authority: UncheckedAccount<'info>,
+    
+    /// Treasury account for the base mint
+    #[account(mut)]
+    pub treasury: Account<'info, TokenAccount>,
+    
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Legacy mint accounts - uses UncheckedAccount for crucible to support old format
+#[derive(Accounts)]
+pub struct MintCTokenLegacy<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// CHECK: Crucible account - manually deserialized to support legacy format
+    #[account(mut)]
+    pub crucible: UncheckedAccount<'info>,
+    
+    pub base_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub ctoken_mint: Account<'info, Mint>,
+    
+    #[account(mut)]
+    pub user_token_account: Box<Account<'info, TokenAccount>>,
+    
+    #[account(
+        init_if_needed,
+        payer = user,
+        associated_token::mint = ctoken_mint,
+        associated_token::authority = user,
+    )]
+    pub user_ctoken_account: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: Vault PDA - validated via seeds in instruction
+    #[account(mut)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    
+    /// CHECK: PDA authority for the crucible
+    pub crucible_authority: UncheckedAccount<'info>,
+    
+    /// Treasury account for the base mint
+    #[account(mut)]
+    pub treasury: Account<'info, TokenAccount>,
+    
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]

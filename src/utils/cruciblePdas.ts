@@ -38,10 +38,27 @@ export function deriveCrucibleAuthorityPDA(baseMint: PublicKey): [PublicKey, num
 
 /**
  * Derive LP position PDA address
- * Seeds: ["lp_position", user, base_mint]
+ * Seeds: ["lp_position", user, base_mint, nonce]
  * NOTE: The program uses base_mint in the seeds, not crucible
+ * nonce allows multiple positions per user per base_mint (like cToken minting)
  */
-export function deriveLPPositionPDA(user: PublicKey, baseMint: PublicKey): [PublicKey, number] {
+export function deriveLPPositionPDA(user: PublicKey, baseMint: PublicKey, nonce: number = 0): [PublicKey, number] {
+  // Convert nonce to 8-byte little-endian buffer (u64)
+  const nonceBuffer = Buffer.alloc(8)
+  nonceBuffer.writeBigUInt64LE(BigInt(nonce))
+  
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('lp_position'), user.toBuffer(), baseMint.toBuffer(), nonceBuffer],
+    FORGE_CRUCIBLES_PROGRAM_ID
+  )
+}
+
+/**
+ * Derive LP position PDA address (legacy - for backward compatibility)
+ * Seeds: ["lp_position", user, base_mint]
+ * @deprecated Use deriveLPPositionPDA with nonce parameter instead
+ */
+export function deriveLPPositionPDALegacy(user: PublicKey, baseMint: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [Buffer.from('lp_position'), user.toBuffer(), baseMint.toBuffer()],
     FORGE_CRUCIBLES_PROGRAM_ID

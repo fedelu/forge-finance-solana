@@ -1,5 +1,5 @@
 {
-  "address": "Ep2FZ1WZGbeajKoRs768cZ7fjP963xqvga6kHWJ5K9kv",
+  "address": "HbhXC9vgDfrgq3gAj22TwXPtEkxmBrKp9MidEY4Y3vMk",
   "metadata": {
     "name": "forge_crucibles_inferno",
     "version": "0.1.0",
@@ -9,6 +9,9 @@
   "instructions": [
     {
       "name": "close_inferno_lp_position",
+      "docs": [
+        "Close Inferno LP position - position_nonce must match the one used when opening"
+      ],
       "discriminator": [
         242,
         56,
@@ -55,6 +58,187 @@
         },
         {
           "name": "position",
+          "docs": [
+            "Inferno LP Position - uses nonce for PDA derivation"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  112,
+                  95,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "position_nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_base_token_account",
+          "writable": true
+        },
+        {
+          "name": "user_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "user_lp_token_account",
+          "writable": true
+        },
+        {
+          "name": "lp_token_mint"
+        },
+        {
+          "name": "crucible_base_vault",
+          "writable": true
+        },
+        {
+          "name": "crucible_usdc_vault",
+          "writable": true
+        },
+        {
+          "name": "crucible_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle",
+          "optional": true
+        },
+        {
+          "name": "treasury_base",
+          "writable": true
+        },
+        {
+          "name": "treasury_usdc",
+          "writable": true
+        },
+        {
+          "name": "lending_market",
+          "writable": true
+        },
+        {
+          "name": "borrower_account",
+          "writable": true
+        },
+        {
+          "name": "lending_vault",
+          "writable": true
+        },
+        {
+          "name": "lending_program"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_slippage_bps",
+          "type": "u64"
+        },
+        {
+          "name": "position_nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_inferno_lp_position_legacy",
+      "docs": [
+        "Close a legacy Inferno LP position (positions created before nonce was added)"
+      ],
+      "discriminator": [
+        201,
+        50,
+        171,
+        205,
+        130,
+        164,
+        6,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "crucible",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "We use UncheckedAccount because the discriminator is from the original InfernoLPPositionAccount"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -157,8 +341,7 @@
           "writable": true
         },
         {
-          "name": "lending_program",
-          "address": "AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL"
+          "name": "lending_program"
         },
         {
           "name": "token_program",
@@ -523,6 +706,9 @@
         },
         {
           "name": "position",
+          "docs": [
+            "Inferno LP Position - uses nonce for PDA derivation"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -549,6 +735,10 @@
               {
                 "kind": "account",
                 "path": "base_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "position_nonce"
               }
             ]
           }
@@ -625,8 +815,7 @@
           "writable": true
         },
         {
-          "name": "lending_program",
-          "address": "AHBtzkRF2gis8YF13Mdcq3MjHm4gUGniXE9UYZPUZXEL"
+          "name": "lending_program"
         },
         {
           "name": "token_program",
@@ -637,11 +826,18 @@
         {
           "name": "max_slippage_bps",
           "type": "u64"
+        },
+        {
+          "name": "position_nonce",
+          "type": "u64"
         }
       ]
     },
     {
       "name": "open_inferno_lp_position",
+      "docs": [
+        "Open Inferno LP position - position_nonce allows multiple positions per user"
+      ],
       "discriminator": [
         70,
         112,
@@ -712,6 +908,9 @@
         },
         {
           "name": "position",
+          "docs": [
+            "Inferno LP Position - uses nonce to allow multiple positions per user"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -738,6 +937,10 @@
               {
                 "kind": "account",
                 "path": "base_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "position_nonce"
               }
             ]
           }
@@ -807,25 +1010,143 @@
         {
           "name": "max_slippage_bps",
           "type": "u64"
+        },
+        {
+          "name": "position_nonce",
+          "type": "u64"
         }
       ],
       "returns": "u64"
+    },
+    {
+      "name": "update_oracle",
+      "docs": [
+        "Update oracle - only authority can call",
+        "Pass None to disable oracle and use fallback prices"
+      ],
+      "discriminator": [
+        112,
+        41,
+        209,
+        18,
+        248,
+        226,
+        252,
+        188
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Only the original authority can update treasury"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "InfernoCrucible"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_oracle",
+          "type": {
+            "option": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_treasury",
+      "docs": [
+        "Update treasury accounts - only authority can call"
+      ],
+      "discriminator": [
+        60,
+        16,
+        243,
+        66,
+        96,
+        59,
+        254,
+        131
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Only the original authority can update treasury"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  117,
+                  99,
+                  105,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "crucible.base_mint",
+                "account": "InfernoCrucible"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_treasury_base",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "new_treasury_usdc",
+          "type": {
+            "option": "pubkey"
+          }
+        }
+      ]
     }
   ],
   "accounts": [
-    {
-      "name": "BorrowerAccount",
-      "discriminator": [
-        36,
-        64,
-        147,
-        86,
-        52,
-        110,
-        151,
-        126
-      ]
-    },
     {
       "name": "InfernoCrucible",
       "discriminator": [
@@ -850,19 +1171,6 @@
         34,
         202,
         16
-      ]
-    },
-    {
-      "name": "LendingPool",
-      "discriminator": [
-        208,
-        40,
-        242,
-        82,
-        186,
-        18,
-        75,
-        36
       ]
     }
   ],
@@ -1020,26 +1328,6 @@
     }
   ],
   "types": [
-    {
-      "name": "BorrowerAccount",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "borrower",
-            "type": "pubkey"
-          },
-          {
-            "name": "amount_borrowed",
-            "type": "u64"
-          },
-          {
-            "name": "borrow_timestamp",
-            "type": "u64"
-          }
-        ]
-      }
-    },
     {
       "name": "InfernoCrucible",
       "type": {
@@ -1220,6 +1508,10 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
           }
         ]
       }
@@ -1296,46 +1588,6 @@
           {
             "name": "entry_price",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "LendingPool",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "usdc_mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "total_liquidity",
-            "type": "u64"
-          },
-          {
-            "name": "total_borrowed",
-            "type": "u64"
-          },
-          {
-            "name": "borrow_rate",
-            "type": "u64"
-          },
-          {
-            "name": "lender_rate",
-            "type": "u64"
-          },
-          {
-            "name": "paused",
-            "type": "bool"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }

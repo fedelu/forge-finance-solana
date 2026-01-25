@@ -1,5 +1,51 @@
 use anchor_lang::prelude::*;
 
+/// Legacy Crucible struct (pre-LP token support)
+/// Used for backward compatibility with old on-chain accounts
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct LegacyCrucible {
+    pub base_mint: Pubkey,
+    pub ctoken_mint: Pubkey,
+    pub vault: Pubkey,
+    pub vault_bump: u8,
+    pub bump: u8,
+    pub total_base_deposited: u64,
+    pub total_ctoken_supply: u64,
+    pub exchange_rate: u64,
+    pub last_update_slot: u64,
+    pub fee_rate: u64,
+    pub paused: bool,
+    pub total_leveraged_positions: u64,
+    pub total_lp_positions: u64,
+    pub expected_vault_balance: u64,
+    pub oracle: Option<Pubkey>,
+    pub treasury: Pubkey,
+    pub total_fees_accrued: u64,
+}
+
+impl LegacyCrucible {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // base_mint
+        32 + // ctoken_mint
+        32 + // vault
+        1 +  // vault_bump
+        1 +  // bump
+        8 +  // total_base_deposited
+        8 +  // total_ctoken_supply
+        8 +  // exchange_rate
+        8 +  // last_update_slot
+        8 +  // fee_rate
+        1 +  // paused
+        8 +  // total_leveraged_positions
+        8 +  // total_lp_positions
+        8 +  // expected_vault_balance
+        1 +  // oracle Option discriminator
+        32 + // oracle Pubkey (if Some)
+        32 + // treasury
+        8;   // total_fees_accrued
+        // Total: 8 + 236 = 244 bytes
+}
+
 #[account]
 pub struct Crucible {
     pub base_mint: Pubkey,
@@ -46,9 +92,11 @@ pub struct LPPositionAccount {
     pub base_amount: u64,
     pub usdc_amount: u64,
     pub entry_price: u64, // Entry price in USDC (scaled by 1M)
+    pub entry_exchange_rate: u64, // Crucible exchange rate at position open (scaled by 1M)
     pub created_at: u64, // Slot when created
     pub is_open: bool,
     pub bump: u8,
+    pub nonce: u64, // Nonce to allow multiple positions per user per base_mint
 }
 
 impl LPPositionAccount {
@@ -60,9 +108,11 @@ impl LPPositionAccount {
         8 +  // base_amount
         8 +  // usdc_amount
         8 +  // entry_price
+        8 +  // entry_exchange_rate
         8 +  // created_at
         1 +  // is_open
-        1;   // bump
+        1 +  // bump
+        8;   // nonce
 }
 
 impl Crucible {

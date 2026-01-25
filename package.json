@@ -36,13 +36,18 @@
     "tailwindcss": "^3.3.0"
   },
   "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.10.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "chai": "^6.2.2",
     "css-loader": "^7.1.2",
     "eslint": "^8.54.0",
     "eslint-config-next": "^14.2.33",
+    "mocha": "^11.7.5",
     "style-loader": "^4.0.0",
+    "ts-mocha": "^11.1.0",
     "typescript": "^5.3.3"
   }
 }

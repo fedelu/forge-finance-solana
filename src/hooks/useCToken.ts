@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { PublicKey, Transaction, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
-import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, NATIVE_MINT, getAccount } from '@solana/spl-token'
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, NATIVE_MINT, getAccount, createAssociatedTokenAccountInstruction } from '@solana/spl-token'
 import { BN } from '@coral-xyz/anchor'
 import { useWallet } from '../contexts/WalletContext'
-import { getCruciblesProgram, AnchorWallet, buildBurnCtokenInstruction } from '../utils/anchorProgram'
+import { getCruciblesProgram, AnchorWallet, buildBurnCtokenInstruction, buildBurnCtokenLegacyInstruction } from '../utils/anchorProgram'
 import { fetchCrucibleDirect, fetchVaultBalance, fetchCTokenSupply, calculateRealExchangeRate } from '../utils/crucibleFetcher'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, SOLANA_TESTNET_PROGRAM_IDS, DEPLOYED_ACCOUNTS } from '../config/solana-testnet'
@@ -404,11 +404,26 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
         publicKey
       )
       
+      // Check if user's WSOL token account exists, create if not
+      let createAtaInstruction = null
+      try {
+        await getAccount(connection, userTokenAccount)
+      } catch (e: any) {
+        // Account doesn't exist, need to create it
+        console.log('Creating WSOL ATA for user:', userTokenAccount.toBase58())
+        createAtaInstruction = createAssociatedTokenAccountInstruction(
+          publicKey, // payer
+          userTokenAccount, // ata
+          publicKey, // owner
+          baseMint // mint
+        )
+      }
+      
       // Derive crucible authority PDA
       const [crucibleAuthorityPDA] = deriveCrucibleAuthorityPDA(baseMint)
       
-      // Build burn_ctoken instruction manually (bypasses Anchor IDL parsing)
-      const burnInstruction = buildBurnCtokenInstruction(
+      // Build burn_ctoken_legacy instruction (supports old crucible format without lp_token_mint)
+      const burnInstruction = buildBurnCtokenLegacyInstruction(
         programId,
         {
           user: publicKey,
@@ -427,7 +442,14 @@ export function useCToken(crucibleAddress?: string, ctokenMint?: string, provide
       )
       
       // Build transaction
-      const transaction = new Transaction().add(burnInstruction)
+      const transaction = new Transaction()
+      
+      // Add ATA creation instruction if needed
+      if (createAtaInstruction) {
+        transaction.add(createAtaInstruction)
+      }
+      
+      transaction.add(burnInstruction)
       const { blockhash } = await connection.getLatestBlockhash('confirmed')
       transaction.recentBlockhash = blockhash
       transaction.feePayer = publicKey

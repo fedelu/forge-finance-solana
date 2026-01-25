@@ -35,7 +35,7 @@ export const WalletButton: React.FC = () => {
     fetchBalance();
     
     // Refresh balance every 5 seconds
-    const interval = setInterval(fetchBalance, 5000);
+    const interval = setInterval(fetchBalance, 30000); // Reduced from 5s to 30s to avoid rate limits
     
     // Listen for deposit/transaction events to refresh balance immediately
     const handleTransaction = () => {

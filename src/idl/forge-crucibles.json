@@ -121,6 +121,77 @@
       ]
     },
     {
+      "name": "burn_ctoken_legacy",
+      "docs": [
+        "Burn cToken (legacy) - supports old crucible account format",
+        "Use this to close cToken positions created before LP token feature"
+      ],
+      "discriminator": [
+        192,
+        180,
+        120,
+        215,
+        169,
+        92,
+        179,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "ctoken_mint",
+          "writable": true
+        },
+        {
+          "name": "user_ctoken_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "crucible_authority"
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury account for the base mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "ctokens_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "close_leveraged_position",
       "docs": [
         "Close a leveraged LP position"
@@ -288,7 +359,8 @@
     {
       "name": "close_lp_position",
       "docs": [
-        "Close a standard LP position"
+        "Close a standard LP position",
+        "position_nonce must match the nonce used when opening the position"
       ],
       "discriminator": [
         33,
@@ -336,6 +408,9 @@
         },
         {
           "name": "position",
+          "docs": [
+            "LP Position account - uses nonce for PDA to allow multiple positions"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -362,6 +437,10 @@
               {
                 "kind": "account",
                 "path": "base_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "position_nonce"
               }
             ]
           }
@@ -445,6 +524,10 @@
       "args": [
         {
           "name": "max_slippage_bps",
+          "type": "u64"
+        },
+        {
+          "name": "position_nonce",
           "type": "u64"
         }
       ]
@@ -1411,6 +1494,171 @@
       ]
     },
     {
+      "name": "mint_ctoken_legacy",
+      "docs": [
+        "Mint cToken (legacy) - supports old crucible account format",
+        "Use this for crucibles created before LP token feature"
+      ],
+      "discriminator": [
+        205,
+        5,
+        44,
+        34,
+        106,
+        17,
+        54,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "crucible",
+          "writable": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "ctoken_mint",
+          "writable": true
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "user_ctoken_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ctoken_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "crucible_authority"
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury account for the base mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "open_leveraged_position",
       "docs": [
         "Open a leveraged LP position (TOKEN/USDC)"
@@ -1614,7 +1862,8 @@
     {
       "name": "open_lp_position",
       "docs": [
-        "Open a standard LP position (base token + USDC, equal value)"
+        "Open a standard LP position (base token + USDC, equal value)",
+        "position_nonce allows multiple positions per user per base_mint"
       ],
       "discriminator": [
         162,
@@ -1689,6 +1938,9 @@
         },
         {
           "name": "position",
+          "docs": [
+            "LP Position account - now includes nonce to allow multiple positions per user"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1715,6 +1967,10 @@
               {
                 "kind": "account",
                 "path": "base_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "position_nonce"
               }
             ]
           }
@@ -1787,6 +2043,10 @@
         },
         {
           "name": "max_slippage_bps",
+          "type": "u64"
+        },
+        {
+          "name": "position_nonce",
           "type": "u64"
         }
       ],
@@ -2357,6 +2617,10 @@
             "type": "u64"
           },
           {
+            "name": "entry_exchange_rate",
+            "type": "u64"
+          },
+          {
             "name": "created_at",
             "type": "u64"
           },
@@ -2367,6 +2631,10 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
           }
         ]
       }
@@ -2398,6 +2666,18 @@
           },
           {
             "name": "total_fee",
+            "type": "u64"
+          },
+          {
+            "name": "yield_earned",
+            "type": "u64"
+          },
+          {
+            "name": "entry_exchange_rate",
+            "type": "u64"
+          },
+          {
+            "name": "exit_exchange_rate",
             "type": "u64"
           }
         ]
@@ -2434,6 +2714,10 @@
           },
           {
             "name": "entry_price",
+            "type": "u64"
+          },
+          {
+            "name": "entry_exchange_rate",
             "type": "u64"
           },
           {
@@ -2481,6 +2765,10 @@
             "type": "u64"
           },
           {
+            "name": "entry_exchange_rate",
+            "type": "u64"
+          },
+          {
             "name": "current_value",
             "type": "u64"
           },
@@ -2522,6 +2810,14 @@
           },
           {
             "name": "yield_earned",
+            "type": "u64"
+          },
+          {
+            "name": "entry_exchange_rate",
+            "type": "u64"
+          },
+          {
+            "name": "exit_exchange_rate",
             "type": "u64"
           }
         ]
@@ -2586,6 +2882,10 @@
           },
           {
             "name": "leverage_factor",
+            "type": "u64"
+          },
+          {
+            "name": "entry_exchange_rate",
             "type": "u64"
           }
         ]

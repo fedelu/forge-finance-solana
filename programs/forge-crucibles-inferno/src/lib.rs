@@ -180,6 +180,7 @@ pub mod forge_crucibles_inferno {
         Ok(())
     }
 
+    /// Open Inferno LP position - position_nonce allows multiple positions per user
     pub fn open_inferno_lp_position(
         ctx: Context<OpenInfernoLPPosition>,
         base_amount: u64,
@@ -187,6 +188,7 @@ pub mod forge_crucibles_inferno {
         borrowed_usdc: u64,
         leverage_factor: u64,
         max_slippage_bps: u64,
+        position_nonce: u64,
     ) -> Result<u64> {
         lp::open_inferno_lp_position(
             ctx,
@@ -195,14 +197,17 @@ pub mod forge_crucibles_inferno {
             borrowed_usdc,
             leverage_factor,
             max_slippage_bps,
+            position_nonce,
         )
     }
 
+    /// Close Inferno LP position - position_nonce must match the one used when opening
     pub fn close_inferno_lp_position(
         ctx: Context<CloseInfernoLPPosition>,
         max_slippage_bps: u64,
+        position_nonce: u64,
     ) -> Result<()> {
-        lp::close_inferno_lp_position(ctx, max_slippage_bps)
+        lp::close_inferno_lp_position(ctx, max_slippage_bps, position_nonce)
     }
 
     pub fn health_check_inferno(
@@ -214,8 +219,17 @@ pub mod forge_crucibles_inferno {
     pub fn liquidate_inferno_lp_position(
         ctx: Context<CloseInfernoLPPosition>,
         max_slippage_bps: u64,
+        position_nonce: u64,
     ) -> Result<()> {
-        lp::liquidate_inferno_lp_position(ctx, max_slippage_bps)
+        lp::liquidate_inferno_lp_position(ctx, max_slippage_bps, position_nonce)
+    }
+
+    /// Close a legacy Inferno LP position (positions created before nonce was added)
+    pub fn close_inferno_lp_position_legacy(
+        ctx: Context<CloseInfernoLPPositionLegacy>,
+        max_slippage_bps: u64,
+    ) -> Result<()> {
+        lp::close_inferno_lp_position_legacy(ctx, max_slippage_bps)
     }
 
     pub fn create_lp_metadata(
@@ -227,6 +241,39 @@ pub mod forge_crucibles_inferno {
         is_mutable: bool,
     ) -> Result<()> {
         metadata::create_lp_metadata(ctx, name, symbol, uri, seller_fee_basis_points, is_mutable)
+    }
+
+    /// Update treasury accounts - only authority can call
+    pub fn update_treasury(
+        ctx: Context<UpdateTreasury>,
+        new_treasury_base: Option<Pubkey>,
+        new_treasury_usdc: Option<Pubkey>,
+    ) -> Result<()> {
+        let crucible = &mut ctx.accounts.crucible;
+        
+        if let Some(treasury_base) = new_treasury_base {
+            crucible.treasury_base = treasury_base;
+            msg!("Updated treasury_base to: {}", treasury_base);
+        }
+        
+        if let Some(treasury_usdc) = new_treasury_usdc {
+            crucible.treasury_usdc = treasury_usdc;
+            msg!("Updated treasury_usdc to: {}", treasury_usdc);
+        }
+        
+        Ok(())
+    }
+
+    /// Update oracle - only authority can call
+    /// Pass None to disable oracle and use fallback prices
+    pub fn update_oracle(
+        ctx: Context<UpdateTreasury>,
+        new_oracle: Option<Pubkey>,
+    ) -> Result<()> {
+        let crucible = &mut ctx.accounts.crucible;
+        crucible.oracle = new_oracle;
+        msg!("Updated oracle to: {:?}", new_oracle);
+        Ok(())
     }
 }
 
@@ -285,6 +332,20 @@ pub struct InitializeInfernoCrucible<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateTreasury<'info> {
+    /// Only the original authority can update treasury
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"crucible", crucible.base_mint.as_ref()],
+        bump = crucible.bump
+    )]
+    pub crucible: Account<'info, InfernoCrucible>,
 }
 
 #[event]

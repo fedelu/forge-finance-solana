@@ -11,16 +11,20 @@ export interface StoredLPPosition {
   baseAmount: number;
   usdcAmount: number;
   entryPrice: number;
+  entryExchangeRate?: number; // Crucible exchange rate at position open for real yield tracking
   currentValue: number;
   yieldEarned: number;
   isOpen: boolean;
   lpAPY?: number;
   pnl?: number;
+  nonce?: number; // Position nonce for PDA derivation (allows multiple positions)
 }
 
 export interface StoredInfernoLPPosition extends StoredLPPosition {
   borrowedUSDC: number;
   leverageFactor: number;
+  lpTokenAmount?: number; // Actual LP tokens in wallet
+  nonce?: number; // Position nonce for PDA derivation
 }
 
 export interface StoredLeveragedPosition {
@@ -32,11 +36,23 @@ export interface StoredLeveragedPosition {
   depositUSDC?: number;
   leverageFactor: number;
   entryPrice: number;
+  entryExchangeRate?: number; // Crucible exchange rate at position open for real yield tracking
   currentValue: number;
   yieldEarned: number;
   timestamp?: number;
   isOpen: boolean;
   health?: number;
+}
+
+export interface StoredLendingSupplyPosition {
+  id: string;
+  owner: string;
+  marketPubkey: string;
+  baseMint: string;
+  suppliedAmount: number; // Original amount supplied
+  timestamp: number; // When position was opened
+  effectiveApy: number; // APY after fees
+  isOpen: boolean;
 }
 
 // Simple checksum function (using string hash for validation)
@@ -278,6 +294,83 @@ export function setLeveragedPositions(positions: StoredLeveragedPosition[]): voi
     localStorage.setItem('leveraged_positions_checksum', checksum);
   } catch (error) {
     console.error('Failed to store leveraged positions to localStorage:', error);
+    throw error;
+  }
+}
+
+// Validate lending supply position structure
+function validateLendingSupplyPosition(position: any): position is StoredLendingSupplyPosition {
+  return (
+    typeof position === 'object' &&
+    position !== null &&
+    typeof position.id === 'string' &&
+    typeof position.owner === 'string' &&
+    typeof position.marketPubkey === 'string' &&
+    typeof position.baseMint === 'string' &&
+    typeof position.suppliedAmount === 'number' &&
+    typeof position.timestamp === 'number' &&
+    typeof position.effectiveApy === 'number' &&
+    typeof position.isOpen === 'boolean' &&
+    position.id.length > 0 &&
+    position.owner.length > 0 &&
+    position.suppliedAmount >= 0 &&
+    position.timestamp > 0
+  );
+}
+
+/**
+ * Get lending supply positions from localStorage
+ */
+export function getLendingSupplyPositions(): StoredLendingSupplyPosition[] {
+  try {
+    const stored = localStorage.getItem('lending_supply_positions');
+    if (!stored) return [];
+    
+    const checksumKey = 'lending_supply_positions_checksum';
+    const expectedChecksum = localStorage.getItem(checksumKey);
+    if (expectedChecksum) {
+      const actualChecksum = generateChecksum(stored);
+      if (actualChecksum !== expectedChecksum) {
+        console.warn('⚠️ localStorage checksum mismatch for lending_supply_positions - data may be corrupted');
+        return [];
+      }
+    }
+    
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      console.warn('⚠️ Invalid localStorage data format for lending_supply_positions');
+      return [];
+    }
+    
+    const validPositions = parsed.filter(validateLendingSupplyPosition);
+    if (validPositions.length !== parsed.length) {
+      console.warn(`⚠️ Filtered out ${parsed.length - validPositions.length} invalid lending supply positions`);
+    }
+    
+    return validPositions;
+  } catch (error) {
+    console.warn('Failed to load lending supply positions from localStorage:', error);
+    return [];
+  }
+}
+
+/**
+ * Set lending supply positions to localStorage
+ */
+export function setLendingSupplyPositions(positions: StoredLendingSupplyPosition[]): void {
+  try {
+    const validPositions = positions.filter(validateLendingSupplyPosition);
+    if (validPositions.length !== positions.length) {
+      console.warn(`⚠️ Filtered out ${positions.length - validPositions.length} invalid lending supply positions before storing`);
+    }
+    
+    const serialized = JSON.stringify(validPositions);
+    const checksum = generateChecksum(serialized);
+    
+    localStorage.setItem('lending_supply_positions', serialized);
+    localStorage.setItem('lending_supply_positions_checksum', checksum);
+  } catch (error) {
+    console.error('Failed to store lending supply positions to localStorage:', error);
     throw error;
   }
 }

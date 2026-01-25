@@ -235,6 +235,7 @@ pub fn open_leveraged_position(
     position.borrowed_usdc = borrowed_usdc;
     position.leverage_factor = leverage_factor;
     position.entry_price = base_token_price;
+    position.entry_exchange_rate = crucible.exchange_rate; // Store exchange rate at entry for real yield tracking
     position.current_value = collateral_value_usdc;
     position.yield_earned = 0;
     position.is_open = true;
@@ -257,6 +258,7 @@ pub fn open_leveraged_position(
         collateral: collateral_amount,
         borrowed_usdc,
         leverage_factor,
+        entry_exchange_rate: crucible.exchange_rate, // Store for real yield tracking
     });
 
     // Return the position creation slot as a unique identifier
@@ -682,6 +684,8 @@ pub fn close_leveraged_position(
         owner: position.owner,
         collateral_returned: tokens_after_fee,
         yield_earned: position.yield_earned,
+        entry_exchange_rate: position.entry_exchange_rate,
+        exit_exchange_rate: current_exchange_rate,
     });
 
     Ok(())
@@ -1492,6 +1496,7 @@ pub struct LeveragedPosition {
     pub borrowed_usdc: u64, // USDC borrowed
     pub leverage_factor: u64, // 150 = 1.5x, 200 = 2x (scaled by 100)
     pub entry_price: u64, // Entry price in USDC (scaled)
+    pub entry_exchange_rate: u64, // Crucible exchange rate at position open (scaled by 1M) for real yield tracking
     pub current_value: u64, // Current position value in USDC
     pub yield_earned: u64, // Yield earned in base token
     pub is_open: bool,
@@ -1500,7 +1505,7 @@ pub struct LeveragedPosition {
 }
 
 impl LeveragedPosition {
-    pub const LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 8 + 1;
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 8 + 1; // Added 8 for entry_exchange_rate
 }
 
 #[event]
@@ -1511,6 +1516,7 @@ pub struct LeveragedPositionOpened {
     pub collateral: u64,
     pub borrowed_usdc: u64,
     pub leverage_factor: u64,
+    pub entry_exchange_rate: u64, // Crucible exchange rate at open for real yield tracking
 }
 
 #[event]
@@ -1519,6 +1525,8 @@ pub struct LeveragedPositionClosed {
     pub owner: Pubkey,
     pub collateral_returned: u64,
     pub yield_earned: u64,
+    pub entry_exchange_rate: u64,
+    pub exit_exchange_rate: u64,
 }
 
 #[event]

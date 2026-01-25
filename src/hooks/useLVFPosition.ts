@@ -40,8 +40,9 @@ interface LeveragedPosition {
   depositUSDC?: number // USDC deposited (for 1.5x leverage)
   leverageFactor: number // 1.5 or 2.0
   entryPrice: number
+  entryExchangeRate: number // Crucible exchange rate at position open for real yield tracking
   currentValue: number // USD
-  yieldEarned: number
+  yieldEarned: number // Real yield from exchange rate growth
   timestamp?: number // When position was opened (for interest calculation)
   isOpen: boolean
   health: number // Health factor (collateral_value / borrowed_value * 100)
@@ -193,6 +194,28 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
               const borrowedUsdcNum = Number(positionAccount.borrowedUsdc) / 1e6 // Convert USDC decimals
               const leverageFactorNum = Number(positionAccount.leverageFactor) / 100 // 150 -> 1.5, 200 -> 2.0
               const entryPriceNum = Number(positionAccount.entryPrice) / 1_000_000 // Convert from scaled
+              const entryExchangeRateNum = Number(positionAccount.entryExchangeRate || 1_000_000) / 1_000_000 // Convert from scaled
+              
+              // Fetch crucible to get current exchange rate for real yield calculation
+              let currentExchangeRate = 1.0
+              let yieldEarned = 0
+              try {
+                const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+                const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+                if (crucibleAccount) {
+                  currentExchangeRate = getAccurateExchangeRate(crucibleAccount)
+                  
+                  // Calculate real yield from exchange rate growth
+                  // Formula: yield = collateral × leverage × (current_rate - entry_rate) / entry_rate
+                  if (currentExchangeRate > entryExchangeRateNum && entryExchangeRateNum > 0) {
+                    const rateGrowth = (currentExchangeRate - entryExchangeRateNum) / entryExchangeRateNum
+                    // Leveraged positions amplify the yield by leverage factor
+                    yieldEarned = collateralNum * leverageFactorNum * rateGrowth
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to fetch crucible for yield calculation:', e)
+              }
               
               const onChainPosition: LeveragedPosition = {
                 id: positionPDA.toString(),
@@ -203,8 +226,9 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
                 depositUSDC: leverageFactorNum === 1.5 ? collateralNum * baseTokenPrice * 0.5 : 0,
                 leverageFactor: leverageFactorNum,
                 entryPrice: entryPriceNum,
+                entryExchangeRate: entryExchangeRateNum, // Store for real yield tracking
                 currentValue: collateralNum * baseTokenPrice * leverageFactorNum,
-                yieldEarned: Number(positionAccount.yieldEarned) / 1e9,
+                yieldEarned: yieldEarned, // Real yield from exchange rate growth
                 timestamp: Number(positionAccount.createdAt),
                 isOpen: positionAccount.isOpen,
                 health: borrowedUsdcNum > 0 ? (collateralNum * baseTokenPrice / borrowedUsdcNum) * 100 : 999,
@@ -485,6 +509,18 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           actualBorrowedUSDC = Number(actualPosition.borrowedUsdc) / 1e6 // Convert USDC decimals
         }
         
+        // Fetch current exchange rate from crucible for yield tracking
+        let entryExchangeRate = 1.0
+        try {
+          const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (crucibleAccount) {
+            entryExchangeRate = getAccurateExchangeRate(crucibleAccount)
+          }
+        } catch (e) {
+          console.warn('Failed to fetch crucible exchange rate:', e)
+        }
+        
         const newPosition: LeveragedPosition = {
           id: positionId,
           owner: currentPublicKey.toBase58(),
@@ -494,8 +530,9 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
           depositUSDC: depositUSDC, // Store deposited USDC
           leverageFactor,
           entryPrice: baseTokenPrice,
+          entryExchangeRate: entryExchangeRate, // Store exchange rate at entry for real yield calculation
           currentValue: (actualCollateral * baseTokenPrice) * leverageFactor,
-          yieldEarned: 0,
+          yieldEarned: 0, // Will grow as exchange rate increases
           timestamp: positionTimestamp, // Store timestamp for interest calculation
           isOpen: true,
           health: 200, // 2.0 = safe
@@ -673,28 +710,38 @@ export function useLVFPosition({ crucibleAddress, baseTokenSymbol }: UseLVFPosit
         // Calculate base tokens to return (collateral value + APY earnings)
         const baseTokenPriceForClose = solPrice // Use real-time SOL price from CoinGecko
         
-        // Use actual on-chain exchange rate (no frontend simulation)
-        // Exchange rate grows as fees accrue on-chain
-        const initialExchangeRate = 1.0 // Initial rate when position was opened (1:1)
+        // Use REAL on-chain exchange rate for yield calculation
+        // Entry exchange rate is stored in position when opened
+        const entryExchangeRate = position.entryExchangeRate || 1.0
         
         // Fetch actual current exchange rate from on-chain
-        // Calculated from vault balance / cToken supply
-        const crucibleData = crucibleHook?.getCrucible(crucibleAddress)
-        const currentExchangeRateOnChain = crucibleData?.exchangeRate 
-          ? Number(crucibleData.exchangeRate) / 1_000_000 // Convert from scaled format
-          : initialExchangeRate
-        const currentExchangeRateDecimal = currentExchangeRateOnChain
+        let currentExchangeRate = entryExchangeRate
+        try {
+          const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (crucibleAccount) {
+            currentExchangeRate = getAccurateExchangeRate(crucibleAccount)
+          }
+        } catch (e) {
+          console.warn('Failed to fetch current exchange rate:', e)
+        }
         
-        // Calculate APY percentage: ((exchange rate at sell / exchange rate at buy) - 1) * 100
-        const apyPercentage = ((currentExchangeRateDecimal / initialExchangeRate) - 1) * 100
+        // Calculate REAL APY percentage from exchange rate growth
+        // APY = ((current_rate - entry_rate) / entry_rate) * 100
+        const apyPercentage = entryExchangeRate > 0 
+          ? ((currentExchangeRate - entryExchangeRate) / entryExchangeRate) * 100 
+          : 0
         
         // Calculate exchange rate growth (based on actual on-chain fees accrued)
-        const exchangeRateGrowth = currentExchangeRateDecimal - initialExchangeRate
+        const exchangeRateGrowth = currentExchangeRate - entryExchangeRate
         
         // Calculate proportional amounts for partial close
         const collateralToClose = amountToClose
-        const collateralValueAtCurrentRate = collateralToClose * currentExchangeRateDecimal
-        const apyEarnedTokens = collateralToClose * (exchangeRateGrowth / currentExchangeRateDecimal)
+        const collateralValueAtCurrentRate = collateralToClose * currentExchangeRate
+        // Real yield = collateral × leverage × rate_growth / entry_rate
+        const apyEarnedTokens = entryExchangeRate > 0 
+          ? collateralToClose * position.leverageFactor * (exchangeRateGrowth / entryExchangeRate)
+          : 0
         
         // Total collateral value including APY earnings (for the portion being closed)
         const totalCollateralValueUSD = collateralValueAtCurrentRate * baseTokenPriceForClose

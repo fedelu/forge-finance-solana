@@ -163,6 +163,7 @@ pub fn open_lp_position(
     base_amount: u64,
     usdc_amount: u64,
     max_slippage_bps: u64, // Maximum slippage in basis points (e.g., 100 = 1%)
+    position_nonce: u64, // Nonce to allow multiple positions per user
 ) -> Result<u64> {
     // #region agent log
     msg!("[DEBUG] open_lp_position: entry - base_amount={}, usdc_amount={}, max_slippage_bps={}", base_amount, usdc_amount, max_slippage_bps);
@@ -616,9 +617,11 @@ pub fn open_lp_position(
     position.base_amount = net_base_amount;
     position.usdc_amount = net_usdc_amount;
     position.entry_price = base_token_price;
+    position.entry_exchange_rate = crucible.exchange_rate; // Store exchange rate at entry for yield calculation
     position.created_at = clock.slot;
     position.is_open = true;
     position.bump = ctx.bumps.position;
+    position.nonce = position_nonce; // Store nonce for PDA derivation
     
     // #region agent log
     msg!("[DEBUG] Position account fields set successfully");
@@ -641,6 +644,22 @@ pub fn open_lp_position(
             .ok_or(ProgramError::ArithmeticOverflow)?;
     }
     
+    // Update stored exchange rate for frontend yield tracking
+    // Use total_ctoken_supply from mint (which we can estimate from base deposits)
+    // For LP positions, exchange rate reflects fee growth
+    let tracked_balance = (crucible.total_base_deposited as u128)
+        .checked_add(crucible.total_fees_accrued as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    // Estimate cToken supply proportional to base deposited (assuming 1:1 at start)
+    if crucible.total_ctoken_supply > 0 {
+        let new_exchange_rate = tracked_balance
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(crucible.total_ctoken_supply as u128))
+            .and_then(|rate| if rate > u64::MAX as u128 { None } else { Some(rate as u64) })
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        crucible.exchange_rate = new_exchange_rate;
+    }
+    
     // Serialize crucible back to account data
     let mut crucible_data = ctx.accounts.crucible.try_borrow_mut_data()?;
     let mut crucible_slice = &mut crucible_data[8..]; // Skip discriminator
@@ -655,6 +674,7 @@ pub fn open_lp_position(
         base_amount: net_base_amount,
         usdc_amount: net_usdc_amount,
         entry_price: base_token_price,
+        entry_exchange_rate: crucible.exchange_rate, // Store for yield tracking
         open_fee_base: vault_fee_base + protocol_fee_base,
         open_fee_usdc: vault_fee_usdc + protocol_fee_usdc,
     });
@@ -668,6 +688,7 @@ pub fn open_lp_position(
 pub fn close_lp_position(
     ctx: Context<CloseLPPosition>,
     max_slippage_bps: u64, // Maximum slippage in basis points (e.g., 100 = 1%)
+    position_nonce: u64, // Nonce used when opening the position
 ) -> Result<()> {
     require!(
         max_slippage_bps <= 10_000,
@@ -794,9 +815,9 @@ pub fn close_lp_position(
         .checked_add(current_usdc_value)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // Calculate initial position value
+    // Calculate initial position value using entry price
     let initial_base_value = (position.base_amount as u128)
-        .checked_mul(base_token_price as u128)
+        .checked_mul(position.entry_price as u128)
         .and_then(|v| v.checked_div(PRICE_SCALE as u128))
         .ok_or(ProgramError::ArithmeticOverflow)?;
     let initial_usdc_value = position.usdc_amount as u128;
@@ -804,12 +825,38 @@ pub fn close_lp_position(
         .checked_add(initial_usdc_value)
         .ok_or(ProgramError::ArithmeticOverflow)?;
     
-    // Calculate yield (can be negative if loss)
-    let yield_value = if current_total_value > initial_total_value {
-        current_total_value.checked_sub(initial_total_value)
+    // Calculate REAL yield from exchange rate growth
+    // Exchange rate grows as fees are deposited into the vault
+    // Yield = position_value * (current_exchange_rate - entry_exchange_rate) / entry_exchange_rate
+    let entry_exchange_rate = position.entry_exchange_rate;
+    let current_exchange_rate = crucible.exchange_rate;
+    
+    // Calculate exchange rate growth (can be 0 if no growth, never negative in practice)
+    let exchange_rate_yield = if current_exchange_rate > entry_exchange_rate {
+        // Calculate yield: position_value * rate_growth / entry_rate
+        initial_total_value
+            .checked_mul((current_exchange_rate - entry_exchange_rate) as u128)
+            .and_then(|v| v.checked_div(entry_exchange_rate as u128))
+            .unwrap_or(0)
     } else {
-        Some(0u128) // No yield if loss
-    }.ok_or(ProgramError::ArithmeticOverflow)?;
+        0u128
+    };
+    
+    // Calculate price-based P&L (from SOL price changes)
+    let price_pnl = if current_total_value > initial_total_value {
+        current_total_value.checked_sub(initial_total_value).unwrap_or(0)
+    } else {
+        0u128 // No positive price P&L if loss
+    };
+    
+    // Total yield = exchange rate yield (from fees) + price P&L (from price appreciation)
+    // Note: For fee calculations, we use the total yield
+    let yield_value = exchange_rate_yield
+        .checked_add(price_pnl)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    
+    msg!("[DEBUG] Real yield calculation: entry_rate={}, current_rate={}, exchange_rate_yield={}, price_pnl={}, total_yield={}",
+         entry_exchange_rate, current_exchange_rate, exchange_rate_yield, price_pnl, yield_value);
     
     let principal_fee_value = initial_total_value
         .checked_mul(CLOSE_FEE_PRINCIPAL_BPS as u128)
@@ -919,6 +966,13 @@ pub fn close_lp_position(
     let total_sol_to_return = base_to_return
         .checked_add(usdc_to_sol_amount)
         .ok_or(ProgramError::ArithmeticOverflow)?;
+
+    // SECURITY FIX: Verify vault has enough SOL to cover the total return
+    // This prevents transaction failures when vault is depleted
+    require!(
+        ctx.accounts.crucible_base_vault.amount >= total_sol_to_return + protocol_fee_base,
+        CrucibleError::InsufficientLiquidity
+    );
 
     // Transfer base tokens back to user (net amount + converted USDC)
     // INFERNO MODE: User gets all value back as SOL (like cSOL unwrap)
@@ -1039,6 +1093,19 @@ pub fn close_lp_position(
             .checked_add(vault_fee_base)
             .ok_or(ProgramError::ArithmeticOverflow)?;
     }
+    
+    // Update stored exchange rate for frontend yield tracking
+    let tracked_balance = (crucible.total_base_deposited as u128)
+        .checked_add(crucible.total_fees_accrued as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    if crucible.total_ctoken_supply > 0 {
+        let new_exchange_rate = tracked_balance
+            .checked_mul(1_000_000u128)
+            .and_then(|scaled| scaled.checked_div(crucible.total_ctoken_supply as u128))
+            .and_then(|rate| if rate > u64::MAX as u128 { None } else { Some(rate as u64) })
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        crucible.exchange_rate = new_exchange_rate;
+    }
 
     // Calculate LP tokens to burn (same formula as mint: sqrt(base_value * usdc_value))
     // Use current position values to calculate proportional LP tokens
@@ -1122,6 +1189,9 @@ pub fn close_lp_position(
         base_amount_returned: total_sol_to_return, // Total SOL returned (base + converted USDC)
         usdc_amount_returned: 0, // USDC was converted to SOL, so 0 returned
         total_fee: total_fee_value as u64,
+        yield_earned: yield_value as u64, // Real yield from exchange rate growth + price appreciation
+        entry_exchange_rate: position.entry_exchange_rate,
+        exit_exchange_rate: crucible.exchange_rate,
     });
 
     msg!("LP position closed: {} (returned {} SOL total, converted from {} base + {} USDC)", 
@@ -1130,6 +1200,7 @@ pub fn close_lp_position(
 }
 
 #[derive(Accounts)]
+#[instruction(base_amount: u64, usdc_amount: u64, max_slippage_bps: u64, position_nonce: u64)]
 pub struct OpenLPPosition<'info> {
     /// CHECK: Crucible account - using UncheckedAccount to handle old account formats
     /// We manually deserialize it in the instruction to handle backward compatibility
@@ -1154,11 +1225,12 @@ pub struct OpenLPPosition<'info> {
     pub lp_token_mint: Box<Account<'info, Mint>>,
     #[account(mut)]
     pub user_lp_token_account: Box<Account<'info, TokenAccount>>,
+    /// LP Position account - now includes nonce to allow multiple positions per user
     #[account(
         init,
         payer = user,
         space = 8 + LPPositionAccount::LEN,
-        seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref()],
+        seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref(), &position_nonce.to_le_bytes()],
         bump
     )]
     pub position: Box<Account<'info, LPPositionAccount>>,
@@ -1189,6 +1261,7 @@ pub struct OpenLPPosition<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(max_slippage_bps: u64, position_nonce: u64)]
 pub struct CloseLPPosition<'info> {
     /// CHECK: Crucible account - using UncheckedAccount to handle old account formats
     #[account(
@@ -1200,11 +1273,13 @@ pub struct CloseLPPosition<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
     pub base_mint: Account<'info, Mint>,
+    /// LP Position account - uses nonce for PDA to allow multiple positions
     #[account(
         mut,
-        seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref()],
+        seeds = [b"lp_position", user.key().as_ref(), base_mint.key().as_ref(), &position_nonce.to_le_bytes()],
         bump = position.bump,
         constraint = position.owner == user.key() @ CrucibleError::Unauthorized,
+        constraint = position.nonce == position_nonce @ CrucibleError::InvalidPosition,
     )]
     pub position: Box<Account<'info, LPPositionAccount>>,
     #[account(mut)]
@@ -1255,6 +1330,7 @@ pub struct LPPositionOpened {
     pub base_amount: u64,
     pub usdc_amount: u64,
     pub entry_price: u64,
+    pub entry_exchange_rate: u64, // Crucible exchange rate at open for yield tracking
     pub open_fee_base: u64,
     pub open_fee_usdc: u64,
 }
@@ -1267,5 +1343,8 @@ pub struct LPPositionClosed {
     pub base_amount_returned: u64,
     pub usdc_amount_returned: u64,
     pub total_fee: u64,
+    pub yield_earned: u64, // Real yield from exchange rate growth
+    pub entry_exchange_rate: u64,
+    pub exit_exchange_rate: u64,
 }
 

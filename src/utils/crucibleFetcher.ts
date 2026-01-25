@@ -75,6 +75,18 @@ function readBool(buffer: Buffer, offset: number): boolean {
  * Deserialize Crucible account data from raw bytes
  * Layout: 8 byte discriminator + struct fields
  * Supports both old format (without LP token fields) and new format (with LP token fields)
+ * 
+ * Old format (244 bytes total = 8 discriminator + 236 data):
+ *   baseMint(32) + ctokenMint(32) + vault(32) + vaultBump(1) + bump(1) + 
+ *   totalBaseDeposited(8) + totalCtokenSupply(8) + exchangeRate(8) + lastUpdateSlot(8) +
+ *   feeRate(8) + paused(1) + totalLeveragedPositions(8) + totalLpPositions(8) + 
+ *   expectedVaultBalance(8) + oracle(1+32) + treasury(32) + totalFeesAccrued(8)
+ * 
+ * New format (284 bytes total = 8 discriminator + 276 data):
+ *   baseMint(32) + ctokenMint(32) + lpTokenMint(32) + vault(32) + vaultBump(1) + bump(1) + 
+ *   totalBaseDeposited(8) + totalCtokenSupply(8) + totalLpTokenSupply(8) + exchangeRate(8) + 
+ *   lastUpdateSlot(8) + feeRate(8) + paused(1) + totalLeveragedPositions(8) + totalLpPositions(8) + 
+ *   expectedVaultBalance(8) + oracle(1+32) + treasury(32) + totalFeesAccrued(8)
  */
 export function deserializeCrucible(data: Buffer): CrucibleAccountData {
   // Skip 8 byte Anchor discriminator
@@ -87,11 +99,10 @@ export function deserializeCrucible(data: Buffer): CrucibleAccountData {
   offset += 32
   
   // Detect format based on account size
-  // Old format (without LP token fields): 236 bytes total
-  // New format (with LP token fields): 276 bytes total (236 + 32 + 8)
-  // Account size = 8 (discriminator) + struct fields
+  // Old format: 244 bytes (8 discriminator + 236 data)
+  // New format: 284 bytes (8 discriminator + 276 data)
   const accountSize = data.length
-  const hasLpTokenFields = accountSize >= 276 // New format has at least 276 bytes
+  const isOldFormat = accountSize <= 250 // Old format is ~244 bytes
   
   let lpTokenMint: PublicKey
   let totalLpTokenSupply: bigint = BigInt(0)
@@ -102,42 +113,56 @@ export function deserializeCrucible(data: Buffer): CrucibleAccountData {
   let totalCtokenSupply: bigint
   let exchangeRate: bigint
   
-  if (hasLpTokenFields) {
+  if (isOldFormat) {
+    // Old format: no lpTokenMint field, vault comes right after ctokenMint
+    lpTokenMint = ctokenMint // Use ctokenMint as placeholder
+    totalLpTokenSupply = BigInt(0)
+    
+    // Read vault immediately (no lpTokenMint in old format)
+    vault = readPubkey(data, offset)
+    offset += 32
+    
+    vaultBump = readU8(data, offset)
+    offset += 1
+    
+    bump = readU8(data, offset)
+    offset += 1
+    
+    totalBaseDeposited = readU64(data, offset)
+    offset += 8
+    
+    totalCtokenSupply = readU64(data, offset)
+    offset += 8
+    
+    // Old format: no totalLpTokenSupply field
+    exchangeRate = readU64(data, offset)
+    offset += 8
+  } else {
     // New format: has lpTokenMint and totalLpTokenSupply
     lpTokenMint = readPubkey(data, offset)
     offset += 32
-  } else {
-    // Old format: no lpTokenMint, use ctokenMint as placeholder
-    // This will need to be updated when crucible is re-initialized with LP token mint
-    lpTokenMint = ctokenMint // Placeholder
-    totalLpTokenSupply = BigInt(0)
-  }
-  
-  // Continue reading common fields
-  vault = readPubkey(data, offset)
-  offset += 32
-  
-  vaultBump = readU8(data, offset)
-  offset += 1
-  
-  bump = readU8(data, offset)
-  offset += 1
-  
-  totalBaseDeposited = readU64(data, offset)
-  offset += 8
-  
-  totalCtokenSupply = readU64(data, offset)
-  offset += 8
-  
-  if (hasLpTokenFields) {
-    // New format: read totalLpTokenSupply
+    
+    vault = readPubkey(data, offset)
+    offset += 32
+    
+    vaultBump = readU8(data, offset)
+    offset += 1
+    
+    bump = readU8(data, offset)
+    offset += 1
+    
+    totalBaseDeposited = readU64(data, offset)
+    offset += 8
+    
+    totalCtokenSupply = readU64(data, offset)
+    offset += 8
+    
     totalLpTokenSupply = readU64(data, offset)
     offset += 8
+    
+    exchangeRate = readU64(data, offset)
+    offset += 8
   }
-  // Old format: totalLpTokenSupply already set to 0 above
-  
-  exchangeRate = readU64(data, offset)
-  offset += 8
   
   const lastUpdateSlot = readU64(data, offset)
   offset += 8
@@ -253,7 +278,6 @@ export async function fetchCrucibleDirect(
     }
     
     const crucibleData = deserializeCrucible(accountInfo.data as Buffer)
-    
     return crucibleData
   } catch (error: any) {
     // Check if it's an account not found error - this is normal if crucible doesn't exist
@@ -326,20 +350,57 @@ export function getExchangeRateDecimal(crucibleData: CrucibleAccountData): numbe
 }
 
 /**
- * Calculate real exchange rate from vault balance and cToken supply
- * This is the actual exchange rate that determines yield
+ * Calculate real exchange rate from vault balance and ctoken supply
  * Exchange Rate = vault_balance / ctoken_supply
- * @param vaultBalance - Vault token balance in lamports
- * @param ctokenSupply - Total cToken supply in lamports
- * @returns Exchange rate as decimal (e.g., 1.004 means 0.4% yield)
+ * 
+ * Can be called with:
+ * - Two arguments: (vaultBalance: bigint, ctokenSupply: bigint)
+ * - One argument: (crucibleData: CrucibleAccountData)
+ * 
+ * @returns Exchange rate as decimal (e.g., 1.028 means 2.8% yield)
  */
-export function calculateRealExchangeRate(vaultBalance: bigint, ctokenSupply: bigint): number {
+export function calculateRealExchangeRate(
+  vaultBalanceOrCrucibleData: bigint | CrucibleAccountData,
+  ctokenSupplyArg?: bigint
+): number {
+  let vaultBalance: bigint
+  let ctokenSupply: bigint
+  
+  if (typeof vaultBalanceOrCrucibleData === 'bigint') {
+    // Called with two bigint arguments
+    vaultBalance = vaultBalanceOrCrucibleData
+    ctokenSupply = ctokenSupplyArg ?? BigInt(0)
+  } else {
+    // Called with CrucibleAccountData object
+    const crucibleData = vaultBalanceOrCrucibleData
+    ctokenSupply = crucibleData.totalCtokenSupply
+    vaultBalance = crucibleData.totalBaseDeposited + crucibleData.totalFeesAccrued
+  }
+  
   if (ctokenSupply === BigInt(0)) {
     return 1.0 // Initial rate is 1:1
   }
-  // Calculate: (vault_balance * 1_000_000) / ctoken_supply, then divide by 1_000_000
+  
+  // Formula: vault_balance * 1_000_000 / ctoken_supply
   const scaledRate = (vaultBalance * BigInt(1_000_000)) / ctokenSupply
   return Number(scaledRate) / 1_000_000
+}
+
+/**
+ * Get accurate exchange rate, preferring stored value but falling back to computed
+ * @param crucibleData - The crucible account data
+ * @returns Exchange rate as decimal
+ */
+export function getAccurateExchangeRate(crucibleData: CrucibleAccountData): number {
+  const storedRate = Number(crucibleData.exchangeRate) / 1_000_000
+  
+  // If stored rate is the initial value (1.0), compute dynamically
+  // This handles cases where the stored rate hasn't been updated yet
+  if (storedRate <= 1.0) {
+    return calculateRealExchangeRate(crucibleData)
+  }
+  
+  return storedRate
 }
 
 /**

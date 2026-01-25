@@ -209,11 +209,10 @@ export default function InfernoLPPositionModal({
   const ctokenSymbol = crucible?.ptokenSymbol || 'cToken'
   const displayPairSymbol = ctokenSymbol.replace(/^c/i, 'if')
   const lpTokenDecimals = displayPairSymbol === 'ifSOL' ? 2 : 4
-  const lpUsdcPerBase = lpTokenPriceAdjusted > 0
-    ? Math.max(0, lpTokenPriceAdjusted - baseTokenPrice)
-    : baseAmountForPosition > 0
-      ? netUsdcForPosition / baseAmountForPosition
-      : baseTokenPrice
+  // Exchange rate shows how much SOL + USDC is needed for 1 LP token
+  // 1 LP token = exchangeRate SOL + (exchangeRate × SOL_price) USDC
+  const solPerLpToken = lpExchangeRate
+  const usdcPerLpToken = lpExchangeRate * baseTokenPrice
   const safeBaseApy = isNaN(baseAPY) ? 0 : baseAPY
   const effectiveAPY = leverageFactor > 1
     ? (safeBaseApy * leverageFactor) - (10 * (leverageFactor - 1))
@@ -314,9 +313,9 @@ export default function InfernoLPPositionModal({
               </div>
             )}
             <div className="flex justify-between items-center py-1.5 px-2.5 panel-muted rounded-lg">
-              <span className="text-forge-gray-400 text-xs font-satoshi">Exchange Rate</span>
+              <span className="text-forge-gray-400 text-xs font-satoshi">Exchange Rate: {lpExchangeRate.toFixed(2)}</span>
               <span className="text-forge-primary font-heading font-semibold text-sm">
-                1 {baseTokenSymbol} + {formatUSDC(lpUsdcPerBase)} USDC = 1 {displayPairSymbol}/USDC
+                {solPerLpToken.toFixed(2)} {baseTokenSymbol} + {formatUSDC(usdcPerLpToken)} USDC = 1 {displayPairSymbol}/USDC
               </span>
             </div>
             <div className="flex justify-between items-center py-1.5 px-2.5 bg-gradient-to-r from-forge-primary/18 to-forge-primary/6 rounded-lg border border-forge-primary/25 shadow-[0_8px_25px_rgba(255,102,14,0.2)]">
@@ -336,7 +335,7 @@ export default function InfernoLPPositionModal({
           <button
             onClick={handleOpenPosition}
             disabled={loading || !baseAmount || !usdcAmount || parsedBaseAmount <= 0 || parsedUsdcAmount <= 0}
-            className="flex-1 px-4 py-2.5 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none relative overflow-hidden group bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600 hover:from-orange-500 hover:via-orange-400 hover:to-orange-500 text-white hover:shadow-orange-500/30"
+            className="flex-1 px-4 py-2.5 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none relative overflow-hidden group bg-gradient-to-r from-forge-primary to-forge-primary-light hover:from-forge-primary-dark hover:to-forge-primary text-white hover:shadow-forge-lg"
           >
             {loading && (
               <span className="absolute inset-0 flex items-center justify-center">

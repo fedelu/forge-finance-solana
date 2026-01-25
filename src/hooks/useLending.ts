@@ -1,7 +1,7 @@
 // Real on-chain lending market integration
 // Fetches data from lending-pool smart contract
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { Connection, PublicKey, SystemProgram } from '@solana/web3.js'
 import * as anchor from '@coral-xyz/anchor'
 import BN from 'bn.js'
@@ -12,6 +12,7 @@ import {
   getBorrowerAccount,
   calculateUtilization,
   calculateSupplyAPY,
+  calculateBorrowAPY,
   getLendingPoolPDA,
   getBorrowerAccountPDA,
   getPoolVaultPDA,
@@ -21,6 +22,7 @@ import { LENDING_YIELD_FEE_RATE } from '../config/fees'
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountIdempotentInstruction, getAccount } from '@solana/spl-token'
 import { Transaction, TransactionInstruction } from '@solana/web3.js'
 import { SOLANA_TESTNET_CONFIG, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
+import { getLendingSupplyPositions, setLendingSupplyPositions, StoredLendingSupplyPosition } from '../utils/localStorage'
 
 // deposit_usdc instruction discriminator from IDL: [184, 148, 250, 169, 224, 213, 34, 126]
 const DEPOSIT_USDC_DISCRIMINATOR = Buffer.from([184, 148, 250, 169, 224, 213, 34, 126])
@@ -89,8 +91,19 @@ export function useLending() {
   const [error, setError] = useState<string | null>(null)
   const [positions, setPositions] = useState<LendingPosition[]>([])
 
+  // Track last fetch time to prevent too frequent requests
+  const lastFetchRef = useRef<number>(0)
+  const FETCH_COOLDOWN_MS = 5000 // Minimum 5 seconds between fetches
+
   // Fetch market data from on-chain
   const fetchMarketData = useCallback(async () => {
+    // Rate limiting: don't fetch if we just fetched recently
+    const now = Date.now()
+    if (now - lastFetchRef.current < FETCH_COOLDOWN_MS) {
+      return
+    }
+    lastFetchRef.current = now
+
     setLoading(true)
     setError(null)
 
@@ -105,17 +118,19 @@ export function useLending() {
       paused: false,
     }
 
-    // If wallet not connected, show default market
-    if (!connection || !connected || !publicKey) {
+    // Try to fetch market data even if wallet is not connected (just need connection)
+    if (!connection) {
       setMarkets([defaultMarket])
       setLoading(false)
       return
     }
 
     try {
-      // Create wallet adapter for Anchor
+      // Create a dummy wallet adapter for Anchor (we only need it for program initialization)
+      // We can use a dummy public key since we're just reading data
+      const dummyPublicKey = PublicKey.default
       const anchorWallet: AnchorWallet = {
-        publicKey: publicKey,
+        publicKey: dummyPublicKey,
         signTransaction: async (tx: any) => tx,
         signAllTransactions: async (txs: any[]) => txs,
       }
@@ -130,14 +145,15 @@ export function useLending() {
         return
       }
 
-      // Calculate utilization
+      // Calculate utilization (as percentage 0-100)
       const utilization = calculateUtilization(
         marketState.totalBorrowed,
         marketState.totalLiquidity
       )
 
-      // Calculate supply APY (after protocol fee)
-      const supplyAPY = calculateSupplyAPY(marketState.lenderRate, LENDING_YIELD_FEE_RATE)
+      // Calculate supply and borrow APY based on utilization
+      const supplyAPY = calculateSupplyAPY(utilization, LENDING_YIELD_FEE_RATE)
+      const borrowAPY = calculateBorrowAPY(utilization)
 
       // Helper function to map mint address to token symbol
       const getTokenSymbol = (mintAddress: string): string => {
@@ -150,13 +166,16 @@ export function useLending() {
       }
 
       // Create market info from on-chain data
+      // Convert totalLiquidity from micro-USDC (1e6) to USDC
+      const tvlInUSDC = marketState.totalLiquidity / 1e6
+      
       const marketInfo: MarketInfo = {
         marketPubkey: getLendingPoolPDA()[0].toString(),
         baseMint: getTokenSymbol(marketState.usdcMint.toString()), // Map mint address to "USDC"
-        tvl: marketState.totalLiquidity.toLocaleString(),
+        tvl: tvlInUSDC.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 }),
         utilizationBps: Math.round(utilization * 100), // Convert to basis points
-        supplyApyBps: Math.round(supplyAPY * 100), // Convert to basis points
-        borrowApyBps: marketState.borrowRate, // Already in basis points (10 = 10%)
+        supplyApyBps: Math.round(supplyAPY * 100), // Convert to basis points (e.g., 4.5% = 450)
+        borrowApyBps: Math.round(borrowAPY * 100), // Convert to basis points (e.g., 10% = 1000)
         paused: false,
       }
 
@@ -173,50 +192,101 @@ export function useLending() {
 
   // Fetch user positions
   const fetchPositions = useCallback(async () => {
-    if (!connection || !publicKey || !connected) {
-      setPositions([])
-      return
-    }
+    const positionsList: LendingPosition[] = []
 
-    try {
-      const anchorWallet: AnchorWallet = {
-        publicKey: publicKey,
-        signTransaction: async (tx: any) => tx,
-        signAllTransactions: async (txs: any[]) => txs,
-      }
-
-      const program = getLendingPoolProgram(connection, anchorWallet)
-      
-      // Fetch borrower account if user has borrowed
-      const borrowerAccount = await getBorrowerAccount(program, publicKey, connection)
-
-      // For now, we only track borrowed positions
-      // Supply positions would need receipt token tracking (future enhancement)
-      if (borrowerAccount && borrowerAccount.amountBorrowed > 0) {
-        const [poolPDA] = getLendingPoolPDA()
-      const position: LendingPosition = {
-        marketPubkey: poolPDA.toString(),
-        baseMint: 'USDC', // Always USDC for lending pool
-          suppliedAmount: 0, // Not tracked yet
-          interestEarned: 0, // Would need to calculate from time
-          effectiveApy: 0,
-          borrowedAmount: borrowerAccount.amountBorrowed,
+    // Load supply positions from localStorage (only if publicKey is available)
+    if (publicKey) {
+      try {
+        const storedSupplyPositions = getLendingSupplyPositions()
+          .filter(p => p.owner === publicKey.toString() && p.isOpen)
+        
+        // Get current market APY for interest calculation (use stored APY as fallback)
+        const currentMarket = markets.length > 0 ? markets[0] : null
+        const currentApy = currentMarket ? currentMarket.supplyApyBps / 100 : null
+        
+        // Calculate interest earned for each supply position
+        const now = Date.now()
+        for (const stored of storedSupplyPositions) {
+          const timeElapsedSeconds = (now - stored.timestamp) / 1000
+          const daysElapsed = timeElapsedSeconds / (24 * 60 * 60)
+          
+          // Use current market APY if available, otherwise use stored APY
+          // stored.effectiveApy is stored as percentage (e.g., 4.5)
+          const apyToUse = currentApy !== null && currentApy > 0 ? currentApy : (stored.effectiveApy || 4.5)
+          const apyDecimal = apyToUse / 100 // Convert percentage to decimal
+          const interestEarned = stored.suppliedAmount * apyDecimal * (daysElapsed / 365)
+          
+          positionsList.push({
+            marketPubkey: stored.marketPubkey,
+            baseMint: stored.baseMint,
+            suppliedAmount: stored.suppliedAmount,
+            interestEarned: Math.max(0, interestEarned),
+            effectiveApy: apyToUse, // Keep as percentage for display (e.g., 4.5)
+            borrowedAmount: undefined,
+            borrowedInterest: undefined,
+          })
         }
-        setPositions([position])
-      } else {
-        setPositions([])
+      } catch (err) {
+        console.error('Error loading supply positions from localStorage:', err)
       }
-    } catch (err: any) {
-      console.error('Error fetching positions:', err)
-      // Don't set error for positions, just log
     }
-  }, [connection, publicKey, connected])
 
-  // Initial fetch
+    // Fetch borrowed positions from on-chain
+    if (connection && publicKey && connected) {
+      try {
+        const anchorWallet: AnchorWallet = {
+          publicKey: publicKey,
+          signTransaction: async (tx: any) => tx,
+          signAllTransactions: async (txs: any[]) => txs,
+        }
+
+        const program = getLendingPoolProgram(connection, anchorWallet)
+        
+        // Fetch borrower account if user has borrowed
+        const borrowerAccount = await getBorrowerAccount(program, publicKey, connection)
+
+        if (borrowerAccount && borrowerAccount.amountBorrowed > 0) {
+          const [poolPDA] = getLendingPoolPDA()
+          positionsList.push({
+            marketPubkey: poolPDA.toString(),
+            baseMint: 'USDC',
+            suppliedAmount: 0,
+            interestEarned: 0,
+            effectiveApy: 0,
+            borrowedAmount: borrowerAccount.amountBorrowed,
+            borrowedInterest: undefined,
+          })
+        }
+      } catch (err: any) {
+        console.error('Error fetching borrowed positions:', err)
+        // Continue with supply positions even if borrowed fetch fails
+      }
+    }
+
+    setPositions(positionsList)
+  }, [connection, publicKey, connected, markets]) // Depend on markets to update APY when it changes
+
+  // Initial fetch with debounce to avoid simultaneous requests
   useEffect(() => {
-    fetchMarketData()
-    fetchPositions()
+    const timer = setTimeout(() => {
+      fetchMarketData()
+      // Delay positions fetch slightly to avoid simultaneous requests
+      setTimeout(() => {
+        fetchPositions()
+      }, 100)
+    }, 100)
+    
+    return () => clearTimeout(timer)
   }, [fetchMarketData, fetchPositions])
+  
+  // Poll market data every 60 seconds (increased to reduce rate limit issues)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchMarketData()
+    }, 60000) // 60 seconds
+    
+    return () => clearInterval(interval)
+  }, [fetchMarketData])
 
   // Supply USDC to lending pool
   const supply = useCallback(async (market: string, amount: string) => {
@@ -428,6 +498,42 @@ export function useLending() {
       const tx = await sendTransaction(depositTransaction)
       
       window.dispatchEvent(new CustomEvent('refreshUSDCBalance'))
+
+      // Save supply position to localStorage
+      if (publicKey) {
+        const [poolPDA] = getLendingPoolPDA()
+        const marketState = await getMarketState(
+          getLendingPoolProgram(connection, {
+            publicKey: publicKey,
+            signTransaction: async (tx: any) => tx,
+            signAllTransactions: async (txs: any[]) => txs,
+          }),
+          connection
+        )
+        
+        // Calculate utilization and APY
+        const utilization = marketState
+          ? calculateUtilization(marketState.totalBorrowed, marketState.totalLiquidity)
+          : 0
+        const supplyAPY = marketState
+          ? calculateSupplyAPY(utilization, LENDING_YIELD_FEE_RATE) * 100
+          : 4.5 // Default 4.5% APY
+        
+        const storedPositions = getLendingSupplyPositions()
+        const newPosition: StoredLendingSupplyPosition = {
+          id: `${publicKey.toString()}-${poolPDA.toString()}-${Date.now()}`,
+          owner: publicKey.toString(),
+          marketPubkey: poolPDA.toString(),
+          baseMint: 'USDC',
+          suppliedAmount: suppliedAmount,
+          timestamp: Date.now(),
+          effectiveApy: supplyAPY,
+          isOpen: true,
+        }
+        
+        storedPositions.push(newPosition)
+        setLendingSupplyPositions(storedPositions)
+      }
 
       // Refresh market data after supply
       await fetchMarketData()

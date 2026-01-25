@@ -21,7 +21,7 @@ import {
 } from '../config/fees';
 import { getCruciblesProgram, AnchorWallet } from '../utils/anchorProgram';
 import { deriveCruciblePDA } from '../utils/cruciblePdas';
-import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS } from '../config/solana-testnet';
+import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet';
 import { useWallet } from '../contexts/WalletContext';
 import { usePrice } from '../contexts/PriceContext';
 import { fetchCTokenBalance, fetchAllUserPositions, type AllUserPositions } from '../utils/positionFetcher';
@@ -53,6 +53,7 @@ export interface CrucibleData {
   totalWithdrawn?: number;
   totalBaseDeposited?: bigint; // Total net base tokens deposited (in lamports)
   vaultBalance?: bigint; // Current vault balance (in lamports)
+  lpTokenPrice?: number; // Calculated LP token price for Inferno
 }
 
 interface CrucibleHookReturn {
@@ -171,6 +172,16 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
   
   // State for on-chain crucible data
   const [onChainCrucibleData, setOnChainCrucibleData] = useState<CrucibleData | null>(null)
+  
+  // State for on-chain Inferno crucible data
+  const [onChainInfernoData, setOnChainInfernoData] = useState<{
+    exchangeRate: bigint
+    totalFeesAccrued: bigint
+    totalLpTokenSupply: bigint
+    feeRate: bigint
+    expectedVaultBalance: bigint
+    expectedUsdcVaultBalance: bigint
+  } | null>(null)
   
   // State to trigger re-renders when crucible data changes
   const [crucibleUpdateTrigger, setCrucibleUpdateTrigger] = useState(0);
@@ -316,6 +327,53 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
           }
         }
       }
+      
+      // Also fetch Inferno crucible data
+      try {
+        const infernoProgramId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES_INFERNO || 'HbhXC9vgDfrgq3gAj22TwXPtEkxmBrKp9MidEY4Y3vMk')
+        const [infernoCruciblePDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('crucible'), baseMint.toBuffer()],
+          infernoProgramId
+        )
+        
+        const infernoAccountInfo = await conn.getAccountInfo(infernoCruciblePDA)
+        if (infernoAccountInfo && infernoAccountInfo.data.length > 0) {
+          const data = infernoAccountInfo.data
+          let offset = 8 // Skip discriminator
+          
+          // Parse InfernoCrucible struct
+          offset += 32 * 4 // base_mint, lp_token_mint, vault, usdc_vault
+          offset += 2 // vault_bump, bump
+          
+          const totalLpTokenSupply = data.readBigUInt64LE(offset)
+          offset += 8
+          offset += 8 // total_lp_positions
+          const exchangeRate = data.readBigUInt64LE(offset)
+          offset += 8
+          offset += 8 // last_update_slot
+          const feeRate = data.readBigUInt64LE(offset)
+          offset += 8
+          offset += 1 // paused
+          const expectedVaultBalance = data.readBigUInt64LE(offset)
+          offset += 8
+          const expectedUsdcVaultBalance = data.readBigUInt64LE(offset)
+          offset += 8
+          offset += 1 + 32 // oracle (Option<Pubkey>)
+          offset += 32 * 2 // treasury_base, treasury_usdc
+          const totalFeesAccrued = data.readBigUInt64LE(offset)
+          
+          setOnChainInfernoData({
+            exchangeRate: BigInt(exchangeRate),
+            totalFeesAccrued: BigInt(totalFeesAccrued),
+            totalLpTokenSupply: BigInt(totalLpTokenSupply),
+            feeRate: BigInt(feeRate),
+            expectedVaultBalance: BigInt(expectedVaultBalance),
+            expectedUsdcVaultBalance: BigInt(expectedUsdcVaultBalance),
+          })
+        }
+      } catch (infernoError) {
+        // Inferno crucible might not exist yet, that's ok
+      }
     } catch (error) {
       console.error('❌ Error fetching crucible data:', error)
       // No mock fallback - show real state (empty/loading)
@@ -350,19 +408,23 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
     window.addEventListener('depositComplete', handleDeposit)
     window.addEventListener('wrapPositionOpened', handleDeposit)
     window.addEventListener('arbitrageProfitDeposited', handleArbitrageDeposit)
+    window.addEventListener('infernoLpPositionOpened', handleDeposit)
+    window.addEventListener('infernoLpPositionClosed', handleDeposit)
     
     return () => {
       clearInterval(interval)
       window.removeEventListener('depositComplete', handleDeposit)
       window.removeEventListener('wrapPositionOpened', handleDeposit)
       window.removeEventListener('arbitrageProfitDeposited', handleArbitrageDeposit)
+      window.removeEventListener('infernoLpPositionOpened', handleDeposit)
+      window.removeEventListener('infernoLpPositionClosed', handleDeposit)
     }
   }, [fetchCrucibleData])
 
   // Get updated crucibles - use on-chain data if available, otherwise use mock
   const getUpdatedCrucibles = (): CrucibleData[] => {
     const baseCrucible = onChainCrucibleData || initialCrucibles[0]
-    const infernoCrucible = initialCrucibles.find(c => c.id === 'inferno-lp-crucible')!
+    const infernoCrucibleBase = initialCrucibles.find(c => c.id === 'inferno-lp-crucible')!
     const infernoTVL = (() => {
       if (typeof window === 'undefined') return 0
       try {
@@ -374,7 +436,85 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
         return 0
       }
     })()
-    const infernoWithTVL = { ...infernoCrucible, tvl: infernoTVL }
+    
+    // Update Inferno crucible with on-chain data
+    // Calculate LP token price from vault balances: (SOL_value + USDC_value) / LP_supply
+    let infernoLpPrice = 0
+    let infernoTotalVaultValue = 0
+    let infernoYieldAccrued = 0
+    
+    if (onChainInfernoData && Number(onChainInfernoData.totalLpTokenSupply) > 0) {
+      const vaultSolValue = Number(onChainInfernoData.expectedVaultBalance) / 1e9 * solPrice
+      const vaultUsdcValue = Number(onChainInfernoData.expectedUsdcVaultBalance) / 1e6
+      infernoTotalVaultValue = vaultSolValue + vaultUsdcValue
+      
+      const lpSupply = Number(onChainInfernoData.totalLpTokenSupply) / 1e9
+      infernoLpPrice = infernoTotalVaultValue / lpSupply
+      
+      // Calculate yield (80% of fees that went to vault)
+      // If totalFeesAccrued is 0 (positions opened before contract update),
+      // calculate fees from actual vault balances vs what should be there
+      const solFeesValue = Number(onChainInfernoData.totalFeesAccrued) / 1e9 * solPrice
+      
+      if (solFeesValue > 0) {
+        // Use on-chain tracked fees (for positions opened after contract update)
+        infernoYieldAccrued = solFeesValue
+      } else {
+        // Calculate fees from positions (for positions opened before contract update)
+        // Fees = 1% open fee, 80% goes to vault
+        try {
+          const positions = getInfernoLPPositions().filter((p) => p.isOpen)
+          
+          if (positions.length > 0) {
+            // Calculate total position value (net amounts after fees)
+            // Original value = net / 0.99 (approximately, since 1% fee was taken)
+            const totalNetValue = positions.reduce((sum, p) => {
+              return sum + (p.baseAmount * solPrice + p.usdcAmount)
+            }, 0)
+            
+            // Original deposit value (before fees) = net / 0.99
+            const originalValue = totalNetValue / 0.99
+            
+            // Open fee = 1% of original value
+            const openFee = originalValue * 0.01
+            
+            // Vault fee (80% of open fee) = yield for LP holders
+            infernoYieldAccrued = openFee * 0.8
+          } else {
+            // Fallback: Calculate from vault balances vs LP supply
+            // If LP supply represents net deposits, and vault has more, the difference is fees
+            // This is approximate but works when we don't have position data
+            const netDepositValue = lpSupply * (2 * solPrice) // Approximate: 1 SOL + 1 SOL worth USDC per LP
+            const feesInVault = infernoTotalVaultValue - netDepositValue
+            if (feesInVault > 0) {
+              // 80% of fees go to vault (yield)
+              infernoYieldAccrued = feesInVault * 0.8
+            }
+          }
+        } catch (error) {
+          console.warn('Could not calculate Inferno yield from positions:', error)
+          // Last resort: Calculate from vault balance difference
+          const netDepositValue = lpSupply * (2 * solPrice)
+          const feesInVault = infernoTotalVaultValue - netDepositValue
+          if (feesInVault > 0) {
+            infernoYieldAccrued = feesInVault * 0.8
+          }
+        }
+      }
+    }
+    
+    const infernoCrucible = {
+      ...infernoCrucibleBase,
+      tvl: infernoTotalVaultValue > 0 ? infernoTotalVaultValue : infernoTVL,
+      exchangeRate: onChainInfernoData?.exchangeRate || BigInt(1_000_000),
+      totalFeesCollected: infernoYieldAccrued > 0 ? infernoYieldAccrued / 0.8 : 0, // Total fees (100%)
+      apyEarnedByUsers: infernoYieldAccrued, // 80% vault share (yield for LP holders)
+      apr: onChainInfernoData && Number(onChainInfernoData.feeRate) > 0
+        ? Number(onChainInfernoData.feeRate) / 10000 * 10 // fee_rate in bps * assumed 10x turnover
+        : infernoCrucibleBase.apr,
+      lpTokenPrice: infernoLpPrice, // Store calculated LP token price
+    }
+    const infernoWithTVL = infernoCrucible
 
     return [baseCrucible, infernoWithTVL].map(crucible => {
       const userBalance = userBalances[crucible.id] || {
@@ -715,7 +855,7 @@ export const CrucibleProvider: React.FC<CrucibleProviderProps> = ({ children }) 
   }, []);
 
   // CRITICAL: Include onChainCrucibleData in dependencies so crucibles updates when on-chain data is fetched
-  const crucibles = useMemo(() => getUpdatedCrucibles(), [crucibleUpdateTrigger, userBalances, onChainCrucibleData])
+  const crucibles = useMemo(() => getUpdatedCrucibles(), [crucibleUpdateTrigger, userBalances, onChainCrucibleData, onChainInfernoData, solPrice])
 
   const value: CrucibleHookReturn = useMemo(() => ({
     crucibles,

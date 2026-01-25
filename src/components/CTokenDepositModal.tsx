@@ -14,7 +14,7 @@ import { usePrice } from '../contexts/PriceContext'
 import { lendingPool } from '../contracts/lendingPool'
 import { useCrucible } from '../hooks/useCrucible'
 import { WRAP_FEE_RATE, INFERNO_OPEN_FEE_RATE } from '../config/fees'
-import { buildMintCtokenInstruction } from '../utils/anchorProgram'
+import { buildMintCtokenLegacyInstruction } from '../utils/anchorProgram'
 import { deriveCruciblePDA, deriveVaultPDA, deriveCrucibleAuthorityPDA } from '../utils/cruciblePdas'
 import { SOLANA_TESTNET_CONFIG, DEPLOYED_ACCOUNTS, SOLANA_TESTNET_PROGRAM_IDS } from '../config/solana-testnet'
 import { SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
@@ -70,7 +70,7 @@ export default function CTokenDepositModal({
       }
       fetchBalance()
       // Refresh balance every 5 seconds while modal is open
-      const interval = setInterval(fetchBalance, 5000)
+      const interval = setInterval(fetchBalance, 30000) // Reduced from 5s to 30s to avoid rate limits
       return () => clearInterval(interval)
     } else {
       setActualWalletBalance(null)
@@ -275,13 +275,15 @@ export default function CTokenDepositModal({
               )
             )
             
-            // Add mint_ctoken instruction (using manual builder to avoid Anchor IDL issues)
+            // Get treasury address from config (defined outside try block for logging)
+            const treasury = new PublicKey(DEPLOYED_ACCOUNTS.WSOL_TREASURY)
+            const programId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
+            
+            // Add mint_ctoken_legacy instruction (for old format crucible accounts)
             try {
-              // Get treasury address from config
-              const treasury = new PublicKey(DEPLOYED_ACCOUNTS.WSOL_TREASURY)
-              const programId = new PublicKey(SOLANA_TESTNET_PROGRAM_IDS.FORGE_CRUCIBLES)
               
-              const mintCtokenIx = buildMintCtokenInstruction(
+              // Use legacy instruction for old format crucible accounts (without lp_token_mint)
+              const mintCtokenIx = buildMintCtokenLegacyInstruction(
                 programId,
                 {
                   user: publicKey,
@@ -303,7 +305,7 @@ export default function CTokenDepositModal({
               
               transaction.add(mintCtokenIx)
             } catch (error: any) {
-              console.warn('⚠️ Could not add mint_ctoken instruction:', error.message)
+              console.warn('⚠️ Could not add mint_ctoken_legacy instruction:', error.message)
               console.warn('Continuing with wrap-only transaction (for testing)')
               // Continue without mint_ctoken for now if there's an error
             }
@@ -313,9 +315,39 @@ export default function CTokenDepositModal({
             transaction.recentBlockhash = blockhash
             transaction.feePayer = publicKey
             
+            // Debug: Log all accounts being used
+            console.log('🔍 Transaction accounts:', {
+              user: publicKey.toString(),
+              crucible: cruciblePDA.toString(),
+              baseMint: baseMint.toString(),
+              ctokenMint: ctokenMintPubkey.toString(),
+              userWsolAccount: userWsolAccount.toString(),
+              userCtokenAccount: userCtokenAccount.toString(),
+              vault: vaultPDA.toString(),
+              crucibleAuthority: crucibleAuthorityPDA.toString(),
+              treasury: treasury.toString(),
+            })
+            
+            // Simulate transaction first to get detailed error
+            try {
+              const simulation = await connection.simulateTransaction(transaction)
+              if (simulation.value.err) {
+                console.error('❌ Simulation failed:', simulation.value.err)
+                console.error('📜 Simulation logs:', simulation.value.logs)
+                throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}\nLogs: ${simulation.value.logs?.join('\n') || 'No logs'}`)
+              }
+              console.log('✅ Simulation succeeded:', simulation.value.logs)
+            } catch (simError: any) {
+              console.error('❌ Simulation error:', simError)
+              if (simError.message?.includes('Simulation failed')) {
+                throw simError
+              }
+              // Continue if simulation itself threw an error (not the transaction)
+            }
+            
             // Send transaction
             const signature = await adapterSendTransaction(transaction, connection, {
-              skipPreflight: false,
+              skipPreflight: true, // Skip preflight since we already simulated
               maxRetries: 3,
             })
             

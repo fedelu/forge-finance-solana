@@ -36,6 +36,7 @@ pub struct InfernoLPPositionAccount {
     pub created_at: u64,
     pub is_open: bool,
     pub bump: u8,
+    pub nonce: u64, // Nonce for allowing multiple positions per user
 }
 
 impl InfernoLPPositionAccount {
@@ -51,7 +52,8 @@ impl InfernoLPPositionAccount {
         8 +  // entry_price
         8 +  // created_at
         1 +  // is_open
-        1;   // bump
+        1 +  // bump
+        8;   // nonce
 }
 
 impl InfernoCrucible {
@@ -75,6 +77,41 @@ impl InfernoCrucible {
         32 + // treasury_base
         32 + // treasury_usdc
         8;   // total_fees_accrued
+}
+
+/// Legacy position account struct (for positions created before nonce was added)
+/// This is needed because the old accounts are smaller and don't have the nonce field
+#[account]
+pub struct InfernoLPPositionAccountLegacy {
+    pub position_id: u64,
+    pub owner: Pubkey,
+    pub crucible: Pubkey,
+    pub base_mint: Pubkey,
+    pub base_amount: u64,
+    pub usdc_amount: u64,
+    pub borrowed_usdc: u64,
+    pub leverage_factor: u64, // 100 = 1x, 150 = 1.5x, 200 = 2x
+    pub entry_price: u64, // Entry price in USDC (scaled by 1M)
+    pub created_at: u64,
+    pub is_open: bool,
+    pub bump: u8,
+    // NO nonce field - this is the old struct
+}
+
+impl InfernoLPPositionAccountLegacy {
+    pub const LEN: usize = 8 + // discriminator
+        8 +  // position_id
+        32 + // owner
+        32 + // crucible
+        32 + // base_mint
+        8 +  // base_amount
+        8 +  // usdc_amount
+        8 +  // borrowed_usdc
+        8 +  // leverage_factor
+        8 +  // entry_price
+        8 +  // created_at
+        1 +  // is_open
+        1;   // bump
 }
 
 #[error_code]

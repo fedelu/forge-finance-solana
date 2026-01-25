@@ -151,6 +151,31 @@ export function getPoolVaultPDA(pool: PublicKey): [PublicKey, number] {
 /**
  * Fetch lending pool state from on-chain
  */
+// Helper function to retry RPC calls with exponential backoff on 429 errors
+async function retryRpcCall<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (error: any) {
+      const isRateLimit = error?.message?.includes('429') || 
+                         error?.code === 429 || 
+                         error?.status === 429 ||
+                         error?.message?.includes('Too Many Requests')
+      
+      if (isRateLimit && attempt < maxRetries - 1) {
+        const delay = 1000 * Math.pow(2, attempt) // Exponential backoff: 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      throw error
+    }
+  }
+  throw new Error('Max retries exceeded')
+}
+
 export async function getMarketState(
   program: Program<any>,
   connection?: Connection
@@ -168,10 +193,10 @@ export async function getMarketState(
     // Try using program.account if available, otherwise fetch directly
     let poolAccount: any
     if (program.account && (program.account as any).lendingPool) {
-      poolAccount = await (program.account as any).lendingPool.fetch(poolPDA)
+      poolAccount = await retryRpcCall(() => (program.account as any).lendingPool.fetch(poolPDA))
     } else {
       // Fallback: fetch account data directly and deserialize manually
-      const accountInfo = await conn.getAccountInfo(poolPDA)
+      const accountInfo = await retryRpcCall(() => conn.getAccountInfo(poolPDA))
       
       if (!accountInfo) {
         return null
@@ -280,8 +305,8 @@ export async function getBorrowerAccount(
       return null
     }
     
-    // Check if account exists before trying to fetch
-    const accountInfo = await conn.getAccountInfo(borrowerPDA)
+    // Check if account exists before trying to fetch (with retry logic for rate limits)
+    const accountInfo = await retryRpcCall(() => conn.getAccountInfo(borrowerPDA))
     
     if (!accountInfo) {
       // Account doesn't exist - user hasn't borrowed yet
@@ -395,9 +420,47 @@ export function calculateUtilization(
 }
 
 /**
- * Calculate supply APY (after protocol fee)
+ * Calculate borrow APY based on utilization
+ * Uses a simple model: base rate + (utilization * slope)
+ */
+export function calculateBorrowAPY(
+  utilization: number, // 0-100 (percentage)
+  baseRate: number = 2, // 2% base rate
+  slope: number = 0.15 // 0.15% per 1% utilization
+): number {
+  // utilization is 0-100, convert to decimal for calculation
+  const utilDecimal = utilization / 100
+  // Borrow APY = base rate + (utilization * slope)
+  const borrowAPY = baseRate + (utilDecimal * slope * 100)
+  return Math.max(baseRate, Math.min(borrowAPY, 50)) // Cap between base rate and 50%
+}
+
+/**
+ * Calculate supply APY based on utilization (after protocol fee)
+ * Supply APY = Borrow APY * Utilization * (1 - protocol fee)
  */
 export function calculateSupplyAPY(
+  utilization: number, // 0-100 (percentage)
+  protocolFeeRate: number = 0.10, // 10% fee on yield
+  baseRate: number = 2, // 2% base rate
+  slope: number = 0.15 // 0.15% per 1% utilization
+): number {
+  if (utilization === 0) return 0
+  
+  // Calculate borrow APY first
+  const borrowAPY = calculateBorrowAPY(utilization, baseRate, slope)
+  
+  // Supply APY = Borrow APY * Utilization * (1 - protocol fee)
+  const utilDecimal = utilization / 100
+  const supplyAPY = borrowAPY * utilDecimal * (1 - protocolFeeRate)
+  
+  return Math.max(0, supplyAPY)
+}
+
+/**
+ * Legacy function for backward compatibility
+ */
+export function calculateSupplyAPYFromLenderRate(
   lenderRate: number, // 5 = 5% APY (scaled by 100)
   protocolFeeRate: number = 0.10 // 10% fee on yield
 ): number {

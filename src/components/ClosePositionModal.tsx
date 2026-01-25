@@ -37,6 +37,7 @@ export default function ClosePositionModal({
   const [activeTab, setActiveTab] = useState<'ctoken' | 'lp' | 'inferno'>('ctoken')
   const [ctokenAmount, setCTokenAmount] = useState('')
   const [lpTokenAmount, setLpTokenAmount] = useState('')
+  const [infernoAmount, setInfernoAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [timeUpdateTrigger, setTimeUpdateTrigger] = useState(0) // Trigger to update calculations as time passes
@@ -202,6 +203,51 @@ export default function ClosePositionModal({
   const availableInfernoPositions = useMemo(() => {
     return infernoPositions.filter((p) => p.isOpen !== false)
   }, [infernoPositions])
+
+  // Get current Inferno position for partial close
+  const currentInfernoPosition = useMemo(() => {
+    return availableInfernoPositions[0] || null
+  }, [availableInfernoPositions])
+
+  // Calculate Inferno close preview
+  const infernoClosePreview = useMemo(() => {
+    if (!infernoAmount || parseFloat(infernoAmount) <= 0 || !currentInfernoPosition) return null
+    
+    const unwrapAmount = parseFloat(infernoAmount)
+    const maxAmount = currentInfernoPosition.lpTokenAmount || 0
+    
+    if (unwrapAmount > maxAmount || maxAmount === 0) return null
+    
+    const proportion = unwrapAmount / maxAmount
+    
+    // Calculate proportional amounts based on position values
+    const baseToReceive = currentInfernoPosition.baseAmount * proportion
+    const usdcToReceive = currentInfernoPosition.usdcAmount * proportion
+    const borrowedToRepay = currentInfernoPosition.borrowedUSDC * proportion
+    
+    // Calculate fees (0.5% close fee on principal)
+    const closeFeeRate = INFERNO_CLOSE_FEE_RATE
+    const baseFee = baseToReceive * closeFeeRate
+    const usdcFee = usdcToReceive * closeFeeRate
+    
+    // Net amounts after fees
+    const netBase = baseToReceive - baseFee
+    const netUsdc = Math.max(0, usdcToReceive - usdcFee - borrowedToRepay)
+    
+    // Total fee in USD
+    const totalFeeUSD = (baseFee * solPrice) + usdcFee
+    
+    return {
+      proportion,
+      baseToReceive: netBase,
+      usdcToReceive: netUsdc,
+      baseFee,
+      usdcFee,
+      totalFeeUSD,
+      borrowedToRepay,
+      isPartial: proportion < 0.9999,
+    }
+  }, [infernoAmount, currentInfernoPosition, solPrice])
 
   // Get available cToken balance from both crucible and balance context
   const availableCTokens = useMemo(() => {
@@ -607,7 +653,12 @@ export default function ClosePositionModal({
   // Determine default tab based on available positions
   React.useEffect(() => {
     if (isSolCrucible) {
-      setActiveTab('ctoken')
+      // For SOL crucible, prefer Inferno position if available, then cToken
+      if (hasInfernoPosition) {
+        setActiveTab('inferno')
+      } else {
+        setActiveTab('ctoken')
+      }
       return
     }
     if (hasCTokenPosition && !hasLeveragedPosition && !hasInfernoPosition) {
@@ -637,46 +688,35 @@ export default function ClosePositionModal({
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-forge-gray-700">
-          <button
-            onClick={() => setActiveTab('ctoken')}
-            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-              activeTab === 'ctoken'
-                ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
-                : 'text-forge-gray-400 hover:text-forge-gray-300'
-            }`}
-            disabled={!hasCTokenPosition}
-          >
-            Unwrap cTOKENS
-          </button>
-          {!isSolCrucible && (
-            <button
-              onClick={() => setActiveTab('lp')}
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeTab === 'lp'
-                  ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
-                  : 'text-forge-gray-400 hover:text-forge-gray-300'
-              }`}
-              disabled={!hasLeveragedPosition}
-            >
-              Unwrap LP tokens
-            </button>
-          )}
-          {!isSolCrucible && (
-            <button
-              onClick={() => setActiveTab('inferno')}
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeTab === 'inferno'
-                  ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
-                  : 'text-forge-gray-400 hover:text-forge-gray-300'
-              }`}
-              disabled={!hasInfernoPosition}
-            >
-              Close Inferno LP
-            </button>
-          )}
-        </div>
+        {/* Tabs - Only show for non-SOL crucibles with multiple position types */}
+        {!isSolCrucible && (hasCTokenPosition || hasLeveragedPosition) && (
+          <div className="flex border-b border-forge-gray-700">
+            {hasCTokenPosition && (
+              <button
+                onClick={() => setActiveTab('ctoken')}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                  activeTab === 'ctoken'
+                    ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
+                    : 'text-forge-gray-400 hover:text-forge-gray-300'
+                }`}
+              >
+                Unwrap cTOKENS
+              </button>
+            )}
+            {hasLeveragedPosition && (
+              <button
+                onClick={() => setActiveTab('lp')}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                  activeTab === 'lp'
+                    ? 'text-forge-primary border-b-2 border-forge-primary panel-muted'
+                    : 'text-forge-gray-400 hover:text-forge-gray-300'
+                }`}
+              >
+                Unwrap LP tokens
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Content */}
         <div className="p-6">
@@ -864,37 +904,116 @@ export default function ClosePositionModal({
             </div>
           )}
 
-          {!isSolCrucible && activeTab === 'inferno' && hasInfernoPosition && (
-            <div className="space-y-4">
-              <div className="text-sm text-forge-gray-400">
-                Closing an Inferno LP position repays borrowing and swaps remaining USDC to {baseTokenSymbol}.
+          {/* Inferno LP Close - Show for SOL crucible or when inferno tab is active */}
+          {((isSolCrucible && hasInfernoPosition) || (!isSolCrucible && activeTab === 'inferno' && hasInfernoPosition)) && currentInfernoPosition && (
+            <div className="space-y-6">
+              {/* Current Position Summary */}
+              <div className="panel-muted rounded-xl p-4 border border-red-500/20">
+                <div className="text-sm font-medium text-forge-gray-300 mb-2">Your Inferno LP Position</div>
+                <div className="flex justify-between text-sm text-forge-gray-300">
+                  <span>{currentInfernoPosition.baseAmount.toFixed(4)} {baseTokenSymbol}</span>
+                  <span>{currentInfernoPosition.usdcAmount.toFixed(2)} USDC</span>
+                </div>
+                <div className="flex justify-between text-xs text-forge-gray-400 mt-1">
+                  <span>Leverage: {currentInfernoPosition.leverageFactor}x</span>
+                  <span>Borrowed: {currentInfernoPosition.borrowedUSDC.toFixed(2)} USDC</span>
+                </div>
               </div>
-              <div className="space-y-2">
-                {availableInfernoPositions.map((position) => (
-                  <div key={position.id} className="panel-muted rounded-xl p-4 border border-red-500/20">
-                    <div className="flex justify-between text-sm text-forge-gray-300">
-                      <span>{position.baseAmount.toFixed(3)} {baseTokenSymbol}</span>
-                      <span>{position.usdcAmount.toFixed(2)} USDC</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-forge-gray-400 mt-1">
-                      <span>Leverage: {position.leverageFactor}x</span>
-                      <span>Borrowed: {position.borrowedUSDC.toFixed(2)} USDC</span>
-                    </div>
-                    <button
-                      onClick={() => handleInfernoClose(position.id)}
-                      disabled={loading}
-                      className="mt-3 w-full py-2 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg text-sm font-medium hover:from-red-600 hover:to-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? 'Closing...' : 'Close Inferno Position'}
-                    </button>
+
+              {/* Amount Input */}
+              <div>
+                <label className="block text-sm font-medium text-forge-gray-300 mb-2">
+                  Amount to Withdraw (LP Tokens)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={infernoAmount}
+                    onChange={(e) => setInfernoAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-4 py-3 pr-12 panel-muted rounded-xl text-white placeholder-forge-gray-500 focus:outline-none focus:border-forge-primary"
+                  />
+                  <button
+                    onClick={() => {
+                      const lpTokens = currentInfernoPosition.lpTokenAmount || 0
+                      setInfernoAmount(lpTokens.toFixed(6))
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-forge-primary hover:text-forge-primary-light z-10"
+                  >
+                    MAX
+                  </button>
+                </div>
+                <div className="mt-1 text-xs text-forge-gray-400">
+                  LP Tokens in Wallet: {(currentInfernoPosition.lpTokenAmount || 0).toFixed(4)}
+                </div>
+              </div>
+
+              {/* Preview */}
+              {infernoClosePreview && (
+                <div className="panel-muted rounded-xl p-4 border border-forge-gray-700 space-y-3">
+                  <div className="text-sm font-medium text-forge-gray-300 mb-2">
+                    {infernoClosePreview.isPartial ? 'Partial Withdrawal Preview' : 'Full Close Preview'}
                   </div>
-                ))}
-              </div>
+                  
+                  <div className="flex justify-between text-sm">
+                    <span className="text-forge-gray-400">You will receive ({baseTokenSymbol}):</span>
+                    <span className="text-white font-medium">
+                      {formatNumberWithCommas(infernoClosePreview.baseToReceive, 4)} {baseTokenSymbol}
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between text-sm">
+                    <span className="text-forge-gray-400">You will receive (USDC):</span>
+                    <span className="text-white font-medium">
+                      {formatNumberWithCommas(infernoClosePreview.usdcToReceive, 2)} USDC
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-forge-gray-700 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-forge-gray-400">Close Fee ({(INFERNO_CLOSE_FEE_RATE * 100).toFixed(2)}%):</span>
+                      <span className="text-orange-400">
+                        -{formatNumberWithCommas(infernoClosePreview.baseFee, 4)} {baseTokenSymbol}, -{formatNumberWithCommas(infernoClosePreview.usdcFee, 2)} USDC
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between text-sm">
+                      <span className="text-forge-gray-400">Total Fee (USD):</span>
+                      <span className="text-orange-400">
+                        ${formatNumberWithCommas(infernoClosePreview.totalFeeUSD, 2)}
+                      </span>
+                    </div>
+                    
+                    {infernoClosePreview.borrowedToRepay > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-forge-gray-400">Loan Repayment:</span>
+                        <span className="text-forge-gray-400">
+                          {formatNumberWithCommas(infernoClosePreview.borrowedToRepay, 2)} USDC
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 text-red-400 text-sm">
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={() => currentInfernoPosition && handleInfernoClose(currentInfernoPosition.id)}
+                disabled={loading || !infernoAmount || parseFloat(infernoAmount) <= 0}
+                className="w-full py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-xl font-medium hover:from-red-600 hover:to-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Closing...' : infernoClosePreview?.isPartial ? 'Withdraw from Position' : 'Close Inferno Position'}
+              </button>
             </div>
           )}
 
           {/* No positions message */}
-          {!hasCTokenPosition && (!hasLeveragedPosition || isSolCrucible) && (!hasInfernoPosition || isSolCrucible) && (
+          {!hasCTokenPosition && !hasLeveragedPosition && !hasInfernoPosition && (
             <div className="text-center py-8 text-forge-gray-400">
               No positions available to close
             </div>

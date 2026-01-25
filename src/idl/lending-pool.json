@@ -1,5 +1,5 @@
 {
-  "address": "3UPgC2UJ6odJwWPBqDEx19ycL5ccuS3mbF1pt5SU39dx",
+  "address": "7hwTzKPSKdio6TZdi4SY7wEuGpFha15ebsaiTPp2y3G2",
   "metadata": {
     "name": "lending_pool_usdc",
     "version": "0.1.0",
@@ -211,6 +211,9 @@
         },
         {
           "name": "pool_vault",
+          "docs": [
+            "Pool vault - initialized as a token account with pool as authority"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -241,10 +244,6 @@
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
@@ -259,7 +258,8 @@
     {
       "name": "initialize_vault",
       "docs": [
-        "Initialize the pool vault (for existing pools that don't have a vault)"
+        "Initialize the pool vault (for existing pools that don't have a vault)",
+        "The vault token account is automatically created by Anchor's init constraint"
       ],
       "discriminator": [
         48,
@@ -280,6 +280,9 @@
         },
         {
           "name": "pool_vault",
+          "docs": [
+            "Pool vault - initialized as a token account with pool as authority"
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -308,10 +311,6 @@
         {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         },
         {
           "name": "system_program",

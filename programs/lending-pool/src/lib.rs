@@ -99,9 +99,53 @@ fn deserialize_pool(data: &[u8]) -> Result<LendingPoolVersion> {
     require!(data.len() >= 8, LendingPoolError::InvalidConfig);
 
     if data.len() == NEW_POOL_ACCOUNT_LEN {
-        let pool = LendingPool::try_deserialize(&mut &data[8..])
+        // Manually deserialize the new pool format
+        // Skip 8-byte discriminator and read fields directly
+        let mut offset = 8;
+        
+        let authority = Pubkey::try_from(&data[offset..offset + 32])
             .map_err(|_| LendingPoolError::InvalidConfig)?;
-        return Ok(LendingPoolVersion::New(pool));
+        offset += 32;
+        
+        let usdc_mint = Pubkey::try_from(&data[offset..offset + 32])
+            .map_err(|_| LendingPoolError::InvalidConfig)?;
+        offset += 32;
+        
+        let total_liquidity = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+        
+        let total_borrowed = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+        
+        let borrow_rate = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+        
+        let lender_rate = u64::from_le_bytes(
+            data[offset..offset + 8].try_into().map_err(|_| LendingPoolError::InvalidConfig)?
+        );
+        offset += 8;
+        
+        let paused = data[offset] != 0;
+        offset += 1;
+        
+        let bump = data[offset];
+        
+        return Ok(LendingPoolVersion::New(LendingPool {
+            authority,
+            usdc_mint,
+            total_liquidity,
+            total_borrowed,
+            borrow_rate,
+            lender_rate,
+            paused,
+            bump,
+        }));
     }
 
     if data.len() == OLD_POOL_ACCOUNT_LEN {
@@ -216,40 +260,16 @@ pub mod lending_pool_usdc {
         pool.paused = false;
         pool.bump = ctx.bumps.pool;
         
-        // Create the pool vault token account if it doesn't exist
-        // The vault is a PDA, so we use init_if_needed to create it
-        // Validate that the vault is owned by the token program (if it exists)
-        if !ctx.accounts.pool_vault.data_is_empty() {
-            require!(
-                *ctx.accounts.pool_vault.owner == ctx.accounts.token_program.key(),
-                LendingPoolError::InvalidConfig
-            );
-        }
-        
-        // Initialize the token account for the vault PDA if it's empty
-        if ctx.accounts.pool_vault.data_is_empty() {
-            let pool_key = pool.key();
-            let vault_bump = ctx.bumps.pool_vault;
-            let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[vault_bump]];
-            let vault_signer = &[vault_seeds];
-            
-            // Initialize the token account for the vault PDA
-            let cpi_accounts = anchor_spl::token::InitializeAccount {
-                account: ctx.accounts.pool_vault.to_account_info(),
-                mint: ctx.accounts.usdc_mint.to_account_info(),
-                authority: pool.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info(),
-            };
-            let cpi_program = ctx.accounts.token_program.to_account_info();
-            let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, vault_signer);
-            anchor_spl::token::initialize_account(cpi_ctx)?;
-        }
+        // The pool vault is already initialized as a token account via Anchor's init constraint
+        // in the Initialize struct (using token::authority = pool)
         
         Ok(())
     }
 
     /// Deposit USDC to the lending pool (lenders)
     pub fn deposit_usdc(ctx: Context<DepositUSDC>, amount: u64) -> Result<()> {
+        msg!("deposit_usdc: starting with amount {}", amount);
+        
         // SECURITY FIX: Explicit zero amount validation
         require!(amount > 0, LendingPoolError::InvalidAmount);
         
@@ -257,16 +277,22 @@ pub mod lending_pool_usdc {
         const MAX_DEPOSIT_AMOUNT: u64 = 1_000_000_000_000_000; // 1 billion USDC with 6 decimals
         require!(amount <= MAX_DEPOSIT_AMOUNT, LendingPoolError::InvalidAmount);
         
+        msg!("deposit_usdc: deserializing pool, data len = {}", ctx.accounts.pool.try_borrow_data()?.len());
+        
         // Manually deserialize pool account to handle old and new formats
         let pool_data = ctx.accounts.pool.try_borrow_data()?;
         let mut pool = deserialize_pool(&pool_data)?;
         drop(pool_data);
+        
+        msg!("deposit_usdc: pool deserialized, bump = {}", pool.bump());
         
         // SECURITY FIX: Explicitly validate pool is a PDA with correct seeds
         let (expected_pool_pda, expected_bump) = Pubkey::find_program_address(
             &[b"pool"],
             ctx.program_id,
         );
+        msg!("deposit_usdc: expected_pool_pda = {}, expected_bump = {}", expected_pool_pda, expected_bump);
+        msg!("deposit_usdc: actual pool key = {}", ctx.accounts.pool.key());
         require!(
             ctx.accounts.pool.key() == expected_pool_pda,
             LendingPoolError::InvalidConfig
@@ -276,10 +302,15 @@ pub mod lending_pool_usdc {
             LendingPoolError::InvalidConfig
         );
         
+        msg!("deposit_usdc: PDA validation passed");
+        
         // SECURITY FIX: Check if pool is paused
         require!(!pool.paused(), LendingPoolError::PoolPaused);
         
+        msg!("deposit_usdc: pool not paused");
+        
         // Validate pool vault mint matches pool's USDC mint
+        msg!("deposit_usdc: vault mint = {}, pool usdc_mint = {}", ctx.accounts.pool_vault.mint, pool.usdc_mint());
         require!(
             ctx.accounts.pool_vault.mint == pool.usdc_mint(),
             LendingPoolError::InvalidConfig
@@ -638,6 +669,7 @@ pub mod lending_pool_usdc {
     }
 
     /// Initialize the pool vault (for existing pools that don't have a vault)
+    /// The vault token account is automatically created by Anchor's init constraint
     pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
         // Manually deserialize pool account to handle old and new formats
         let pool_data = ctx.accounts.pool.try_borrow_data()?;
@@ -659,31 +691,8 @@ pub mod lending_pool_usdc {
             LendingPoolError::InvalidConfig
         );
         
-        // Check if vault already exists and is initialized
-        if !ctx.accounts.pool_vault.data_is_empty() {
-            // Validate it's a token account
-            require!(
-                *ctx.accounts.pool_vault.owner == ctx.accounts.token_program.key(),
-                LendingPoolError::InvalidConfig
-            );
-            return Ok(()); // Vault already exists
-        }
-        
-        // Initialize the token account for the vault PDA
-        let pool_key = ctx.accounts.pool.key();
-        let vault_bump = ctx.bumps.pool_vault;
-        let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[vault_bump]];
-        let vault_signer = &[vault_seeds];
-        
-        let cpi_accounts = anchor_spl::token::InitializeAccount {
-            account: ctx.accounts.pool_vault.to_account_info(),
-            mint: ctx.accounts.usdc_mint.to_account_info(),
-            authority: ctx.accounts.pool.to_account_info(),
-            rent: ctx.accounts.rent.to_account_info(),
-        };
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, vault_signer);
-        anchor_spl::token::initialize_account(cpi_ctx)?;
+        // Vault is automatically initialized by Anchor's init constraint in InitializeVault struct
+        msg!("Pool vault initialized for pool: {}", ctx.accounts.pool.key());
         
         Ok(())
     }
@@ -754,21 +763,21 @@ pub struct Initialize<'info> {
 
     pub usdc_mint: Account<'info, Mint>,
 
-    /// CHECK: Pool vault PDA - will be initialized in the instruction
+    /// Pool vault - initialized as a token account with pool as authority
     #[account(
-        init_if_needed,
+        init,
         payer = authority,
-        space = 8 + anchor_spl::token::TokenAccount::LEN,
+        token::mint = usdc_mint,
+        token::authority = pool,
         seeds = [b"vault", pool.key().as_ref()],
         bump,
     )]
-    pub pool_vault: UncheckedAccount<'info>,
+    pub pool_vault: Account<'info, TokenAccount>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
 }
 
@@ -860,21 +869,21 @@ pub struct InitializeVault<'info> {
     
     pub usdc_mint: Account<'info, Mint>,
     
-    /// CHECK: Pool vault PDA - will be initialized in the instruction
+    /// Pool vault - initialized as a token account with pool as authority
     #[account(
-        init_if_needed,
+        init,
         payer = authority,
-        space = 8 + anchor_spl::token::TokenAccount::LEN,
+        token::mint = usdc_mint,
+        token::authority = pool,
         seeds = [b"vault", pool.key().as_ref()],
         bump,
     )]
-    pub pool_vault: UncheckedAccount<'info>,
+    pub pool_vault: Account<'info, TokenAccount>,
     
     #[account(mut)]
     pub authority: Signer<'info>,
     
     pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
 }
 

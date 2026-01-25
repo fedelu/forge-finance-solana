@@ -62,7 +62,10 @@ export default function LendingPage() {
   }, [selectedMarket, connected, publicKey, connection, updateBalance])
 
   const formatCurrency = (value: string) => {
-    return value
+    // If value is already a formatted number string, add $ prefix
+    const numValue = parseFloat(value.replace(/,/g, ''))
+    if (isNaN(numValue)) return value
+    return `$${numValue.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`
   }
 
   const MarketCard = ({ market }: { market: typeof markets[0] }) => {

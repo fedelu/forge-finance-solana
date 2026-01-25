@@ -18,7 +18,7 @@ const infernoIdl = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../target/idl/forge_crucibles_inferno.json'), 'utf-8')
 )
 
-const CRUCIBLES_INFERNO_PROGRAM_ID = new PublicKey('Ep2FZ1WZGbeajKoRs768cZ7fjP963xqvga6kHWJ5K9kv')
+const CRUCIBLES_INFERNO_PROGRAM_ID = new PublicKey('HbhXC9vgDfrgq3gAj22TwXPtEkxmBrKp9MidEY4Y3vMk')
 const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112')
 const USDC_MINT = new PublicKey('Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr')
 const PYTH_SOL_USD_PRICE_FEED = new PublicKey('ALP8SdU9oARYVLgLR7LrGzyc6M3zvTyUxE6QfkYYJJEt')

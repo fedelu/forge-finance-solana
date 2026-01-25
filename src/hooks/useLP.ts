@@ -21,11 +21,13 @@ export interface LPPosition {
   baseAmount: number // Amount of base token deposited
   usdcAmount: number // Amount of USDC deposited
   entryPrice: number
+  entryExchangeRate: number // Crucible exchange rate at position open (scaled)
   currentValue: number // USD
-  yieldEarned: number
+  yieldEarned: number // Real yield from exchange rate growth
   isOpen: boolean
   lpAPY: number // LP APY = baseAPY (matches contract, no 3x multiplier)
   pnl: number // Profit and Loss (USD)
+  nonce: number // Position nonce for PDA derivation (allows multiple positions)
 }
 
 interface UseLPProps {
@@ -73,7 +75,10 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
   // Use ref to store latest fetchPositions callback
   const fetchPositionsRef = useRef<(() => Promise<void>) | null>(null)
 
-  // Fetch LP positions
+  // Maximum number of positions to scan for (prevents infinite loops)
+  const MAX_POSITIONS_TO_SCAN = 50
+
+  // Fetch LP positions - now scans for multiple positions using nonce
   const fetchPositions = useCallback(async () => {
     if (!publicKey || !crucibleAddress) {
       setPositions([])
@@ -109,56 +114,100 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           
           const baseMint = new PublicKey(SOLANA_TESTNET_CONFIG.TOKEN_ADDRESSES.SOL)
 
-          // Derive position PDA using base_mint (matches program seeds)
-          const [positionPDA] = deriveLPPositionPDA(publicKey, baseMint)
-          
-          // Try to fetch position account
+          // Fetch crucible to get current exchange rate for real yield calculation
+          let currentExchangeRate = 1.0
           try {
-            const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
+            const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+            const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+            if (crucibleAccount) {
+              currentExchangeRate = getAccurateExchangeRate(crucibleAccount)
+            }
+          } catch (e) {
+            console.warn('Failed to fetch crucible for yield calculation:', e)
+          }
+
+          // Scan for multiple positions using nonce (0, 1, 2, ...)
+          // Stop scanning after MAX_POSITIONS_TO_SCAN consecutive empty slots
+          let consecutiveEmpty = 0
+          for (let nonce = 0; nonce < MAX_POSITIONS_TO_SCAN && consecutiveEmpty < 5; nonce++) {
+            // Derive position PDA using base_mint and nonce (matches new program seeds)
+            const [positionPDA] = deriveLPPositionPDA(publicKey, baseMint, nonce)
             
-            if (positionAccount.isOpen) {
-              // Convert on-chain position to LPPosition interface
-              const baseTokenPrice = 200 // SOL price (could fetch from oracle)
-              const baseAmountNum = Number(positionAccount.baseAmount) / 1e9 // Convert lamports
-              const usdcAmountNum = Number(positionAccount.usdcAmount) / 1e6 // Convert USDC decimals
+            // Try to fetch position account
+            try {
+              const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
+              consecutiveEmpty = 0 // Reset counter on found position
               
-              const onChainPosition: LPPosition = {
-                id: positionPDA.toString(), // Use PDA as ID for consistency
-                owner: positionAccount.owner.toBase58(),
-                baseToken: baseTokenSymbol,
-                baseAmount: baseAmountNum,
-                usdcAmount: usdcAmountNum,
-                entryPrice: Number(positionAccount.entryPrice) / 1_000_000, // Convert from scaled
-                currentValue: baseAmountNum * baseTokenPrice + usdcAmountNum,
-                yieldEarned: 0, // Calculated from exchange rate growth (fetched separately)
-                isOpen: positionAccount.isOpen,
-                lpAPY: baseAPY, // Matches contract: LP APY = base APY (no 3x multiplier)
-                pnl: 0, // Calculated from price changes (requires oracle price history)
-              }
-              
-              userPositions.push(onChainPosition)
-              fetchedFromChain = true
-              
-              // SECURITY FIX: Update localStorage cache with on-chain data using secure utility
-              try {
-                const allStoredPositions = getLPPositions()
-                const existingIndex = allStoredPositions.findIndex((p: StoredLPPosition) => p.id === onChainPosition.id)
-                if (existingIndex >= 0) {
-                  allStoredPositions[existingIndex] = onChainPosition as StoredLPPosition
-                } else {
-                  allStoredPositions.push(onChainPosition as StoredLPPosition)
+              if (positionAccount.isOpen) {
+                // Convert on-chain position to LPPosition interface
+                const baseTokenPrice = solPrice || 200 // Use real-time SOL price from CoinGecko, fallback to $200
+                const baseAmountNum = Number(positionAccount.baseAmount) / 1e9 // Convert lamports
+                const usdcAmountNum = Number(positionAccount.usdcAmount) / 1e6 // Convert USDC decimals
+                const entryExchangeRate = Number(positionAccount.entryExchangeRate || 1_000_000) / 1_000_000 // Convert from scaled
+                
+                // Calculate real yield from exchange rate growth
+                let yieldEarned = 0
+                if (currentExchangeRate > entryExchangeRate && entryExchangeRate > 0) {
+                  const positionValue = baseAmountNum * baseTokenPrice + usdcAmountNum
+                  const rateGrowth = (currentExchangeRate - entryExchangeRate) / entryExchangeRate
+                  yieldEarned = positionValue * rateGrowth
                 }
-                setLPPositions(allStoredPositions)
-              } catch (cacheError) {
-                console.warn('Failed to update localStorage cache:', cacheError)
+                
+                // Calculate P&L from price changes
+                const entryPriceNum = Number(positionAccount.entryPrice) / 1_000_000
+                const initialValue = baseAmountNum * entryPriceNum + usdcAmountNum
+                const currentValue = baseAmountNum * baseTokenPrice + usdcAmountNum
+                const pricePnl = currentValue - initialValue
+                
+                // Get nonce from account (new field) or use loop index
+                const positionNonce = typeof positionAccount.nonce === 'number' 
+                  ? Number(positionAccount.nonce) 
+                  : nonce
+                
+                const onChainPosition: LPPosition = {
+                  id: positionPDA.toString(), // Use PDA as ID for consistency
+                  owner: positionAccount.owner.toBase58(),
+                  baseToken: baseTokenSymbol,
+                  baseAmount: baseAmountNum,
+                  usdcAmount: usdcAmountNum,
+                  entryPrice: entryPriceNum,
+                  entryExchangeRate: entryExchangeRate,
+                  currentValue: currentValue,
+                  yieldEarned: yieldEarned, // Real yield from exchange rate growth
+                  isOpen: positionAccount.isOpen,
+                  lpAPY: baseAPY, // Matches contract: LP APY = base APY (no 3x multiplier)
+                  pnl: pricePnl + yieldEarned, // Total P&L = price P&L + yield
+                  nonce: positionNonce, // Store nonce for closing position
+                }
+                
+                userPositions.push(onChainPosition)
+                fetchedFromChain = true
+              }
+            } catch (fetchError: any) {
+              // Position doesn't exist on-chain at this nonce
+              consecutiveEmpty++
+              if (!(fetchError?.message?.includes('Account does not exist') || 
+                  fetchError?.message?.includes('could not find') ||
+                  fetchError?.toString()?.includes('Account does not exist'))) {
+                // Only log if it's not a "not found" error
+                console.warn(`Error fetching LP position at nonce ${nonce}:`, fetchError)
               }
             }
-          } catch (fetchError: any) {
-            // Position doesn't exist on-chain - this is valid (user has no position)
-            if (!(fetchError?.message?.includes('Account does not exist') || 
-                fetchError?.message?.includes('could not find') ||
-                fetchError?.toString()?.includes('Account does not exist'))) {
-              console.warn('Error fetching on-chain LP position:', fetchError)
+          }
+          
+          // Update localStorage cache with on-chain data
+          if (userPositions.length > 0) {
+            try {
+              const allStoredPositions = getLPPositions()
+              const walletAddress = publicKey.toBase58()
+              
+              // Remove old positions for this wallet and add new ones
+              const otherPositions = allStoredPositions.filter((p: StoredLPPosition) => 
+                p.owner !== walletAddress && p.owner !== publicKey.toString()
+              )
+              setLPPositions([...otherPositions, ...userPositions as StoredLPPosition[]])
+            } catch (cacheError) {
+              console.warn('Failed to update localStorage cache:', cacheError)
             }
           }
         } catch (programError) {
@@ -180,7 +229,13 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
             return ownerMatch && tokenMatch && isOpen
           })
           
-          userPositions.push(...filteredPositions as LPPosition[])
+          // Add default nonce if missing
+          const positionsWithNonce = filteredPositions.map((p, index) => ({
+            ...p,
+            nonce: p.nonce ?? index
+          }))
+          
+          userPositions.push(...positionsWithNonce as LPPosition[])
         } catch (e) {
           console.warn('Failed to load LP positions from localStorage cache:', e)
         }
@@ -193,7 +248,7 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
     } finally {
       setLoading(false)
     }
-  }, [publicKey?.toBase58(), walletContext?.connection, crucibleAddress, baseTokenSymbol, baseAPY])
+  }, [publicKey?.toBase58(), walletContext?.connection, crucibleAddress, baseTokenSymbol, baseAPY, solPrice])
 
   // Open LP position (deposit equal value of base token + USDC)
   const openPosition = useCallback(
@@ -409,11 +464,49 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Derive vault PDAs
         const [baseVaultPDA] = deriveVaultPDA(cruciblePDA)
         const [usdcVaultPDA, usdcVaultBump] = deriveUSDCVaultPDA(cruciblePDA)
-        // Derive position PDA using base_mint (matches program seeds: ["lp_position", user, base_mint])
-        const [positionPDA, positionBump] = deriveLPPositionPDA(currentPublicKey, baseMint)
+        
+        // Find the next available nonce for a new position
+        // This allows multiple positions per user (like cToken minting)
+        let positionNonce = 0
+        let positionPDA: PublicKey
+        let positionBump: number
+        
+        // Scan for the first available nonce (empty slot)
+        for (let nonce = 0; nonce < MAX_POSITIONS_TO_SCAN; nonce++) {
+          const [candidatePDA, candidateBump] = deriveLPPositionPDA(currentPublicKey, baseMint, nonce)
+          try {
+            // Check if account exists at this nonce
+            const accountInfo = await connection.getAccountInfo(candidatePDA)
+            if (!accountInfo) {
+              // Found an empty slot - use this nonce
+              positionNonce = nonce
+              positionPDA = candidatePDA
+              positionBump = candidateBump
+              console.log(`Found available nonce: ${nonce}, PDA: ${candidatePDA.toString()}`)
+              break
+            }
+            // Account exists, try next nonce
+          } catch (e) {
+            // Error checking account - assume empty and use this nonce
+            positionNonce = nonce
+            positionPDA = candidatePDA
+            positionBump = candidateBump
+            break
+          }
+        }
+        
+        // Fallback if no nonce found in loop (shouldn't happen normally)
+        if (!positionPDA!) {
+          const [fallbackPDA, fallbackBump] = deriveLPPositionPDA(currentPublicKey, baseMint, 0)
+          positionPDA = fallbackPDA
+          positionBump = fallbackBump
+          positionNonce = 0
+        }
+        
+        console.log(`Using nonce ${positionNonce} for new LP position, PDA: ${positionPDA.toString()}`)
         
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:348',message:'Position PDA derivation',data:{positionPDA: positionPDA.toString(), positionBump, user: currentPublicKey.toString(), baseMint: baseMint.toString(), cruciblePDA: cruciblePDA.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/fdff7e9f-5404-4480-bac7-c940d759c957',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useLP.ts:348',message:'Position PDA derivation',data:{positionPDA: positionPDA.toString(), positionBump, positionNonce, user: currentPublicKey.toString(), baseMint: baseMint.toString(), cruciblePDA: cruciblePDA.toString()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
         // #endregion
         
         // CRITICAL: crucible_authority has the SAME seeds as crucible: ["crucible", base_mint]
@@ -720,11 +813,13 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           })
           
           // Build instruction - Anchor will validate PDAs using base_mint from accounts object
+          // position_nonce is passed to allow multiple positions per user (like cToken minting)
           const openLpPositionIx = await program.methods
             .openLpPosition(
               new BN(baseAmountLamports),
               new BN(usdcAmountDecimals),
-              new BN(maxSlippageBps)
+              new BN(maxSlippageBps),
+              new BN(positionNonce) // Nonce for multiple positions
             )
             .accounts(accountsObject)
             .instruction()
@@ -837,6 +932,18 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         const entryPrice = baseTokenPrice
         // Matches contract: LP APY = base APY (no 3x multiplier)
         const lpAPY = baseAPY
+        
+        // Fetch current exchange rate from crucible for yield tracking
+        let entryExchangeRate = 1.0
+        try {
+          const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (crucibleAccount) {
+            entryExchangeRate = getAccurateExchangeRate(crucibleAccount)
+          }
+        } catch (e) {
+          console.warn('Failed to fetch crucible exchange rate:', e)
+        }
 
         const newPosition: LPPosition = {
           id: positionId,
@@ -845,11 +952,13 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           baseAmount,
           usdcAmount,
           entryPrice,
+          entryExchangeRate, // Store exchange rate at entry for real yield calculation
           currentValue: baseValue + usdcValue,
-          yieldEarned: 0,
+          yieldEarned: 0, // Will grow as exchange rate increases
           isOpen: true,
           lpAPY,
           pnl: 0,
+          nonce: positionNonce, // Store nonce for closing position later
         }
 
         // IMMEDIATELY update state so portfolio sees it right away
@@ -973,14 +1082,29 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
           throw new Error('Position not found or already closed')
         }
 
-        // Calculate APY earnings from exchange rate growth (same as unwrapTokens)
-        // The cTOKENS have grown in value due to exchange rate appreciation
-        const initialExchangeRate = 1.0 // Initial rate when position was opened
-        const simulatedExchangeRateGrowth = 0.02 // 2% growth for demo
-        const currentExchangeRate = initialExchangeRate * (1 + simulatedExchangeRateGrowth)
-        const exchangeRateGrowth = currentExchangeRate - initialExchangeRate
+        // Calculate REAL APY earnings from exchange rate growth
+        // Fetch current crucible exchange rate for real yield calculation
+        let currentExchangeRate = 1.0
+        let apyEarnedTokens = 0
+        try {
+          const { getAccurateExchangeRate } = await import('../utils/crucibleFetcher')
+          const crucibleAccount = await fetchCrucibleDirect(connection, cruciblePDA.toString())
+          if (crucibleAccount) {
+            currentExchangeRate = getAccurateExchangeRate(crucibleAccount)
+            const entryExchangeRate = position.entryExchangeRate || 1.0
+            
+            // Calculate real yield from exchange rate growth
+            // yield_tokens = base_amount * (current_rate - entry_rate) / entry_rate
+            if (currentExchangeRate > entryExchangeRate && entryExchangeRate > 0) {
+              const rateGrowth = (currentExchangeRate - entryExchangeRate) / entryExchangeRate
+              apyEarnedTokens = position.baseAmount * rateGrowth
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch crucible for yield calculation:', e)
+        }
+        
         const baseAmountAtCurrentRate = position.baseAmount * currentExchangeRate
-        const apyEarnedTokens = position.baseAmount * (exchangeRateGrowth / currentExchangeRate)
         
         if (!walletContext?.connection || !crucibleAddress) {
           throw new Error('Wallet or crucible information missing')
@@ -1051,8 +1175,14 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Derive vault PDAs
         const [baseVaultPDA] = deriveVaultPDA(cruciblePDA)
         const [usdcVaultPDA] = deriveUSDCVaultPDA(cruciblePDA)
-        // Derive position PDA using base_mint (matches program seeds: ["lp_position", user, base_mint])
-        const [positionPDA] = deriveLPPositionPDA(currentPublicKey, baseMint)
+        
+        // Get the nonce from the position object (stored when position was opened)
+        const positionNonce = position.nonce ?? 0 // Default to 0 for backward compatibility
+        
+        // Derive position PDA using base_mint and nonce (matches new program seeds)
+        const [positionPDA, positionBump] = deriveLPPositionPDA(currentPublicKey, baseMint, positionNonce)
+        
+        console.log(`Closing position with nonce ${positionNonce}, PDA: ${positionPDA.toString()}`)
         
         // CRITICAL: crucible_authority has the SAME seeds as crucible: ["crucible", base_mint]
         // They resolve to the SAME PDA, so we use the same value for both
@@ -1072,19 +1202,14 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         const userUsdcAccount = await getAssociatedTokenAddress(usdcMint, currentPublicKey)
         const userLpTokenAccount = await getAssociatedTokenAddress(lpTokenMint, currentPublicKey)
         
-        // Fetch position account to verify it exists and get bump
-        let positionBump: number
+        // Fetch position account to verify it exists and is open
         try {
             const positionAccount = await (program.account as any).lppositionAccount.fetch(positionPDA)
           if (!positionAccount.isOpen) {
             throw new Error('Position is already closed')
           }
-          // Position PDA has a bump, we'll need to derive it
-          // FIX: Use baseMint instead of cruciblePDA for position PDA derivation
-          const [_, bump] = deriveLPPositionPDA(currentPublicKey, baseMint)
-          positionBump = bump
         } catch (error) {
-          throw new Error(`Position not found: ${error}`)
+          throw new Error(`Position not found at PDA ${positionPDA.toString()} with nonce ${positionNonce}: ${error}`)
         }
         
         // #region agent log
@@ -1103,8 +1228,12 @@ export function useLP({ crucibleAddress, baseTokenSymbol, baseAPY }: UseLPProps)
         // Call close_lp_position instruction
         // CRITICAL: Account names MUST match the IDL exactly (snake_case, not camelCase)
         // CRITICAL: Explicitly pass crucible_authority to prevent Anchor auto-resolution issues
+        const maxSlippageBps = 100 // 1% slippage tolerance
         const txSignature = await program.methods
-          .closeLpPosition()
+          .closeLpPosition(
+            new BN(maxSlippageBps),
+            new BN(positionNonce) // Position nonce for PDA derivation
+          )
           .accounts({
             crucible: cruciblePDA,
             user: currentPublicKey,
