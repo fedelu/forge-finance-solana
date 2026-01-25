@@ -232,7 +232,18 @@ export const AnalyticsDashboard: React.FC = () => {
       leveragedPositions.forEach(pos => {
         const basePrice = priceForToken(pos.token);
         const positionValue = pos.collateral * basePrice + (pos.depositUSDC || 0);
-        const positionAPY = pos.effectiveAPY || 0;
+        
+        // Calculate effective APY: (baseAPY × leverage) - (borrowRate × leverageExcess)
+        // Default borrow rate is 10% (0.10)
+        const leverage = pos.leverageFactor || 1.0;
+        const leverageExcess = Math.max(0, leverage - 1.0);
+        const borrowRate = 0.10; // 10% annual borrow rate
+        const crucible = crucibles.find(c => c.baseToken === pos.token);
+        const baseAPY = crucible?.apr || 0;
+        const positionAPY = leverage > 1
+          ? (baseAPY * leverage) - (borrowRate * leverageExcess)
+          : baseAPY;
+        
         totalWeightedAPY += (positionValue * positionAPY);
       });
     } catch (e) {
