@@ -3,6 +3,25 @@ import { Connection, PublicKey, Transaction, VersionedTransaction, SystemProgram
 import { useConnection, useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
 import { SOLANA_TESTNET_CONFIG } from '../config/solana-testnet';
 
+/** Normalize wallet connection errors; Phantom often throws with no message. */
+function toConnectionErrorMessage(error: unknown, walletName?: string | null): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const msg = (error as { message: unknown }).message;
+    if (typeof msg === 'string' && msg && !/unexpected error|unknown error/i.test(msg)) return msg;
+  }
+  if (error && typeof error === 'object' && 'error' in error) {
+    const inner = (error as { error: unknown }).error;
+    if (inner instanceof Error && inner.message) return inner.message;
+  }
+  if (walletName === 'Phantom') {
+    return (
+      'Phantom couldn’t connect. Unlock Phantom, approve the connection in the popup, and try again. ' +
+      'If you closed the popup without approving, click Connect again.'
+    );
+  }
+  return 'Could not connect. Please unlock your wallet and try again.';
+}
+
 // Phantom wallet types
 interface PhantomWallet {
   isPhantom?: boolean;
@@ -178,8 +197,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     // If adapter is available, trigger connection through the adapter
     try {
       await adapterWallet.adapter.connect();
-    } catch (error: any) {
-      const errorMessage = error.message || 'Connection failed. Please make sure your wallet is unlocked.';
+    } catch (error: unknown) {
+      const errorMessage = toConnectionErrorMessage(error, adapterWallet?.adapter?.name);
       setWalletStatus(prev => ({
         ...prev,
         error: errorMessage

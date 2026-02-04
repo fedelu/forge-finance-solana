@@ -6,6 +6,7 @@ import { SolanaWalletAdapterProvider } from '../contexts/SolanaWalletAdapterProv
 import { WalletProvider } from '../contexts/WalletContext'
 import { PriceProvider } from '../contexts/PriceContext'
 import { CrucibleProvider } from '../hooks/useCrucible'
+import { WalletErrorBoundary } from '../components/WalletErrorBoundary'
 
 export default function App({ Component, pageProps }: AppProps) {
   const [mounted, setMounted] = useState(false)
@@ -34,15 +35,17 @@ export default function App({ Component, pageProps }: AppProps) {
         />
       </div>
       <SolanaWalletAdapterProvider>
-        <WalletProvider>
-          <PriceProvider>
-            <CrucibleProvider>
-              <div className="app-content">
-                <Component {...pageProps} />
-              </div>
-            </CrucibleProvider>
-          </PriceProvider>
-        </WalletProvider>
+        <WalletErrorBoundary>
+          <WalletProvider>
+            <PriceProvider>
+              <CrucibleProvider>
+                <div className="app-content">
+                  <Component {...pageProps} />
+                </div>
+              </CrucibleProvider>
+            </PriceProvider>
+          </WalletProvider>
+        </WalletErrorBoundary>
       </SolanaWalletAdapterProvider>
     </>
   )
